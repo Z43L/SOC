@@ -1,0 +1,18 @@
+-- Add threat feeds table
+CREATE TABLE IF NOT EXISTS threat_feeds (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  provider VARCHAR(255) NOT NULL,
+  type VARCHAR(100) NOT NULL,
+  description TEXT NOT NULL,
+  url VARCHAR(500) NOT NULL,
+  api_key VARCHAR(500),
+  is_active BOOLEAN NOT NULL DEFAULT false,
+  last_updated TIMESTAMP WITH TIME ZONE,
+  iocs_count INTEGER,
+  status VARCHAR(50) NOT NULL DEFAULT 'inactive',
+  icon VARCHAR(100),
+  configuration JSONB,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);

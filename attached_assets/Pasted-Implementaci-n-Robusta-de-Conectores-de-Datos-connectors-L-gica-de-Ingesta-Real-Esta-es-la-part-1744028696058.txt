@@ -1,0 +1,21 @@
+Implementación Robusta de Conectores de Datos (connectors):
+
+Lógica de Ingesta Real: Esta es la parte más crítica. Para cada tipo de conector que quieras soportar (API, Syslog, Agente, etc.), necesitas implementar la lógica real para:
+Conectores API (Cloud, SaaS, Threat Feeds):
+Implementar llamadas seguras a las APIs de terceros usando las credenciales/API keys almacenadas en connectors.configuration.
+Gestionar la autenticación (OAuth, API Keys).
+Manejar el polling (recuperación periódica de datos) según la frecuencia configurada. [source: 19]
+Implementar la lógica de paginación de las APIs. [source: 20]
+Referencia: server/integrations/threatFeeds.ts ya intenta esto para algunos feeds; necesitas generalizarlo y hacerlo configurable a través de la tabla connectors.
+Conectores Syslog:
+Configurar un servidor Syslog (UDP/TCP, potencialmente sobre TLS [source: 29]) que escuche en el puerto especificado en connectors.configuration.
+Recibir los mensajes Syslog.
+Conectores de Agente:
+Desarrollar los agentes para los sistemas operativos objetivo (Windows, Linux, macOS). [source: 21]
+Implementar un endpoint seguro en tu backend para que los agentes envíen datos (logs, métricas FIM [source: 23]).
+Gestionar el registro y estado de los agentes. [source: 22]
+Parsing y Normalización:
+Una vez recibidos los datos (sean logs Syslog, respuestas API, datos de agentes), necesitas parsers robustos para extraer la información relevante. [source: 27]
+Normaliza los datos extraídos al esquema de tu base de datos (principalmente la tabla alerts, pero también podría ir a otras tablas como metrics o datos de activos - que actualmente no tienes definidos explícitamente). La IA podría ayudar a identificar formatos desconocidos. [source: 27]
+Gestión Segura de Credenciales: Almacena las API keys y credenciales de los conectores de forma segura (variables de entorno son un mínimo, considera soluciones de gestión de secretos como HashiCorp Vault, AWS Secrets Manager, etc., especialmente en producción). El campo configuration en connectors debería estar cifrado o manejarse con cuidado.
+Manejo de Errores y Estado: Implementa una lógica sólida para monitorizar el estado de cada conector (connectors.status, connectors.last_successful_connection). Actualiza el estado a 'error' si fallan las conexiones/polling, 'warning' si hay problemas intermitentes, 'active' si funciona correctamente.

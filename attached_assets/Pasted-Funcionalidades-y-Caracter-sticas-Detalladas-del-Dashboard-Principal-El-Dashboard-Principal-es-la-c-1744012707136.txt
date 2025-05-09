@@ -1,0 +1,88 @@
+Funcionalidades y Características Detalladas del Dashboard Principal
+El Dashboard Principal es la "cabina de mando" del SOC SaaS. Su objetivo es proporcionar una visión general, en tiempo real y personalizable del estado de la seguridad de la organización, permitiendo identificar rápidamente áreas de preocupación y acceder a información más detallada.
+
+Las funcionalidades y características clave a implementar son:
+
+1. Visión General y KPIs (Indicadores Clave de Rendimiento):
+
+Widgets de KPIs/Scorecards:
+
+Mostrar métricas esenciales de forma destacada.
+
+Ejemplos:
+
+Alertas Abiertas: Número total y desglose por severidad (Crítica, Alta, Media, Baja) - con indicadores de cambio (tendencia).
+
+Incidentes Activos: Número de incidentes en investigación.
+
+MTTD (Mean Time to Detect): Tiempo medio para detectar una amenaza (calculado históricamente).
+
+MTTR (Mean Time to Respond): Tiempo medio para responder a un incidente (calculado históricamente).
+
+Activos en Riesgo: Número de endpoints/servidores con alertas críticas o vulnerabilidades altas.
+
+Estado de Cumplimiento: Un indicador general (ej. porcentaje) del cumplimiento de normativas relevantes (si aplica).
+
+Salud de Conectores: Porcentaje o número de conectores de datos activos vs. con errores.
+
+
+
+bscdesigner.com
+Indicador General de Riesgo (Opcional, IA): Un puntaje o nivel de riesgo global calculado por la IA, basado en la actividad reciente, alertas, vulnerabilidades y contexto de TI.
+
+2. Resumen de Alertas y Amenazas:
+
+Últimas Alertas Críticas/Altas: Un pequeño listado o tabla con las alertas más recientes y de mayor severidad, con enlaces directos a la vista detallada.
+
+Tendencias de Alertas: Un gráfico simple (líneas o barras) mostrando el volumen de alertas a lo largo del tiempo (últimas 24h, 7 días) por severidad.
+
+Top Amenazas Detectadas: Listado de los tipos de ataques o malware más frecuentes detectados recientemente (ej. Phishing, Ransomware, Fuerza Bruta).
+
+Mapa de Amenazas (Opcional): Visualización geográfica (mapa mundial) mostrando orígenes de ataques recientes (basado en IP de origen). Puede ser visualmente impactante pero debe ser opcional para no sobrecargar.
+
+
+
+www.lisainstitute.com
+Top TTPs (MITRE ATT&CK): Mostrar las tácticas o técnicas más observadas en las alertas recientes.
+
+3. Estado de Activos y Vulnerabilidades:
+
+Resumen de Salud de Agentes: Gráfico circular o de barras mostrando el estado de los agentes desplegados (Online, Offline, Con Errores).
+
+Vulnerabilidades Críticas/Altas: Número de vulnerabilidades abiertas de alta severidad (si se integra con un escáner de vulnerabilidades).
+
+4. Actividad Reciente y Contexto:
+
+Timeline de Eventos Clave: Un feed cronológico de eventos importantes: nuevas alertas críticas, incidentes creados, cambios de configuración importantes, informes de TI relevantes.
+
+Noticias/Informes de TI Destacados: Un widget que muestre titulares o resúmenes de los informes de Threat Intelligence más relevantes para la organización (filtrados por IA según industria, geografía, etc.).
+
+5. Personalización y Experiencia de Usuario:
+
+Diseño Modular (Widgets): El dashboard debe estar compuesto por bloques o widgets independientes.
+
+Personalización del Layout: Permitir a los usuarios:
+
+Añadir/Eliminar widgets del dashboard.
+
+Reorganizar los widgets (arrastrar y soltar).
+
+Cambiar el tamaño de los widgets.
+
+Guardar diferentes vistas o perfiles de dashboard.
+
+Basado en Roles: Posibilidad de definir dashboards predeterminados diferentes según el rol del usuario (Analista N1, Analista N2, Gestor de SOC, CISO). Los permisos pueden restringir qué widgets están disponibles.
+
+Interactividad (Drill-Down): La mayoría de los elementos del dashboard deben ser clicables, llevando al usuario a la sección correspondiente para un análisis más profundo (ej. hacer clic en el número de alertas críticas lleva a la tabla de alertas filtrada por críticas).
+
+Refresco Automático/Manual: Opción para que los datos se actualicen automáticamente cada X minutos o mediante un botón de refresco manual.
+
+Modo Claro/Oscuro: Permitir al usuario elegir el tema visual.
+
+6. Integración de IA:
+
+Insights Proactivos: La IA puede generar mensajes o destacar widgets que indiquen tendencias inusuales o riesgos emergentes (ej. "Aumento inusual de alertas de fuerza bruta en las últimas 3 horas", "Detectado IoC crítico de TI en 5 activos").
+
+Priorización Inteligente: Asegurar que los elementos más críticos (según la evaluación de la IA) se muestren de forma prominente.
+
+Un dashboard bien diseñado con estas funcionalidades permitirá a los equipos de seguridad obtener rápidamente conocimiento situacional, priorizar sus esfuerzos y responder de manera más eficaz a las amenazas.

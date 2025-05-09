@@ -1,0 +1,624 @@
+import { 
+  users, type User, type InsertUser,
+  alerts, type Alert, type InsertAlert,
+  incidents, type Incident, type InsertIncident,
+  threatIntel, type ThreatIntel, type InsertThreatIntel,
+  aiInsights, type AiInsight, type InsertAiInsight,
+  metrics, type Metric, type InsertMetric,
+  connectors, type Connector, type InsertConnector,
+  threatFeeds, type ThreatFeed, type InsertThreatFeed,
+  playbooks, type Playbook, type InsertPlaybook,
+  playbookExecutions, type PlaybookExecution, type InsertPlaybookExecution,
+  agents, type Agent, type InsertAgent
+} from "@shared/schema";
+
+import { Store } from "express-session";
+import session from "express-session";
+import { db } from "./db";
+import { eq, desc, asc, sql } from "drizzle-orm";
+import connectPg from "connect-pg-simple";
+import pg from "pg";
+
+// PostgreSQL session store setup
+const { Pool } = pg;
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+const PostgresStore = connectPg(session);
+
+export interface IStorage {
+  // Session store
+  sessionStore: Store;
+  
+  // User methods
+  getUser(id: number): Promise<User | undefined>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  createUser(user: InsertUser): Promise<User>;
+  listUsers(): Promise<User[]>;
+  
+  // Alert methods
+  getAlert(id: number): Promise<Alert | undefined>;
+  createAlert(alert: InsertAlert): Promise<Alert>;
+  updateAlert(id: number, alert: Partial<InsertAlert>): Promise<Alert | undefined>;
+  listAlerts(limit?: number): Promise<Alert[]>;
+  
+  // Incident methods
+  getIncident(id: number): Promise<Incident | undefined>;
+  createIncident(incident: InsertIncident): Promise<Incident>;
+  updateIncident(id: number, incident: Partial<InsertIncident>): Promise<Incident | undefined>;
+  listIncidents(limit?: number): Promise<Incident[]>;
+  
+  // Threat Intel methods
+  getThreatIntel(id: number): Promise<ThreatIntel | undefined>;
+  createThreatIntel(intel: InsertThreatIntel): Promise<ThreatIntel>;
+  listThreatIntel(limit?: number): Promise<ThreatIntel[]>;
+  
+  // AI Insight methods
+  getAiInsight(id: number): Promise<AiInsight | undefined>;
+  createAiInsight(insight: InsertAiInsight): Promise<AiInsight>;
+  listAiInsights(limit?: number): Promise<AiInsight[]>;
+  
+  // Metrics methods
+  getMetric(id: number): Promise<Metric | undefined>;
+  createMetric(metric: InsertMetric): Promise<Metric>;
+  getMetricByName(name: string): Promise<Metric | undefined>;
+  listMetrics(): Promise<Metric[]>;
+  
+  // Connector methods
+  getConnector(id: number): Promise<Connector | undefined>;
+  createConnector(connector: InsertConnector): Promise<Connector>;
+  updateConnector(id: number, connector: Partial<InsertConnector>): Promise<Connector | undefined>;
+  deleteConnector(id: number): Promise<boolean>;
+  listConnectors(): Promise<Connector[]>;
+  toggleConnectorStatus(id: number, isActive: boolean): Promise<Connector | undefined>;
+  
+  // Threat Feed methods
+  getThreatFeed(id: number): Promise<ThreatFeed | undefined>;
+  createThreatFeed(feed: InsertThreatFeed): Promise<ThreatFeed>;
+  updateThreatFeed(id: number, feed: Partial<InsertThreatFeed>): Promise<ThreatFeed | undefined>;
+  deleteThreatFeed(id: number): Promise<boolean>;
+  listThreatFeeds(): Promise<ThreatFeed[]>;
+  toggleThreatFeedStatus(id: number, isActive: boolean): Promise<ThreatFeed | undefined>;
+  
+  // Playbook methods
+  getPlaybook(id: number): Promise<Playbook | undefined>;
+  createPlaybook(playbook: InsertPlaybook): Promise<Playbook>;
+  updatePlaybook(id: number, playbook: Partial<InsertPlaybook>): Promise<Playbook | undefined>;
+  deletePlaybook(id: number): Promise<boolean>;
+  listPlaybooks(): Promise<Playbook[]>;
+  togglePlaybookStatus(id: number, isActive: boolean): Promise<Playbook | undefined>;
+  executePlaybook(id: number, triggeredBy?: number, triggerEntityId?: number): Promise<PlaybookExecution>;
+  
+  // Playbook Execution methods
+  getPlaybookExecution(id: number): Promise<PlaybookExecution | undefined>;
+  listPlaybookExecutions(playbookId?: number, limit?: number): Promise<PlaybookExecution[]>;
+  updatePlaybookExecution(id: number, data: Partial<PlaybookExecution>): Promise<PlaybookExecution | undefined>;
+  
+  // Agent methods
+  getAgent(id: number): Promise<Agent | undefined>;
+  getAgentByIdentifier(agentIdentifier: string): Promise<Agent | undefined>;
+  createAgent(agent: InsertAgent): Promise<Agent>;
+  updateAgent(id: number, agent: Partial<InsertAgent>): Promise<Agent | undefined>;
+  deleteAgent(id: number): Promise<boolean>;
+  listAgents(userId?: number): Promise<Agent[]>;
+  updateAgentHeartbeat(id: number): Promise<void>;
+  updateAgentStatus(id: number, status: string): Promise<Agent | undefined>;
+}
+
+/**
+ * AVISO: La implementación de almacenamiento en memoria (MemStorage) ha sido
+ * completamente eliminada para cumplir con el requisito de eliminar
+ * todas las dependencias de datos ficticios y sintéticos.
+ * 
+ * La aplicación ahora trabaja exclusivamente con datos reales obtenidos de:
+ * - Autenticidad: Todos los datos provienen de fuentes externas autorizadas
+ * - Integridad: No se generan datos sintéticos/ficticios en el sistema
+ * - Trazabilidad: Cada dato tiene un origen verificable en los feeds externos
+ * - Persistencia: Todos los datos se almacenan en PostgreSQL
+ */
+
+/**
+ * PostgreSQL database storage implementation
+ */
+export class DatabaseStorage implements IStorage {
+  sessionStore: Store;
+
+  constructor() {
+    this.sessionStore = new PostgresStore({
+      pool,
+      createTableIfMissing: true
+    });
+  }
+
+  async getUser(id: number): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await db.insert(users).values(insertUser).returning();
+    return user;
+  }
+
+  async listUsers(): Promise<User[]> {
+    return await db.select().from(users);
+  }
+
+  async getAlert(id: number): Promise<Alert | undefined> {
+    const [alert] = await db.select().from(alerts).where(eq(alerts.id, id));
+    return alert;
+  }
+
+  async createAlert(insertAlert: InsertAlert): Promise<Alert> {
+    const [alert] = await db.insert(alerts).values(insertAlert).returning();
+    return alert;
+  }
+
+  async updateAlert(id: number, updateData: Partial<InsertAlert>): Promise<Alert | undefined> {
+    const [updatedAlert] = await db
+      .update(alerts)
+      .set(updateData)
+      .where(eq(alerts.id, id))
+      .returning();
+    return updatedAlert;
+  }
+
+  async listAlerts(limit?: number): Promise<Alert[]> {
+    const query = db.select().from(alerts).orderBy(desc(alerts.timestamp));
+    
+    if (limit) {
+      return await query.limit(limit);
+    }
+    
+    return await query;
+  }
+
+  async getIncident(id: number): Promise<Incident | undefined> {
+    const [incident] = await db.select().from(incidents).where(eq(incidents.id, id));
+    return incident;
+  }
+
+  async createIncident(insertIncident: InsertIncident): Promise<Incident> {
+    const [incident] = await db.insert(incidents).values(insertIncident).returning();
+    return incident;
+  }
+
+  async updateIncident(id: number, updateData: Partial<InsertIncident>): Promise<Incident | undefined> {
+    // If we're closing the incident, set closedAt
+    if (updateData.status === 'closed') {
+      updateData = {
+        ...updateData,
+        closedAt: new Date()
+      } as Partial<InsertIncident>;
+    }
+    
+    // Always update the updatedAt field
+    updateData = {
+      ...updateData,
+      updatedAt: new Date()
+    } as Partial<InsertIncident>;
+    
+    const [updatedIncident] = await db
+      .update(incidents)
+      .set(updateData)
+      .where(eq(incidents.id, id))
+      .returning();
+    
+    return updatedIncident;
+  }
+
+  async listIncidents(limit?: number): Promise<Incident[]> {
+    const query = db.select().from(incidents).orderBy(desc(incidents.createdAt));
+    
+    if (limit) {
+      return await query.limit(limit);
+    }
+    
+    return await query;
+  }
+
+  async getThreatIntel(id: number): Promise<ThreatIntel | undefined> {
+    const [intel] = await db.select().from(threatIntel).where(eq(threatIntel.id, id));
+    return intel;
+  }
+
+  async createThreatIntel(insertIntel: InsertThreatIntel): Promise<ThreatIntel> {
+    const [intel] = await db.insert(threatIntel).values(insertIntel).returning();
+    return intel;
+  }
+
+  async listThreatIntel(limit?: number): Promise<ThreatIntel[]> {
+    const query = db.select().from(threatIntel).orderBy(desc(threatIntel.createdAt));
+    
+    if (limit) {
+      return await query.limit(limit);
+    }
+    
+    return await query;
+  }
+
+  async getAiInsight(id: number): Promise<AiInsight | undefined> {
+    const [insight] = await db.select().from(aiInsights).where(eq(aiInsights.id, id));
+    return insight;
+  }
+
+  async createAiInsight(insertInsight: InsertAiInsight): Promise<AiInsight> {
+    const [insight] = await db.insert(aiInsights).values(insertInsight).returning();
+    return insight;
+  }
+
+  async listAiInsights(limit?: number): Promise<AiInsight[]> {
+    const query = db.select().from(aiInsights).orderBy(desc(aiInsights.createdAt));
+    
+    if (limit) {
+      return await query.limit(limit);
+    }
+    
+    return await query;
+  }
+
+  async getMetric(id: number): Promise<Metric | undefined> {
+    const [metric] = await db.select().from(metrics).where(eq(metrics.id, id));
+    return metric;
+  }
+
+  async createMetric(insertMetric: InsertMetric): Promise<Metric> {
+    const [metric] = await db.insert(metrics).values(insertMetric).returning();
+    return metric;
+  }
+
+  async getMetricByName(name: string): Promise<Metric | undefined> {
+    const [metric] = await db.select().from(metrics).where(eq(metrics.name, name));
+    return metric;
+  }
+
+  async listMetrics(): Promise<Metric[]> {
+    return await db.select().from(metrics);
+  }
+
+  async getConnector(id: number): Promise<Connector | undefined> {
+    const [connector] = await db.select().from(connectors).where(eq(connectors.id, id));
+    return connector;
+  }
+
+  async createConnector(insertConnector: InsertConnector): Promise<Connector> {
+    // Always set timestamps
+    const now = new Date();
+    const connectorWithTimestamps = {
+      ...insertConnector,
+      createdAt: now,
+      updatedAt: now
+    };
+    
+    const [connector] = await db.insert(connectors).values(connectorWithTimestamps).returning();
+    return connector;
+  }
+
+  async updateConnector(id: number, updateData: Partial<InsertConnector>): Promise<Connector | undefined> {
+    // Always update the timestamp
+    const updatedData = {
+      ...updateData,
+      updatedAt: new Date()
+    } as Partial<InsertConnector>;
+    
+    const [updatedConnector] = await db
+      .update(connectors)
+      .set(updatedData)
+      .where(eq(connectors.id, id))
+      .returning();
+    
+    return updatedConnector;
+  }
+
+  async deleteConnector(id: number): Promise<boolean> {
+    const result = await db.delete(connectors).where(eq(connectors.id, id));
+    return result !== undefined && Array.isArray(result) && result.length > 0;
+  }
+
+  async listConnectors(): Promise<Connector[]> {
+    return await db.select().from(connectors);
+  }
+
+  async toggleConnectorStatus(id: number, isActive: boolean): Promise<Connector | undefined> {
+    const now = new Date();
+    
+    const [updatedConnector] = await db
+      .update(connectors)
+      .set({
+        isActive,
+        status: isActive ? 'active' : 'inactive',
+        updatedAt: now
+      } as any)
+      .where(eq(connectors.id, id))
+      .returning();
+    
+    return updatedConnector;
+  }
+
+  async getThreatFeed(id: number): Promise<ThreatFeed | undefined> {
+    const [feed] = await db.select().from(threatFeeds).where(eq(threatFeeds.id, id));
+    return feed;
+  }
+
+  async createThreatFeed(insertFeed: InsertThreatFeed): Promise<ThreatFeed> {
+    // Always set timestamps
+    const now = new Date();
+    const feedWithTimestamps = {
+      ...insertFeed,
+      createdAt: now,
+      updatedAt: now
+    };
+    
+    const [feed] = await db.insert(threatFeeds).values(feedWithTimestamps).returning();
+    return feed;
+  }
+
+  async updateThreatFeed(id: number, updateData: Partial<InsertThreatFeed>): Promise<ThreatFeed | undefined> {
+    // Always update the timestamp
+    const updatedData = {
+      ...updateData,
+      updatedAt: new Date()
+    } as Partial<InsertThreatFeed>;
+    
+    const [updatedFeed] = await db
+      .update(threatFeeds)
+      .set(updatedData)
+      .where(eq(threatFeeds.id, id))
+      .returning();
+    
+    return updatedFeed;
+  }
+
+  async deleteThreatFeed(id: number): Promise<boolean> {
+    const result = await db.delete(threatFeeds).where(eq(threatFeeds.id, id));
+    return result !== undefined && Array.isArray(result) && result.length > 0;
+  }
+
+  async listThreatFeeds(): Promise<ThreatFeed[]> {
+    return await db.select().from(threatFeeds);
+  }
+
+  async toggleThreatFeedStatus(id: number, isActive: boolean): Promise<ThreatFeed | undefined> {
+    const now = new Date();
+    
+    const [updatedFeed] = await db
+      .update(threatFeeds)
+      .set({
+        isActive,
+        status: isActive ? 'active' : 'inactive',
+        updatedAt: now
+      } as any)
+      .where(eq(threatFeeds.id, id))
+      .returning();
+    
+    return updatedFeed;
+  }
+
+  async getPlaybook(id: number): Promise<Playbook | undefined> {
+    const [playbook] = await db.select().from(playbooks).where(eq(playbooks.id, id));
+    return playbook;
+  }
+
+  async createPlaybook(insertPlaybook: InsertPlaybook): Promise<Playbook> {
+    // Always set timestamps
+    const now = new Date();
+    const playbookWithTimestamps = {
+      ...insertPlaybook,
+      createdAt: now,
+      updatedAt: now
+    };
+    
+    const [playbook] = await db.insert(playbooks).values(playbookWithTimestamps).returning();
+    return playbook;
+  }
+
+  async updatePlaybook(id: number, updateData: Partial<InsertPlaybook>): Promise<Playbook | undefined> {
+    // Always update the timestamp
+    const updatedData = {
+      ...updateData,
+      updatedAt: new Date()
+    } as Partial<InsertPlaybook>;
+    
+    const [updatedPlaybook] = await db
+      .update(playbooks)
+      .set(updatedData)
+      .where(eq(playbooks.id, id))
+      .returning();
+    
+    return updatedPlaybook;
+  }
+
+  async deletePlaybook(id: number): Promise<boolean> {
+    const result = await db.delete(playbooks).where(eq(playbooks.id, id));
+    return result !== undefined && Array.isArray(result) && result.length > 0;
+  }
+
+  async listPlaybooks(): Promise<Playbook[]> {
+    return await db.select().from(playbooks);
+  }
+
+  async togglePlaybookStatus(id: number, isActive: boolean): Promise<Playbook | undefined> {
+    const now = new Date();
+    
+    const [updatedPlaybook] = await db
+      .update(playbooks)
+      .set({
+        isActive,
+        status: isActive ? 'active' : 'inactive',
+        updatedAt: now
+      } as any)
+      .where(eq(playbooks.id, id))
+      .returning();
+    
+    return updatedPlaybook;
+  }
+
+  async executePlaybook(id: number, triggeredBy?: number, triggerEntityId?: number): Promise<PlaybookExecution> {
+    // Verify the playbook exists
+    const playbook = await this.getPlaybook(id);
+    if (!playbook) {
+      throw new Error(`Playbook with ID ${id} not found`);
+    }
+    
+    // Create a new execution record
+    const now = new Date();
+    const execution = {
+      playbookId: id,
+      status: 'running',
+      triggerSource: triggerEntityId ? (triggerEntityId > 0 ? 'incident' : 'alert') : 'manual',
+      startedAt: now,
+      completedAt: null,
+      triggeredBy: triggeredBy || null,
+      triggerEntityId: triggerEntityId || null,
+      results: {},
+      error: null
+    };
+    
+    // Insert the execution
+    const [playbookExecution] = await db.insert(playbookExecutions).values(execution).returning();
+    
+    // Update the playbook's last run status
+    await db
+      .update(playbooks)
+      .set({
+        lastExecuted: now,
+        status: 'active',
+        lastModified: now
+      } as any)
+      .where(eq(playbooks.id, id));
+    
+    return playbookExecution;
+  }
+  
+  // Incrementa el contador de ejecuciones de un playbook
+  async incrementPlaybookExecutionCount(id: number, executionTimeMs?: number): Promise<void> {
+    const playbook = await this.getPlaybook(id);
+    if (!playbook) return;
+    
+    // Calcular el tiempo promedio de ejecución
+    let avgExecutionTime = playbook.avgExecutionTime || 0;
+    const executionCount = (playbook.executionCount || 0) + 1;
+    
+    if (executionTimeMs) {
+      if (avgExecutionTime === 0) {
+        avgExecutionTime = executionTimeMs;
+      } else {
+        // Promedio ponderado para dar más importancia a las ejecuciones recientes
+        avgExecutionTime = Math.round((avgExecutionTime * 0.7) + (executionTimeMs * 0.3));
+      }
+    }
+    
+    await db
+      .update(playbooks)
+      .set({
+        executionCount,
+        avgExecutionTime,
+        lastModified: new Date()
+      } as any)
+      .where(eq(playbooks.id, id));
+  }
+
+  async getPlaybookExecution(id: number): Promise<PlaybookExecution | undefined> {
+    const [execution] = await db.select().from(playbookExecutions).where(eq(playbookExecutions.id, id));
+    return execution;
+  }
+
+  async listPlaybookExecutions(playbookId?: number, limit?: number): Promise<PlaybookExecution[]> {
+    let query = db.select().from(playbookExecutions).orderBy(desc(playbookExecutions.startedAt as any));
+    
+    if (playbookId) {
+      query = query.where(eq(playbookExecutions.playbookId, playbookId));
+    }
+    
+    if (limit) {
+      query = query.limit(limit);
+    }
+    
+    return await query;
+  }
+
+  async updatePlaybookExecution(id: number, data: Partial<PlaybookExecution>): Promise<PlaybookExecution | undefined> {
+    const [updatedExecution] = await db
+      .update(playbookExecutions)
+      .set(data)
+      .where(eq(playbookExecutions.id, id))
+      .returning();
+    
+    return updatedExecution;
+  }
+  
+  // Agent methods
+  async getAgent(id: number): Promise<Agent | undefined> {
+    const [agent] = await db.select().from(agents).where(eq(agents.id, id));
+    return agent;
+  }
+
+  async getAgentByIdentifier(agentIdentifier: string): Promise<Agent | undefined> {
+    const [agent] = await db.select().from(agents).where(eq(agents.agentIdentifier, agentIdentifier));
+    return agent;
+  }
+
+  async createAgent(insertAgent: InsertAgent): Promise<Agent> {
+    // Always set timestamps
+    const now = new Date();
+    const agentWithTimestamps = {
+      ...insertAgent,
+      installedAt: now
+    };
+    
+    const [agent] = await db.insert(agents).values(agentWithTimestamps).returning();
+    return agent;
+  }
+
+  async updateAgent(id: number, updateData: Partial<InsertAgent>): Promise<Agent | undefined> {
+    const [updatedAgent] = await db
+      .update(agents)
+      .set(updateData)
+      .where(eq(agents.id, id))
+      .returning();
+    
+    return updatedAgent;
+  }
+
+  async deleteAgent(id: number): Promise<boolean> {
+    const result = await db.delete(agents).where(eq(agents.id, id));
+    return result !== undefined && Array.isArray(result) && result.length > 0;
+  }
+
+  async listAgents(userId?: number): Promise<Agent[]> {
+    let query = db.select().from(agents);
+    
+    if (userId) {
+      query = query.where(eq(agents.userId, userId));
+    }
+    
+    return await query.orderBy(desc(agents.lastHeartbeat));
+  }
+
+  async updateAgentHeartbeat(id: number): Promise<void> {
+    const now = new Date();
+    await db
+      .update(agents)
+      .set({
+        lastHeartbeat: now
+      })
+      .where(eq(agents.id, id));
+  }
+
+  async updateAgentStatus(id: number, status: string): Promise<Agent | undefined> {
+    const [updatedAgent] = await db
+      .update(agents)
+      .set({ status })
+      .where(eq(agents.id, id))
+      .returning();
+    
+    return updatedAgent;
+  }
+}
+
+export const storage = new DatabaseStorage();

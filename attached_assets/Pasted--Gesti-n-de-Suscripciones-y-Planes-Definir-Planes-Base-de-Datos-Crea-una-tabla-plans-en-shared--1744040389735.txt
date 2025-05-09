@@ -1,0 +1,33 @@
+ Gestión de Suscripciones y Planes
+
+Definir Planes (Base de Datos):
+
+Crea una tabla plans en shared/schema.ts.
+TypeScript
+
+// En shared/schema.ts
+export const plans = pgTable("plans", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(), // ej: "Free", "Pro", "Enterprise"
+  description: text("description"),
+  priceMonthly: integer("price_monthly"), // en centavos o la unidad menor
+  priceYearly: integer("price_yearly"),
+  agentLimit: integer("agent_limit").notNull(), // 0 o -1 para ilimitado en plan de pago, 1 para plan gratis
+  features: jsonb("features"), // Lista de características incluidas
+  stripePriceIdMonthly: text("stripe_price_id_monthly").unique(), // IDs de precio de Stripe
+  stripePriceIdYearly: text("stripe_price_id_yearly").unique(),
+});
+Popula esta tabla con tus planes (Free: agentLimit=1, Paid: agentLimit=-1).
+Integración con Pasarela de Pago (Ej. Stripe):
+
+Elegir Proveedor: Stripe es una opción popular y robusta.
+Crear Cuentas: Regístrate en Stripe y obtén tus claves API (publicables y secretas). Almacena la clave secreta de forma segura (variables de entorno o gestor de secretos).
+Instalar SDK: npm install stripe o yarn add stripe.
+Crear Productos y Precios en Stripe: Define tus planes (Free, Paid) como Productos en Stripe, y crea los Precios correspondientes (mensual/anual) para el plan de pago. Guarda los IDs de los Precios en tu tabla plans.
+Flujo de Suscripción:
+UI: Añade una sección de "Billing" o "Subscription" en tu frontend React. Muestra los planes disponibles.
+Backend API: Crea endpoints para:
+Iniciar el checkout de Stripe (stripe.checkout.sessions.create).
+Manejar webhooks de Stripe (muy importante): Necesitas un endpoint público para recibir eventos de Stripe como checkout.session.completed, customer.subscription.updated, invoice.payment_failed, etc. Estos webhooks actualizarán el subscriptionStatus, planId, stripeCustomerId, etc., en tu tabla organizations.
+Gestión de Suscripciones: Permite a los usuarios cambiar de plan, actualizar método de pago y cancelar suscripción a través de la UI, interactuando con la API de Stripe y tu backend.
+Actualizar organizations: Asegúrate de que la tabla organizations tenga los campos necesarios (planId, subscriptionStatus, stripeCustomerId, etc.) como se mencionó en la Fase 1.
