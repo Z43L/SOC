@@ -8,7 +8,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { InsertUser, insertUserSchema } from "@shared/schema";
 import { Loader2 } from "lucide-react";
 import { useForm } from "react-hook-form";
-import { Redirect } from "wouter";
+import { Redirect, useLocation } from "wouter";
+import { useEffect } from "react";
 import { z } from "zod";
 import { useState } from "react";
 
@@ -19,7 +20,7 @@ const loginSchema = z.object({
 
 type LoginData = z.infer<typeof loginSchema>;
 
-const registerSchema = insertUserSchema.extend({
+const registerSchema = insertUserSchema.omit({ organizationId: true }).extend({
   passwordConfirm: z.string().min(6, "Password must be at least 6 characters"),
 }).refine(data => data.password === data.passwordConfirm, {
   message: "Passwords do not match",
@@ -30,6 +31,15 @@ type RegisterData = z.infer<typeof registerSchema>;
 
 export default function AuthPage() {
   const { user, loginMutation, registerMutation } = useAuth();
+  const [, navigate] = useLocation();
+  
+  // Redirect to home after successful registration
+  useEffect(() => {
+    if (registerMutation.isSuccess) {
+      navigate("/");
+    }
+  }, [registerMutation.isSuccess, navigate]);
+
   const [searchParams] = useState(() => new URLSearchParams(window.location.search));
   const defaultTab = searchParams.get('action') === 'register' ? 'register' : 'login';
   const planParam = searchParams.get('plan');

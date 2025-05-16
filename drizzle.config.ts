@@ -1,7 +1,7 @@
 import { defineConfig } from "drizzle-kit";
 
 if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL, ensure the database is provisioned");
+  throw new Error("DATABASE_URL is not defined. Ensure it is set in the .env file.");
 }
 
 export default defineConfig({

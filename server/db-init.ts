@@ -23,13 +23,45 @@ async function initializeDatabase() {
   console.log("Initializing database with sample data...");
   
   try {
+    // Ensure there is a plan for the test organization
+    let plansList = await storage.listPlans();
+    let defaultPlan = plansList.find(p => p.name.toLowerCase() === 'free');
+    if (!defaultPlan) {
+      defaultPlan = await storage.createPlan({
+        name: "Free",
+        description: "Default free plan",
+        priceMonthly: 0,
+        priceYearly: 0,
+        features: JSON.stringify([]),
+        maxUsers: 10,
+        maxAgents: 5,
+        maxAlerts: 100,
+        isActive: true
+      });
+    }
+    // Create a test organization
+    const orgName = 'Test Organization';
+    let testOrg = (await storage.listOrganizations()).find(o => o.name === orgName);
+    if (!testOrg) {
+      testOrg = await storage.createOrganization({
+        name: orgName,
+        planId: defaultPlan.id,
+        subscriptionStatus: 'active',
+        email: 'test-org@example.com',
+        contactName: 'Test Org',
+        contactEmail: 'test-org@example.com',
+        settings: JSON.stringify({ theme: 'light' })
+      });
+    }
+    
     // Crear un usuario de prueba
     const testUser: InsertUser = {
       name: "Z43L",
       username: "Z43L", 
       password: await hashPassword("password123"),
       email: "z43l@example.com",
-      role: "Administrator"
+      role: "Administrator",
+      organizationId: testOrg.id
     };
     
     // Comprobar si el usuario ya existe

@@ -5,7 +5,7 @@ import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
-import { User as SelectUser } from "@shared/schema";
+import type { InsertOrganization } from "@shared/schema";
 
 declare global {
   namespace Express {
@@ -127,12 +127,13 @@ export function setupAuth(app: Express) {
       const newOrganization = await storage.createOrganization(organizationData);
       
       // 3. Crear el usuario asociado a la organización
-      const user = await storage.createUser({
+      const userPayload = {
         ...req.body,
         password: await hashPassword(req.body.password),
         organizationId: newOrganization.id,
-        role: 'admin' // El primer usuario es automáticamente admin
-      });
+        role: req.body.role || 'Security Analyst'
+      };
+      const user = await storage.createUser(userPayload);
 
       req.login(user, (err) => {
         if (err) return next(err);

@@ -1,3 +1,8 @@
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
@@ -38,9 +43,8 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // La inicialización de datos ficticios ha sido desactivada
-  // Ahora solo trabajamos con datos reales de las API externas
-  // await initializeDatabase();
+  // Seed database with sample data, including test user
+  await initializeDatabase();
   
   const server = await registerRoutes(app);
 
