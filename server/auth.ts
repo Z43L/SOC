@@ -5,11 +5,12 @@ import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
-import type { InsertOrganization } from "@shared/schema";
+import type { InsertOrganization, User as DbUser } from "@shared/schema";
 
+// Extend Express.User with the shared User type
 declare global {
   namespace Express {
-    interface User extends SelectUser {}
+    interface User extends DbUser {}
   }
 }
 
@@ -35,7 +36,9 @@ export function setupAuth(app: Express) {
     saveUninitialized: false,
     store: storage.sessionStore,
     cookie: {
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      secure: process.env.NODE_ENV === 'production', // require HTTPS in prod
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     }
   };
 
@@ -149,6 +152,7 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", passport.authenticate("local"), (req, res) => {
+    (req.session as any).user = req.user;
     res.status(200).json(req.user);
   });
 

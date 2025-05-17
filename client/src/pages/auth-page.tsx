@@ -20,20 +20,24 @@ const loginSchema = z.object({
 
 type LoginData = z.infer<typeof loginSchema>;
 
-const registerSchema = insertUserSchema.omit({ organizationId: true }).extend({
-  passwordConfirm: z.string().min(6, "Password must be at least 6 characters"),
-}).refine(data => data.password === data.passwordConfirm, {
+const organizationRegisterSchema = z.object({
+  organizationName: z.string().min(2, { message: "Organization name must be at least 2 characters." }),
+  adminName: z.string().min(2, { message: "Your name must be at least 2 characters." }),
+  adminUsername: z.string().min(2, { message: "Username must be at least 2 characters." }),
+  adminEmail: z.string().email({ message: "Please enter a valid email address." }),
+  adminPassword: z.string().min(8, { message: "Password must be at least 8 characters." }),
+  passwordConfirm: z.string().min(8, { message: "Password confirmation must be at least 8 characters." }),
+}).refine(data => data.adminPassword === data.passwordConfirm, {
   message: "Passwords do not match",
   path: ["passwordConfirm"],
 });
 
-type RegisterData = z.infer<typeof registerSchema>;
+type OrganizationRegisterData = z.infer<typeof organizationRegisterSchema>;
 
 export default function AuthPage() {
   const { user, loginMutation, registerMutation } = useAuth();
   const [, navigate] = useLocation();
   
-  // Redirect to home after successful registration
   useEffect(() => {
     if (registerMutation.isSuccess) {
       navigate("/");
@@ -52,15 +56,15 @@ export default function AuthPage() {
     },
   });
 
-  const registerForm = useForm<RegisterData>({
-    resolver: zodResolver(registerSchema),
+  const registerForm = useForm<OrganizationRegisterData>({
+    resolver: zodResolver(organizationRegisterSchema),
     defaultValues: {
-      name: "",
-      username: "",
-      email: "",
-      password: "",
+      organizationName: "",
+      adminName: "",
+      adminUsername: "",
+      adminEmail: "",
+      adminPassword: "",
       passwordConfirm: "",
-      role: "Security Analyst",
     },
   });
 
@@ -68,27 +72,24 @@ export default function AuthPage() {
     loginMutation.mutate(data);
   };
 
-  const onRegisterSubmit = (data: RegisterData) => {
-    // Remove passwordConfirm as it's not part of the InsertUser schema
-    const { passwordConfirm, ...userData } = data;
-    
-    // Incluir información del plan si está presente en la URL
-    if (planParam) {
-      // @ts-ignore - selectedPlan será manejado por el servidor
-      userData.selectedPlan = planParam;
-    }
-    
-    registerMutation.mutate(userData);
+  const onRegisterSubmit = (values: OrganizationRegisterData) => {
+    const { organizationName, adminName, adminUsername, adminEmail, adminPassword } = values;
+    registerMutation.mutate({
+      name: adminName,
+      username: adminUsername,
+      email: adminEmail,
+      password: adminPassword,
+      role: 'Administrator',
+      organizationName: organizationName,
+    } as any);
   };
 
-  // Redirect if already logged in
   if (user) {
     return <Redirect to="/" />;
   }
 
   return (
     <div className="flex min-h-screen">
-      {/* Authentication form */}
       <div className="flex flex-col justify-center items-center w-full lg:w-1/2 p-8">
         <div className="w-full max-w-md">
           <h1 className="text-3xl font-bold mb-2">SOC-Inteligente</h1>
@@ -99,10 +100,9 @@ export default function AuthPage() {
           <Tabs defaultValue={defaultTab} className="w-full">
             <TabsList className="grid w-full grid-cols-2 mb-8">
               <TabsTrigger value="login">Login</TabsTrigger>
-              <TabsTrigger value="register">Register</TabsTrigger>
+              <TabsTrigger value="register">Register Organization</TabsTrigger>
             </TabsList>
 
-            {/* Login Tab */}
             <TabsContent value="login">
               <Card>
                 <CardHeader>
@@ -167,13 +167,12 @@ export default function AuthPage() {
               </Card>
             </TabsContent>
 
-            {/* Register Tab */}
             <TabsContent value="register">
               <Card>
                 <CardHeader>
-                  <CardTitle>Create an account</CardTitle>
+                  <CardTitle>Register Organization</CardTitle>
                   <CardDescription>
-                    Enter your details to create a new account
+                    Create a new organization and administrator account.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -184,10 +183,23 @@ export default function AuthPage() {
                     >
                       <FormField
                         control={registerForm.control}
-                        name="name"
+                        name="organizationName"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Full Name</FormLabel>
+                            <FormLabel>Organization Name</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Your Organization Inc." {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={registerForm.control}
+                        name="adminName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Your Name</FormLabel>
                             <FormControl>
                               <Input placeholder="John Doe" {...field} />
                             </FormControl>
@@ -197,12 +209,12 @@ export default function AuthPage() {
                       />
                       <FormField
                         control={registerForm.control}
-                        name="username"
+                        name="adminUsername"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Username</FormLabel>
+                            <FormLabel>Administrator Username</FormLabel>
                             <FormControl>
-                              <Input placeholder="johndoe" {...field} />
+                              <Input placeholder="adminuser" {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -210,14 +222,14 @@ export default function AuthPage() {
                       />
                       <FormField
                         control={registerForm.control}
-                        name="email"
+                        name="adminEmail"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Email</FormLabel>
+                            <FormLabel>Administrator Email</FormLabel>
                             <FormControl>
                               <Input
                                 type="email"
-                                placeholder="john.doe@example.com"
+                                placeholder="admin@example.com"
                                 {...field}
                               />
                             </FormControl>
@@ -227,14 +239,14 @@ export default function AuthPage() {
                       />
                       <FormField
                         control={registerForm.control}
-                        name="password"
+                        name="adminPassword"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Password</FormLabel>
+                            <FormLabel>Administrator Password</FormLabel>
                             <FormControl>
                               <Input
                                 type="password"
-                                placeholder="••••••••"
+                                placeholder="********"
                                 {...field}
                               />
                             </FormControl>
@@ -247,11 +259,11 @@ export default function AuthPage() {
                         name="passwordConfirm"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Confirm Password</FormLabel>
+                            <FormLabel>Confirm Administrator Password</FormLabel>
                             <FormControl>
                               <Input
                                 type="password"
-                                placeholder="••••••••"
+                                placeholder="********"
                                 {...field}
                               />
                             </FormControl>
@@ -267,10 +279,10 @@ export default function AuthPage() {
                         {registerMutation.isPending ? (
                           <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Creating account...
+                            Registering...
                           </>
                         ) : (
-                          "Register"
+                          "Register Organization"
                         )}
                       </Button>
                     </form>
@@ -286,7 +298,6 @@ export default function AuthPage() {
         </div>
       </div>
 
-      {/* Hero section */}
       <div className="hidden lg:flex flex-col bg-gradient-to-br from-primary to-primary/80 text-primary-foreground w-1/2 p-12 justify-center">
         <div className="max-w-xl">
           <h1 className="text-4xl font-bold mb-6">AI-Powered Security Operations Center</h1>

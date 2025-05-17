@@ -83,7 +83,7 @@ export class MacOSAgent extends AgentBase {
       osInfo = productName.trim();
       version = `${productVersion.trim()} (${buildVersion.trim()})`;
     } catch (error) {
-      console.error('Error obteniendo versión detallada de macOS:', error);
+      console.error('Error getting detailed macOS version (sw_vers):', error);
     }
     
     return {
@@ -112,7 +112,7 @@ export class MacOSAgent extends AgentBase {
           cpuUsage = Math.round(userPercent + sysPercent);
         }
       } catch (error) {
-        console.error('Error obteniendo uso de CPU:', error);
+        console.error('Error getting CPU usage (top):', error);
       }
       
       // Uso de memoria
@@ -131,7 +131,7 @@ export class MacOSAgent extends AgentBase {
           diskUsage = parseInt(match[1], 10);
         }
       } catch (error) {
-        console.error('Error obteniendo uso de disco:', error);
+        console.error('Error getting disk usage (df):', error);
       }
       
       // Procesos en ejecución
@@ -140,7 +140,7 @@ export class MacOSAgent extends AgentBase {
         const { stdout } = await exec('ps -A | wc -l');
         processCount = parseInt(stdout.trim(), 10);
       } catch (error) {
-        console.error('Error contando procesos:', error);
+        console.error('Error counting processes (ps):', error);
       }
       
       // Conexiones de red activas
@@ -149,7 +149,7 @@ export class MacOSAgent extends AgentBase {
         const { stdout } = await exec('netstat -an | grep -E "tcp4|udp4" | wc -l');
         networkConnections = parseInt(stdout.trim(), 10);
       } catch (error) {
-        console.error('Error contando conexiones de red:', error);
+        console.error('Error counting network connections (netstat):', error);
       }
       
       // Uptime en segundos
@@ -165,7 +165,7 @@ export class MacOSAgent extends AgentBase {
         networkConnections
       };
     } catch (error) {
-      console.error('Error obteniendo métricas del sistema:', error);
+      console.error('Error getting system metrics:', error);
       
       // Devolver métricas básicas en caso de error
       return {
@@ -177,6 +177,7 @@ export class MacOSAgent extends AgentBase {
         processCount: 0,
         networkConnections: 0
       };
+
     }
   }
   
@@ -195,7 +196,7 @@ export class MacOSAgent extends AgentBase {
       // Configurar comprobación periódica
       this.processWatcher = setInterval(() => {
         this.checkProcesses().catch(error => {
-          console.error('Error en monitoreo de procesos:', error);
+          console.error('Error in process monitoring:', error);
         });
       }, 60000); // Comprobar cada minuto
     }
@@ -209,7 +210,7 @@ export class MacOSAgent extends AgentBase {
       // Configurar comprobación periódica
       this.networkWatcher = setInterval(() => {
         this.checkNetworkConnections().catch(error => {
-          console.error('Error en monitoreo de red:', error);
+          console.error('Error in network monitoring:', error);
         });
       }, 60000); // Comprobar cada minuto
     }
@@ -274,7 +275,7 @@ export class MacOSAgent extends AgentBase {
           name: processName,
           path: command.split(' ')[0],
           user,
-          cmdline: command,
+          commandLine: command,
           cpu: 0, // No disponible en esta consulta simple
           memory: 0, // No disponible en esta consulta simple
           company: '',
@@ -318,7 +319,7 @@ export class MacOSAgent extends AgentBase {
       // Actualizar la lista para la siguiente comprobación
       this.lastProcessList = currentProcesses;
     } catch (error) {
-      console.error('Error checking processes:', error);
+      console.error('Error checking running processes:', error);
     }
   }
   
@@ -476,7 +477,7 @@ export class MacOSAgent extends AgentBase {
       // Actualizar la lista para la siguiente comprobación
       this.lastNetworkConnections = currentConnections;
     } catch (error) {
-      console.error('Error checking network connections:', error);
+      console.error('Error checking network connections (lsof):', error);
     }
   }
   
@@ -579,11 +580,11 @@ export class MacOSAgent extends AgentBase {
           }
         } catch (error) {
           // Ignorar errores de permisos o archivos que desaparecen
-          console.debug(`Error scanning ${fullPath}:`, error);
+          console.error(`Error scanning file or directory '${fullPath}':`, error);
         }
       }
     } catch (error) {
-      console.error(`Error scanning directory ${directory}:`, error);
+      console.error(`Error scanning directory '${directory}':`, error);
     }
   }
   
@@ -639,15 +640,15 @@ export class MacOSAgent extends AgentBase {
                 });
               }
             } catch (error) {
-              console.debug(`Error reading plist ${fullPath}:`, error);
+              console.error(`Error reading plist file '${fullPath}':`, error);
             }
           }
         } catch (error) {
-          console.debug(`Error accessing directory ${dir}:`, error);
+          console.error(`Error accessing directory '${dir}':`, error);
         }
       }
     } catch (error) {
-      console.error('Error scanning startup items:', error);
+      console.error('Error scanning macOS startup items:', error);
     }
   }
   
@@ -793,7 +794,7 @@ export class MacOSAgent extends AgentBase {
           }
         } catch (error) {
           // Ignorar errores de permisos
-          console.debug(`Error scanning ${fullPath}:`, error);
+          console.error(`Error scanning file or directory '${fullPath}':`, error);
         }
       }
     } catch (error) {

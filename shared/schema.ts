@@ -175,7 +175,7 @@ export const insertAiInsightSchema = createInsertSchema(aiInsights).omit({
 export const metrics = pgTable("metrics", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  value: integer("value").notNull(),
+  value: text("value").notNull(), // Changed from integer to text
   trend: text("trend"), // 'up', 'down', 'stable'
   changePercentage: integer("change_percentage"),
   timestamp: timestamp("timestamp").defaultNow(),

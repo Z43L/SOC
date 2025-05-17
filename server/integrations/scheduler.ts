@@ -11,9 +11,10 @@ import { importAllAlerts } from "./alerts";
 
 /**
  * Actualiza todos los datos del sistema (amenazas y alertas)
+ * @param organizationId El ID de la organización para la cual actualizar datos
  * @returns Resultado de la operación
  */
-export async function updateAllData(): Promise<{
+export async function updateAllData(organizationId?: number): Promise<{
   success: boolean;
   message: string;
   details: {
@@ -22,15 +23,15 @@ export async function updateAllData(): Promise<{
   };
 }> {
   try {
-    log('Iniciando actualización completa de datos...', 'scheduler');
+    log(`Iniciando actualización completa de datos para la organización ${organizationId || 'global'}...`, 'scheduler');
     
-    // Actualizar feeds de threat intelligence
-    const feedsResult = await importAllFeeds();
-    log(`Actualización de feeds de threat intelligence: ${feedsResult.success ? 'Éxito' : 'Error'} - ${feedsResult.message}`, 'scheduler');
+    // Actualizar feeds de threat intelligence (asumiendo que importAllFeeds puede ser adaptado o es global)
+    const feedsResult = await importAllFeeds(/* organizationId */); // Adaptar si es necesario
+    log(`Actualización de feeds de threat intelligence: ${feedsResult.success ? 'Éxito' : 'Error'} - ${feedsResult.message || ''}`, 'scheduler');
     
-    // Actualizar alertas
-    const alertsResult = await importAllAlerts();
-    log(`Actualización de alertas: ${alertsResult.success ? 'Éxito' : 'Error'} - ${alertsResult.message}`, 'scheduler');
+    // Actualizar alertas (asumiendo que importAllAlerts puede ser adaptado o es global)
+    const alertsResult = await importAllAlerts(/* organizationId */); // Adaptar si es necesario
+    log(`Actualización de alertas: ${alertsResult.success ? 'Éxito' : 'Error'} - ${alertsResult.message || ''}`, 'scheduler');
     
     // Crear registro de la actualización
     const successful = feedsResult.success || alertsResult.success;
@@ -40,7 +41,8 @@ export async function updateAllData(): Promise<{
       result: {
         feeds: feedsResult,
         alerts: alertsResult
-      }
+      },
+      organizationId // Añadir organizationId
     });
     
     return {
@@ -49,11 +51,11 @@ export async function updateAllData(): Promise<{
       details: {
         feeds: {
           success: feedsResult.success,
-          message: feedsResult.message
+          message: feedsResult.message || '' // Asegurar que message no sea undefined
         },
         alerts: {
           success: alertsResult.success,
-          message: alertsResult.message
+          message: alertsResult.message || '' // Asegurar que message no sea undefined
         }
       }
     };
@@ -65,7 +67,8 @@ export async function updateAllData(): Promise<{
     await createUpdateLog({
       type: 'full_refresh',
       success: false,
-      error: errorMsg
+      error: errorMsg,
+      organizationId // Añadir organizationId
     });
     
     return {
@@ -80,20 +83,21 @@ export async function updateAllData(): Promise<{
 }
 
 /**
- * Actualiza y calcula las métricas del sistema
+ * Actualiza y calcula las métricas del sistema para una organización específica
+ * @param organizationId El ID de la organización para la cual calcular métricas
  * @returns Resultado de la operación
  */
-export async function updateSystemMetrics(): Promise<{
+export async function updateSystemMetrics(organizationId?: number): Promise<{
   success: boolean;
   message: string;
   updatedMetrics: string[];
 }> {
   try {
-    log('Actualizando métricas del sistema...', 'scheduler');
+    log(`Actualizando métricas del sistema para la organización ${organizationId || 'global'}...`, 'scheduler');
     
-    // Obtener todos los datos necesarios para calcular métricas
-    const alerts = await storage.listAlerts();
-    const incidents = await storage.listIncidents();
+    // Obtener todos los datos necesarios para calcular métricas, filtrados por organizationId si se proporciona
+    const alerts = await storage.listAlerts(undefined, organizationId);
+    const incidents = await storage.listIncidents(undefined, organizationId);
     
     // Contar alertas por severidad
     const alertSeverityCounts = {
@@ -191,13 +195,13 @@ export async function updateSystemMetrics(): Promise<{
     // Guardar métricas con información de tendencia
     for (const metricData of metricsToUpdate) {
       try {
-        // Buscar métrica existente
-        const existingMetric = await storage.getMetricByName(metricData.name);
+        // Buscar métrica existente para la organización
+        const existingMetric = await storage.getMetricByNameAndOrg(metricData.name, organizationId);
         
         if (existingMetric) {
           // Calcular tendencia y cambio
-          const previousValue = existingMetric.value;
-          const currentValue = metricData.value;
+          const previousValue = parseFloat(existingMetric.value); // Asegurarse que el valor es numérico
+          const currentValue = metricData.value as number;
           
           let trend = 'stable';
           let changePercentage = 0;
@@ -213,19 +217,22 @@ export async function updateSystemMetrics(): Promise<{
             }
           }
           
-          // Actualizar con información de tendencia
+          // Actualizar con información de tendencia, asociando con organizationId
           await storage.createMetric({
             name: metricData.name,
-            value: currentValue,
+            value: String(currentValue), // Guardar como string
             trend,
-            changePercentage
+            changePercentage,
+            organizationId: organizationId // Asociar métrica con la organización
           });
         } else {
-          // Crear nueva métrica
+          // Crear nueva métrica, asociando con organizationId
           await storage.createMetric({
-            ...metricData,
+            ...(metricData as any),
+            value: String(metricData.value), // Guardar como string
             trend: null,
-            changePercentage: null
+            changePercentage: null,
+            organizationId: organizationId // Asociar métrica con la organización
           });
         }
         
@@ -241,7 +248,8 @@ export async function updateSystemMetrics(): Promise<{
       success: true,
       result: {
         metricsUpdated: updatedMetricNames
-      }
+      },
+      organizationId // Añadir organizationId
     });
     
     log(`Métricas actualizadas: ${updatedMetricNames.join(', ')}`, 'scheduler');
@@ -259,7 +267,8 @@ export async function updateSystemMetrics(): Promise<{
     await createUpdateLog({
       type: 'metrics_update',
       success: false,
-      error: errorMsg
+      error: errorMsg,
+      organizationId // Añadir organizationId
     });
     
     return {
@@ -279,10 +288,9 @@ async function createUpdateLog(logData: {
   success: boolean;
   result?: any;
   error?: string;
+  organizationId?: number; // Añadir organizationId al log
 }): Promise<void> {
   try {
-    // En una implementación real, almacenaríamos estos logs en la base de datos
-    // Para este proyecto, simplemente los registramos en la consola
     log(`Log de actualización: ${JSON.stringify({
       ...logData,
       timestamp: new Date().toISOString()

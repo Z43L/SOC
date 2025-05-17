@@ -24,9 +24,9 @@ import { useState } from "react";
 function Router() {
   const { user } = useAuth();
   
-  const [organization] = useState({
-    name: "Acme Corp",
-  });
+  const [organization] = useState(() => ({
+    name: user && user.organizationId ? `Organization ${user.organizationId}` : "Organization",
+  }));
 
   // Extract user information for the sidebar
   const userInfo = user ? {
@@ -44,9 +44,9 @@ function Router() {
       <Route path="/" component={HomePage} />
       <ProtectedRoute path="/dashboard" component={() => <Dashboard user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/alerts" component={() => <Alerts user={userInfo} organization={organization} />} />
-      <ProtectedRoute path="/incident/new" component={() => <IncidentNew user={userInfo} organization={organization} />} />
+      <ProtectedRoute path="/incident/new" component={() => <IncidentNew id="new" user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/incident/:id" component={({ id }) => <Incident id={id} user={userInfo} organization={organization} />} />
-      <ProtectedRoute path="/incidents" component={() => <Alerts user={userInfo} organization={organization} tab="incidents" />} />
+      <ProtectedRoute path="/incidents" component={() => <Alerts user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/threat-intelligence" component={() => <ThreatIntelligence user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/soar" component={() => <Soar user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/analytics" component={() => <Analytics user={userInfo} organization={organization} />} />

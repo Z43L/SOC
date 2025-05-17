@@ -154,8 +154,19 @@ export default function Agents({ user, organization }: any) {
         
         toast({
           title: "Agente creado correctamente",
-          description: "El paquete de instalación está listo para descargar",
+          description: "El paquete de instalación está listo para descargar. Iniciando descarga...",
         });
+
+        // Iniciar descarga automáticamente
+        if (data.downloadUrl) {
+          const link = document.createElement('a');
+          link.href = data.downloadUrl;
+          link.setAttribute('download', ''); // Esto sugiere al navegador que descargue el archivo
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+
       } else {
         toast({
           title: "Error al crear agente",

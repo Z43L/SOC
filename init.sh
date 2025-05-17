@@ -11,15 +11,15 @@ export BUILD_OUTPUT_DIR="dist/public"
 
 # Build the application
 echo "Building the application..."
-docker-compose run --rm app npm run build
+sudo docker-compose run --rm app npm run build
 
 # Start the Docker Compose services
 echo "Starting Docker Compose services..."
-docker-compose up -d
+sudo docker-compose up -d
 
 # Wait for the database to be ready
 echo "Waiting for the database to be ready..."
-while ! docker exec soc_db pg_isready -U postgres > /dev/null 2>&1; do
+while ! sudo docker exec soc_db pg_isready -U postgres > /dev/null 2>&1; do
   sleep 1
   echo "Waiting..."
 done
@@ -29,14 +29,14 @@ echo "Database is ready. Applying migrations..."
 APP_CONTAINER=$(docker ps -qf "name=soc-app")
 if [ -z "$APP_CONTAINER" ]; then
   echo "Error: Application container not found."
-  docker ps
+  sudo docker ps
   exit 1
 fi
 
 echo "Running migrations in container $APP_CONTAINER..."
 docker exec $APP_CONTAINER npm run db:push || {
   echo "Error: Failed to apply migrations."
-  docker logs $APP_CONTAINER
+  sudo docker logs $APP_CONTAINER
   exit 1
 }
 

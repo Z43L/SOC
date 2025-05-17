@@ -1,770 +1,751 @@
-import { 
-  users, type User, type InsertUser,
-  alerts, type Alert, type InsertAlert,
-  incidents, type Incident, type InsertIncident,
-  threatIntel, type ThreatIntel, type InsertThreatIntel,
-  aiInsights, type AiInsight, type InsertAiInsight,
-  metrics, type Metric, type InsertMetric,
-  connectors, type Connector, type InsertConnector,
-  threatFeeds, type ThreatFeed, type InsertThreatFeed,
-  playbooks, type Playbook, type InsertPlaybook,
-  playbookExecutions, type PlaybookExecution, type InsertPlaybookExecution,
-  agents, type Agent, type InsertAgent,
-  plans, type Plan, type InsertPlan,
-  organizations, type Organization, type InsertOrganization
-} from "@shared/schema";
+import session, { Store } from 'express-session';
+import connectPgSimple from 'connect-pg-simple';
+import { db, pool } from './db';
+import * as schema from '@shared/schema';
+import {
+  Alert, InsertAlert,
+  AiInsight, InsertAiInsight,
+  Playbook, InsertPlaybook, PlaybookExecution, InsertPlaybookExecution, PlaybookStatusTypes,
+  User, InsertUser,
+  Incident,
+  ThreatIntel, InsertThreatIntel,
+  Metric, InsertMetric,
+  Connector, InsertConnector, ConnectorStatusTypes,
+  ThreatFeed, InsertThreatFeed, ThreatFeedStatusTypes,
+  Agent, InsertAgent, AgentStatusTypes,
+  Plan, InsertPlan,
+  Organization, InsertOrganization
+} from '@shared/schema';
+import { IStorage } from './istorage';
+import { eq, desc, asc, sql, and, SQL, count, ilike, or, gte, lte, AnyColumn } from 'drizzle-orm';
 
-import { Store } from "express-session";
-import session from "express-session";
-import { db } from "./db";
-import { eq, desc, asc, sql } from "drizzle-orm";
-import connectPg from "connect-pg-simple";
-import pg from "pg";
+const PgStore = connectPgSimple(session);
 
-// PostgreSQL session store setup
-const { Pool } = pg;
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
-const PostgresStore = connectPg(session);
-
-export interface IStorage {
-  // Session store
-  sessionStore: Store;
-  
-  // User methods
-  getUser(id: number): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
-  listUsers(): Promise<User[]>;
-  
-  // Alert methods
-  getAlert(id: number): Promise<Alert | undefined>;
-  createAlert(alert: InsertAlert): Promise<Alert>;
-  updateAlert(id: number, alert: Partial<InsertAlert>): Promise<Alert | undefined>;
-  listAlerts(limit?: number): Promise<Alert[]>;
-  
-  // Incident methods
-  getIncident(id: number): Promise<Incident | undefined>;
-  createIncident(incident: InsertIncident): Promise<Incident>;
-  updateIncident(id: number, incident: Partial<InsertIncident>): Promise<Incident | undefined>;
-  listIncidents(limit?: number): Promise<Incident[]>;
-  
-  // Threat Intel methods
-  getThreatIntel(id: number): Promise<ThreatIntel | undefined>;
-  createThreatIntel(intel: InsertThreatIntel): Promise<ThreatIntel>;
-  listThreatIntel(limit?: number): Promise<ThreatIntel[]>;
-  
-  // AI Insight methods
-  getAiInsight(id: number): Promise<AiInsight | undefined>;
-  createAiInsight(insight: InsertAiInsight): Promise<AiInsight>;
-  listAiInsights(limit?: number): Promise<AiInsight[]>;
-  
-  // Metrics methods
-  getMetric(id: number): Promise<Metric | undefined>;
-  createMetric(metric: InsertMetric): Promise<Metric>;
-  getMetricByName(name: string): Promise<Metric | undefined>;
-  listMetrics(): Promise<Metric[]>;
-  
-  // Connector methods
-  getConnector(id: number): Promise<Connector | undefined>;
-  createConnector(connector: InsertConnector): Promise<Connector>;
-  updateConnector(id: number, connector: Partial<InsertConnector>): Promise<Connector | undefined>;
-  deleteConnector(id: number): Promise<boolean>;
-  listConnectors(): Promise<Connector[]>;
-  toggleConnectorStatus(id: number, isActive: boolean): Promise<Connector | undefined>;
-  
-  // Threat Feed methods
-  getThreatFeed(id: number): Promise<ThreatFeed | undefined>;
-  createThreatFeed(feed: InsertThreatFeed): Promise<ThreatFeed>;
-  updateThreatFeed(id: number, feed: Partial<InsertThreatFeed>): Promise<ThreatFeed | undefined>;
-  deleteThreatFeed(id: number): Promise<boolean>;
-  listThreatFeeds(): Promise<ThreatFeed[]>;
-  toggleThreatFeedStatus(id: number, isActive: boolean): Promise<ThreatFeed | undefined>;
-  
-  // Playbook methods
-  getPlaybook(id: number): Promise<Playbook | undefined>;
-  createPlaybook(playbook: InsertPlaybook): Promise<Playbook>;
-  updatePlaybook(id: number, playbook: Partial<InsertPlaybook>): Promise<Playbook | undefined>;
-  deletePlaybook(id: number): Promise<boolean>;
-  listPlaybooks(): Promise<Playbook[]>;
-  togglePlaybookStatus(id: number, isActive: boolean): Promise<Playbook | undefined>;
-  executePlaybook(id: number, triggeredBy?: number, triggerEntityId?: number): Promise<PlaybookExecution>;
-  
-  // Playbook Execution methods
-  getPlaybookExecution(id: number): Promise<PlaybookExecution | undefined>;
-  listPlaybookExecutions(playbookId?: number, limit?: number): Promise<PlaybookExecution[]>;
-  updatePlaybookExecution(id: number, data: Partial<PlaybookExecution>): Promise<PlaybookExecution | undefined>;
-  
-  // Agent methods
-  getAgent(id: number): Promise<Agent | undefined>;
-  getAgentByIdentifier(agentIdentifier: string): Promise<Agent | undefined>;
-  createAgent(agent: InsertAgent): Promise<Agent>;
-  updateAgent(id: number, agent: Partial<InsertAgent>): Promise<Agent | undefined>;
-  deleteAgent(id: number): Promise<boolean>;
-  listAgents(userId?: number): Promise<Agent[]>;
-  updateAgentHeartbeat(id: number): Promise<void>;
-  updateAgentStatus(id: number, status: string): Promise<Agent | undefined>;
-  
-  // Plan methods
-  getPlan(id: number): Promise<Plan | undefined>;
-  createPlan(plan: InsertPlan): Promise<Plan>;
-  updatePlan(id: number, plan: Partial<InsertPlan>): Promise<Plan | undefined>;
-  listPlans(): Promise<Plan[]>;
-  
-  // Organization methods
-  getOrganization(id: number): Promise<Organization | undefined>;
-  createOrganization(organization: InsertOrganization): Promise<Organization>;
-  updateOrganization(id: number, organization: Partial<InsertOrganization>): Promise<Organization | undefined>;
-  listOrganizations(): Promise<Organization[]>;
-}
-
-/**
- * AVISO: La implementación de almacenamiento en memoria (MemStorage) ha sido
- * completamente eliminada para cumplir con el requisito de eliminar
- * todas las dependencias de datos ficticios y sintéticos.
- * 
- * La aplicación ahora trabaja exclusivamente con datos reales obtenidos de:
- * - Autenticidad: Todos los datos provienen de fuentes externas autorizadas
- * - Integridad: No se generan datos sintéticos/ficticios en el sistema
- * - Trazabilidad: Cada dato tiene un origen verificable en los feeds externos
- * - Persistencia: Todos los datos se almacenan en PostgreSQL
- */
-
-/**
- * PostgreSQL database storage implementation
- */
 export class DatabaseStorage implements IStorage {
   sessionStore: Store;
 
   constructor() {
-    this.sessionStore = new PostgresStore({
-      pool,
-      createTableIfMissing: true
+    this.sessionStore = new PgStore({
+      pool: pool,
+      createTableIfMissing: true,
     });
   }
-  
+
   // Plan methods
   async getPlan(id: number): Promise<Plan | undefined> {
-    const [plan] = await db.select().from(plans).where(eq(plans.id, id));
+    const [plan] = await db.select().from(schema.plans).where(eq(schema.plans.id, id));
     return plan;
   }
 
   async createPlan(insertPlan: InsertPlan): Promise<Plan> {
-    // Always set timestamps
-    const now = new Date();
-    const planWithTimestamps = {
-      ...insertPlan,
-      createdAt: now,
-      updatedAt: now
-    };
-    
-    const [plan] = await db.insert(plans).values(planWithTimestamps).returning();
+    const [plan] = await db.insert(schema.plans).values(insertPlan).returning();
     return plan;
   }
 
   async updatePlan(id: number, updateData: Partial<InsertPlan>): Promise<Plan | undefined> {
-    // Always update the timestamp
-    const updatedData = {
+    const planToUpdate: Partial<schema.Plan> = {
       ...updateData,
       updatedAt: new Date()
-    } as Partial<InsertPlan>;
-    
-    const [updatedPlan] = await db
-      .update(plans)
-      .set(updatedData)
-      .where(eq(plans.id, id))
-      .returning();
-    
-    return updatedPlan;
+    };
+    const [plan] = await db.update(schema.plans).set(planToUpdate).where(eq(schema.plans.id, id)).returning();
+    return plan;
   }
 
-  async listPlans(): Promise<Plan[]> {
-    return await db.select().from(plans);
+  async listPlans(limit: number = 10, offset: number = 0): Promise<Plan[]> {
+    return await db.select().from(schema.plans).limit(limit).offset(offset);
   }
   
   // Organization methods
   async getOrganization(id: number): Promise<Organization | undefined> {
-    const [organization] = await db.select().from(organizations).where(eq(organizations.id, id));
-    return organization;
+    const [org] = await db.select().from(schema.organizations).where(eq(schema.organizations.id, id));
+    return org;
   }
 
   async createOrganization(insertOrganization: InsertOrganization): Promise<Organization> {
-    // Always set timestamps
-    const now = new Date();
-    const organizationWithTimestamps = {
-      ...insertOrganization,
-      createdAt: now,
-      updatedAt: now
-    };
-    
-    const [organization] = await db.insert(organizations).values(organizationWithTimestamps).returning();
+    const [organization] = await db.insert(schema.organizations).values(insertOrganization).returning();
     return organization;
   }
 
   async updateOrganization(id: number, updateData: Partial<InsertOrganization>): Promise<Organization | undefined> {
-    // Always update the timestamp
-    const updatedData = {
+    const orgToUpdate: Partial<schema.Organization> = {
       ...updateData,
       updatedAt: new Date()
-    } as Partial<InsertOrganization>;
-    
-    const [updatedOrganization] = await db
-      .update(organizations)
-      .set(updatedData)
-      .where(eq(organizations.id, id))
-      .returning();
-    
+    };
+    const [updatedOrganization] = await db.update(schema.organizations).set(orgToUpdate).where(eq(schema.organizations.id, id)).returning();
     return updatedOrganization;
   }
 
-  async listOrganizations(): Promise<Organization[]> {
-    return await db.select().from(organizations);
+  async listOrganizations(limit: number = 10, offset: number = 0): Promise<Organization[]> {
+    return await db.select().from(schema.organizations).limit(limit).offset(offset);
   }
 
+  // User methods
   async getUser(id: number): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user;
+    const [user] = await db.select().from(schema.users).where(eq(schema.users.id, id));
+    return user as User | undefined;
   }
-
+  
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user;
+    const [user] = await db.select().from(schema.users).where(eq(schema.users.username, username));
+    return user as User | undefined;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    // Asegurarnos de que tiene un organizationId
     if (!insertUser.organizationId) {
-      throw new Error("Se requiere un organizationId para crear un usuario");
+      throw new Error("organizationId is required to create a user.");
     }
-    
-    const [user] = await db.insert(users).values(insertUser).returning();
+    const [user] = await db.insert(schema.users).values(insertUser).returning();
     return user;
   }
 
-  async listUsers(organizationId?: number): Promise<User[]> {
-    let query = db.select().from(users);
-    
-    if (organizationId) {
-      query = query.where(eq(users.organizationId, organizationId));
+  async listUsers(organizationId?: number, limit: number = 10, offset: number = 0): Promise<User[]> {
+    let query = db.select().from(schema.users) as any;
+    if (organizationId !== undefined) {
+      query = query.where(eq(schema.users.organizationId, organizationId));
     }
-    
-    return await query;
+    return await query.limit(limit).offset(offset);
   }
 
-  async getAlert(id: number): Promise<Alert | undefined> {
-    const [alert] = await db.select().from(alerts).where(eq(alerts.id, id));
+  // Alert methods
+  async getAlert(id: number, organizationId?: number): Promise<Alert | undefined> {
+    const conditions: SQL[] = [eq(schema.alerts.id, id)];
+    if (organizationId !== undefined) conditions.push(eq(schema.alerts.organizationId, organizationId));
+    const [alert] = await db.select().from(schema.alerts).where(and(...conditions));
     return alert;
   }
 
   async createAlert(insertAlert: InsertAlert): Promise<Alert> {
-    const [alert] = await db.insert(alerts).values(insertAlert).returning();
+    if (!insertAlert.organizationId) {
+      throw new Error("organizationId is required to create an alert.");
+    }
+    const [alert] = await db.insert(schema.alerts).values(insertAlert).returning();
     return alert;
   }
 
-  async updateAlert(id: number, updateData: Partial<InsertAlert>): Promise<Alert | undefined> {
-    const [updatedAlert] = await db
-      .update(alerts)
-      .set(updateData)
-      .where(eq(alerts.id, id))
-      .returning();
+  async updateAlert(id: number, data: Partial<InsertAlert>, organizationId?: number): Promise<Alert | undefined> {
+    const alertToUpdate: Partial<schema.Alert> = { ...data };
+    const conditions: SQL[] = [eq(schema.alerts.id, id)];
+    if (organizationId !== undefined) {
+      conditions.push(eq(schema.alerts.organizationId, organizationId));
+    }
+    const [updatedAlert] = await db.update(schema.alerts).set(alertToUpdate).where(and(...conditions)).returning();
     return updatedAlert;
   }
 
-  async listAlerts(limit?: number, organizationId?: number): Promise<Alert[]> {
-    let query = db.select().from(alerts).orderBy(desc(alerts.timestamp));
-    
-    if (organizationId) {
-      query = query.where(eq(alerts.organizationId, organizationId));
+  async listAlerts(
+    limit: number = 10,
+    offset: number = 0,
+    organizationId?: number,
+    filters?: { status?: string; severity?: string; dateFrom?: Date; dateTo?: Date; query?: string }
+  ): Promise<Alert[]> {
+    const conditions: SQL[] = [];
+    if (organizationId !== undefined) {
+      conditions.push(eq(schema.alerts.organizationId, organizationId));
+    }
+
+    if (filters?.status) conditions.push(eq(schema.alerts.status, filters.status));
+    if (filters?.severity) conditions.push(eq(schema.alerts.severity, filters.severity));
+    if (filters?.dateFrom) conditions.push(gte(schema.alerts.timestamp, filters.dateFrom));
+    if (filters?.dateTo) conditions.push(lte(schema.alerts.timestamp, filters.dateTo));
+    if (filters?.query) {
+      conditions.push(or(
+        ilike(schema.alerts.title, `%${filters.query}%`),
+        ilike(schema.alerts.description, `%${filters.query}%`)
+      )!);
     }
     
-    if (limit) {
-      query = query.limit(limit);
+    let queryChain = db.select().from(schema.alerts) as any;
+    if (conditions.length > 0) {
+      queryChain = queryChain.where(and(...conditions)); 
     }
-    
-    return await query;
+    queryChain = queryChain.orderBy(desc(schema.alerts.timestamp));
+    return await queryChain.limit(limit).offset(offset);
   }
 
-  async getIncident(id: number): Promise<Incident | undefined> {
-    const [incident] = await db.select().from(incidents).where(eq(incidents.id, id));
+  async getAlertsCountByDay(organizationId: number, numberOfDays: number): Promise<{ date: string; count: number }[]> {
+    const query = sql`
+      SELECT
+        to_char(date_trunc('day', ${schema.alerts.timestamp}), 'YYYY-MM-DD') as date,
+        COUNT(*)::int as count
+      FROM
+        ${schema.alerts}
+      WHERE
+        ${schema.alerts.organizationId} = ${organizationId}
+        AND ${schema.alerts.timestamp} >= NOW() - make_interval(days => ${numberOfDays})
+      GROUP BY
+        date_trunc('day', ${schema.alerts.timestamp})
+      ORDER BY
+        date_trunc('day', ${schema.alerts.timestamp}) ASC;
+    `;
+    const result = await db.execute(query) as Array<{ date: string; count: number }>;
+    return result.map(r => ({ ...r, count: Number(r.count) }));
+  }
+
+  // Incident methods
+  async getIncident(id: number, organizationId?: number): Promise<Incident | undefined> {
+    const conditions: SQL[] = [eq(schema.incidents.id, id)];
+    if (organizationId !== undefined) {
+      conditions.push(eq(schema.incidents.organizationId, organizationId));
+    }
+    const [incident] = await db.select().from(schema.incidents).where(and(...conditions));
     return incident;
   }
 
-  async createIncident(insertIncident: InsertIncident): Promise<Incident> {
-    const [incident] = await db.insert(incidents).values(insertIncident).returning();
+  async createIncident(insertIncident: schema.InsertIncident): Promise<Incident> {
+    if (!insertIncident.organizationId) {
+      throw new Error("organizationId is required to create an incident.");
+    }
+    const [incident] = await db.insert(schema.incidents).values(insertIncident).returning();
     return incident;
   }
 
-  async updateIncident(id: number, updateData: Partial<InsertIncident>): Promise<Incident | undefined> {
-    // If we're closing the incident, set closedAt
-    if (updateData.status === 'closed') {
-      updateData = {
-        ...updateData,
-        closedAt: new Date()
-      } as Partial<InsertIncident>;
+  async updateIncident(
+    id: number,
+    updateData: Partial<Omit<schema.Incident, 'id' | 'createdAt' | 'organizationId' | 'updatedAt'>>,
+    organizationId?: number
+  ): Promise<Incident | undefined> {
+    const dataToSet: Partial<schema.Incident> = { ...updateData };
+    dataToSet.updatedAt = new Date();
+
+    if (updateData.status === schema.IncidentStatusTypes.Enum.closed && updateData.closedAt === undefined) {
+      dataToSet.closedAt = new Date();
+    } else if (updateData.status !== schema.IncidentStatusTypes.Enum.closed && updateData.closedAt === null) {
+      dataToSet.closedAt = null;
     }
-    
-    // Always update the updatedAt field
-    updateData = {
-      ...updateData,
-      updatedAt: new Date()
-    } as Partial<InsertIncident>;
-    
-    const [updatedIncident] = await db
-      .update(incidents)
-      .set(updateData)
-      .where(eq(incidents.id, id))
+
+    const conditions: SQL[] = [eq(schema.incidents.id, id)];
+    if (organizationId !== undefined) {
+      conditions.push(eq(schema.incidents.organizationId, organizationId));
+    }
+    const [updatedIncident] = await db.update(schema.incidents)
+      .set(dataToSet)
+      .where(and(...conditions))
       .returning();
-    
     return updatedIncident;
   }
 
-  async listIncidents(limit?: number, organizationId?: number): Promise<Incident[]> {
-    let query = db.select().from(incidents).orderBy(desc(incidents.createdAt));
-    
-    if (organizationId) {
-      query = query.where(eq(incidents.organizationId, organizationId));
+  async listIncidents(
+    organizationId: number,
+    limit: number = 10,
+    offset: number = 0,
+    filters?: { status?: string; severity?: string; query?: string }
+  ): Promise<Incident[]> {
+    const conditions: SQL[] = [eq(schema.incidents.organizationId, organizationId)];
+    if (filters?.status) {
+      conditions.push(eq(schema.incidents.status, filters.status));
     }
-    
-    if (limit) {
-      query = query.limit(limit);
+    if (filters?.severity) {
+      conditions.push(eq(schema.incidents.severity, filters.severity));
     }
-    
-    return await query;
+    if (filters?.query) {
+      conditions.push(or(
+        ilike(schema.incidents.title, `%${filters.query}%`),
+        ilike(schema.incidents.description, `%${filters.query}%`)
+      )!);
+    }
+    const queryChain = db.select()
+      .from(schema.incidents)
+      .where(and(...conditions))
+      .orderBy(desc(schema.incidents.createdAt))
+      .limit(limit)
+      .offset(offset);
+    return await queryChain;
   }
 
-  async getThreatIntel(id: number): Promise<ThreatIntel | undefined> {
-    const [intel] = await db.select().from(threatIntel).where(eq(threatIntel.id, id));
+  async getMitreTacticsDistribution(organizationId: number): Promise<{ tactic: string; count: number }[]> {
+    const query = sql`
+      SELECT
+        tactic,
+        COUNT(*)::int as count
+      FROM
+        ${schema.incidents},
+        jsonb_array_elements_text(${schema.incidents.mitreTactics}) AS tactic
+      WHERE
+        ${schema.incidents.organizationId} = ${organizationId}
+        AND ${schema.incidents.mitreTactics} IS NOT NULL 
+        AND jsonb_typeof(${schema.incidents.mitreTactics}) = 'array'
+      GROUP BY
+        tactic
+      ORDER BY
+        count DESC;
+    `;
+    const result = await db.execute(query) as Array<{ tactic: string; count: number }>;
+    return result.map(r => ({ ...r, count: Number(r.count) }));
+  }
+
+  // Threat Intel methods
+  async getThreatIntel(id: number, organizationId?: number): Promise<ThreatIntel | undefined> {
+    const conditions: SQL[] = [eq(schema.threatIntel.id, id)];
+    if (organizationId !== undefined) {
+      conditions.push(eq(schema.threatIntel.organizationId, organizationId));
+    }
+    const [intel] = await db.select().from(schema.threatIntel).where(and(...conditions));
     return intel;
   }
 
   async createThreatIntel(insertIntel: InsertThreatIntel): Promise<ThreatIntel> {
-    const [intel] = await db.insert(threatIntel).values(insertIntel).returning();
+    if (!insertIntel.organizationId) {
+      throw new Error("organizationId is required to create a threat intel entry.");
+    }
+    const [intel] = await db.insert(schema.threatIntel).values(insertIntel).returning();
     return intel;
   }
 
-  async listThreatIntel(limit?: number, organizationId?: number): Promise<ThreatIntel[]> {
-    let query = db.select().from(threatIntel).orderBy(desc(threatIntel.createdAt));
-    
-    if (organizationId) {
-      query = query.where(eq(threatIntel.organizationId, organizationId));
-    }
-    
-    if (limit) {
-      query = query.limit(limit);
-    }
-    
-    return await query;
-  }
+  async listThreatIntel(
+    organizationId: number,
+    limit: number = 10,
+    offset: number = 0,
+    type?: string
+  ): Promise<ThreatIntel[]> {
+    const conditions: SQL[] = [eq(schema.threatIntel.organizationId, organizationId)];
+    if (type) conditions.push(eq(schema.threatIntel.type, type));
 
-  async getAiInsight(id: number): Promise<AiInsight | undefined> {
-    const [insight] = await db.select().from(aiInsights).where(eq(aiInsights.id, id));
+    let queryChain = db.select().from(schema.threatIntel).where(and(...conditions)).orderBy(desc(schema.threatIntel.createdAt)) as any;
+    return await queryChain.limit(limit).offset(offset);
+  }
+  
+  // AI Insight methods
+  async getAiInsight(id: number, organizationId?: number): Promise<AiInsight | undefined> {
+    const conditions: SQL[] = [eq(schema.aiInsights.id, id)];
+    if (organizationId !== undefined) {
+      conditions.push(eq(schema.aiInsights.organizationId, organizationId));
+    }
+    const [insight] = await db.select().from(schema.aiInsights).where(and(...conditions));
     return insight;
   }
 
   async createAiInsight(insertInsight: InsertAiInsight): Promise<AiInsight> {
-    const [insight] = await db.insert(aiInsights).values(insertInsight).returning();
+    if (!insertInsight.organizationId) {
+      throw new Error("organizationId is required to create an AI insight.");
+    }
+    const [insight] = await db.insert(schema.aiInsights).values(insertInsight).returning();
     return insight;
   }
 
-  async listAiInsights(limit?: number, organizationId?: number): Promise<AiInsight[]> {
-    let query = db.select().from(aiInsights).orderBy(desc(aiInsights.createdAt));
+  async listAiInsights(
+    organizationId: number,
+    limit: number = 10,
+    offset: number = 0
+  ): Promise<AiInsight[]> {
+    const conditions: SQL[] = [eq(schema.aiInsights.organizationId, organizationId)];
     
-    if (organizationId) {
-      query = query.where(eq(aiInsights.organizationId, organizationId));
-    }
-    
-    if (limit) {
-      query = query.limit(limit);
-    }
-    
-    return await query;
+    let queryChain = db.select().from(schema.aiInsights).where(and(...conditions)).orderBy(desc(schema.aiInsights.createdAt)) as any;
+    return await queryChain.limit(limit).offset(offset);
   }
 
-  async getMetric(id: number): Promise<Metric | undefined> {
-    const [metric] = await db.select().from(metrics).where(eq(metrics.id, id));
+  // Metrics methods
+  async getMetric(id: number, organizationId?: number): Promise<Metric | undefined> {
+    const conditions: SQL[] = [eq(schema.metrics.id, id)];
+    if (organizationId !== undefined) {
+        conditions.push(eq(schema.metrics.organizationId, organizationId));
+    }
+    const [metric] = await db.select().from(schema.metrics).where(and(...conditions));
     return metric;
   }
 
   async createMetric(insertMetric: InsertMetric): Promise<Metric> {
-    const [metric] = await db.insert(metrics).values(insertMetric).returning();
+    const [metric] = await db.insert(schema.metrics).values(insertMetric).returning();
     return metric;
   }
-
-  async getMetricByName(name: string): Promise<Metric | undefined> {
-    const [metric] = await db.select().from(metrics).where(eq(metrics.name, name));
+  
+  async getMetricByName(name: string, organizationId?: number): Promise<Metric | undefined> {
+    const conditions: SQL[] = [eq(schema.metrics.name, name)];
+    if (organizationId !== undefined) {
+      conditions.push(eq(schema.metrics.organizationId, organizationId));
+    }
+    const [metric] = await db.select().from(schema.metrics).where(and(...conditions));
     return metric;
+  }     
+  
+  async getMetricByNameAndOrg(name: string, organizationId?: number): Promise<Metric | undefined> {
+    return this.getMetricByName(name, organizationId);
   }
 
   async listMetrics(organizationId?: number): Promise<Metric[]> {
-    let query = db.select().from(metrics);
-    
-    if (organizationId) {
-      query = query.where(eq(metrics.organizationId, organizationId));
+    const conditions: SQL[] = [];
+    if (organizationId !== undefined) {
+      conditions.push(eq(schema.metrics.organizationId, organizationId));
     }
-    
-    return await query;
+    if (conditions.length > 0) {
+        return await db.select().from(schema.metrics).where(and(...conditions));
+    }
+    return await db.select().from(schema.metrics);
   }
-
-  async getConnector(id: number): Promise<Connector | undefined> {
-    const [connector] = await db.select().from(connectors).where(eq(connectors.id, id));
+  
+  // Connector methods
+  async getConnector(id: number, organizationId?: number): Promise<Connector | undefined> {
+    const conditions: SQL[] = [eq(schema.connectors.id, id)];
+    if (organizationId !== undefined) {
+      conditions.push(eq(schema.connectors.organizationId, organizationId));
+    }
+    const [connector] = await db.select().from(schema.connectors).where(and(...conditions));
     return connector;
   }
 
   async createConnector(insertConnector: InsertConnector): Promise<Connector> {
-    // Always set timestamps
-    const now = new Date();
-    const connectorWithTimestamps = {
-      ...insertConnector,
-      createdAt: now,
-      updatedAt: now
-    };
-    
-    const [connector] = await db.insert(connectors).values(connectorWithTimestamps).returning();
+    if (!insertConnector.organizationId) {
+      throw new Error("organizationId is required to create a connector.");
+    }
+    const [connector] = await db.insert(schema.connectors).values(insertConnector).returning();
     return connector;
   }
 
-  async updateConnector(id: number, updateData: Partial<InsertConnector>): Promise<Connector | undefined> {
-    // Always update the timestamp
-    const updatedData = {
-      ...updateData,
+  async updateConnector(id: number, data: Partial<InsertConnector>, organizationId?: number): Promise<Connector | undefined> {
+    const connectorToUpdate: Partial<schema.Connector> = {
+      ...data,
       updatedAt: new Date()
-    } as Partial<InsertConnector>;
-    
-    const [updatedConnector] = await db
-      .update(connectors)
-      .set(updatedData)
-      .where(eq(connectors.id, id))
-      .returning();
-    
+    };
+    const conditions: SQL[] = [eq(schema.connectors.id, id)];
+    if (organizationId !== undefined) {
+      conditions.push(eq(schema.connectors.organizationId, organizationId));
+    }
+    const [updatedConnector] = await db.update(schema.connectors).set(connectorToUpdate).where(and(...conditions)).returning();
     return updatedConnector;
   }
 
-  async deleteConnector(id: number): Promise<boolean> {
-    const result = await db.delete(connectors).where(eq(connectors.id, id));
-    return result !== undefined && Array.isArray(result) && result.length > 0;
+  async deleteConnector(id: number, organizationId?: number): Promise<boolean> {
+    const conditions: SQL[] = [eq(schema.connectors.id, id)];
+    if (organizationId !== undefined) {
+      conditions.push(eq(schema.connectors.organizationId, organizationId));
+    }
+    const result = await db.delete(schema.connectors).where(and(...conditions)).returning({ id: schema.connectors.id });
+    return result.length > 0;
   }
 
   async listConnectors(organizationId?: number): Promise<Connector[]> {
-    let query = db.select().from(connectors);
-    
-    if (organizationId) {
-      query = query.where(eq(connectors.organizationId, organizationId));
+    const conditions: SQL[] = [];
+    if (organizationId !== undefined) {
+      conditions.push(eq(schema.connectors.organizationId, organizationId));
     }
-    
-    return await query;
+    if (conditions.length > 0) {
+        return await db.select().from(schema.connectors).where(and(...conditions));
+    }
+    return await db.select().from(schema.connectors);
   }
 
-  async toggleConnectorStatus(id: number, isActive: boolean): Promise<Connector | undefined> {
-    const now = new Date();
+  async toggleConnectorStatus(id: number, isActive: boolean, organizationId?: number): Promise<Connector | undefined> {
+    const statusValue = isActive ? ConnectorStatusTypes.Enum.active : ConnectorStatusTypes.Enum.inactive;
+    const updatePayload: Partial<schema.Connector> = {
+      isActive: isActive,
+      status: statusValue,
+      updatedAt: new Date(),
+    };
     
-    const [updatedConnector] = await db
-      .update(connectors)
-      .set({
-        isActive,
-        status: isActive ? 'active' : 'inactive',
-        updatedAt: now
-      } as any)
-      .where(eq(connectors.id, id))
+    const conditions: SQL[] = [eq(schema.connectors.id, id)];
+    if (organizationId !== undefined) {
+      conditions.push(eq(schema.connectors.organizationId, organizationId));
+    }
+    const [updatedConnector] = await db.update(schema.connectors)
+      .set(updatePayload)
+      .where(and(...conditions))
       .returning();
-    
     return updatedConnector;
   }
 
-  async getThreatFeed(id: number): Promise<ThreatFeed | undefined> {
-    const [feed] = await db.select().from(threatFeeds).where(eq(threatFeeds.id, id));
+  // Threat Feed methods
+  async getThreatFeed(id: number, organizationId?: number): Promise<ThreatFeed | undefined> {
+    const conditions_threat_feed_get: SQL[] = [eq(schema.threatFeeds.id, id)];
+    if (organizationId !== undefined) {
+      conditions_threat_feed_get.push(eq(schema.threatFeeds.organizationId, organizationId));
+    }
+    const [feed] = await db.select().from(schema.threatFeeds).where(and(...conditions_threat_feed_get));
     return feed;
   }
 
   async createThreatFeed(insertFeed: InsertThreatFeed): Promise<ThreatFeed> {
-    // Always set timestamps
-    const now = new Date();
-    const feedWithTimestamps = {
-      ...insertFeed,
-      createdAt: now,
-      updatedAt: now
-    };
-    
-    const [feed] = await db.insert(threatFeeds).values(feedWithTimestamps).returning();
+    if (!insertFeed.organizationId) {
+      throw new Error("organizationId is required to create a threat feed.");
+    }
+    const [feed] = await db.insert(schema.threatFeeds).values(insertFeed).returning();
     return feed;
   }
 
-  async updateThreatFeed(id: number, updateData: Partial<InsertThreatFeed>): Promise<ThreatFeed | undefined> {
-    // Always update the timestamp
-    const updatedData = {
-      ...updateData,
-      updatedAt: new Date()
-    } as Partial<InsertThreatFeed>;
-    
-    const [updatedFeed] = await db
-      .update(threatFeeds)
-      .set(updatedData)
-      .where(eq(threatFeeds.id, id))
-      .returning();
-    
+  async updateThreatFeed(id: number, data: Partial<InsertThreatFeed>, organizationId?: number): Promise<ThreatFeed | undefined> {
+    const feedToUpdate: Partial<schema.ThreatFeed> = { ...data, updatedAt: new Date() };
+    const conditions_threat_feed_update: SQL[] = [eq(schema.threatFeeds.id, id)];
+    if (organizationId !== undefined) {
+      conditions_threat_feed_update.push(eq(schema.threatFeeds.organizationId, organizationId));
+    }
+    const [updatedFeed] = await db.update(schema.threatFeeds).set(feedToUpdate).where(and(...conditions_threat_feed_update)).returning();
     return updatedFeed;
   }
 
-  async deleteThreatFeed(id: number): Promise<boolean> {
-    const result = await db.delete(threatFeeds).where(eq(threatFeeds.id, id));
-    return result !== undefined && Array.isArray(result) && result.length > 0;
+  async deleteThreatFeed(id: number, organizationId?: number): Promise<boolean> {
+    const conditions_threat_feed_delete: SQL[] = [eq(schema.threatFeeds.id, id)];
+    if (organizationId !== undefined) {
+      conditions_threat_feed_delete.push(eq(schema.threatFeeds.organizationId, organizationId));
+    }
+    const result_threat_feed_delete = await db.delete(schema.threatFeeds).where(and(...conditions_threat_feed_delete)).returning({ id: schema.threatFeeds.id });
+    return result_threat_feed_delete.length > 0;
   }
 
   async listThreatFeeds(organizationId?: number): Promise<ThreatFeed[]> {
-    let query = db.select().from(threatFeeds);
-    
-    if (organizationId) {
-      query = query.where(eq(threatFeeds.organizationId, organizationId));
+     if (organizationId !== undefined) {
+        return await db.select().from(schema.threatFeeds).where(eq(schema.threatFeeds.organizationId, organizationId));
+     }
+     return await db.select().from(schema.threatFeeds);
+  }
+
+  async toggleThreatFeedStatus(id: number, isActive: boolean, organizationId?: number): Promise<ThreatFeed | undefined> {
+    const now_threat_feed_toggle = new Date();
+    const statusValue_threat_feed_toggle = isActive ? ThreatFeedStatusTypes.Enum.active : ThreatFeedStatusTypes.Enum.inactive;
+    const conditions_threat_feed_toggle: SQL[] = [eq(schema.threatFeeds.id, id)];
+    if (organizationId !== undefined) {
+      conditions_threat_feed_toggle.push(eq(schema.threatFeeds.organizationId, organizationId));
     }
-    
-    return await query;
-  }
-
-  async toggleThreatFeedStatus(id: number, isActive: boolean): Promise<ThreatFeed | undefined> {
-    const now = new Date();
-    
-    const [updatedFeed] = await db
-      .update(threatFeeds)
-      .set({
-        isActive,
-        status: isActive ? 'active' : 'inactive',
-        updatedAt: now
-      } as any)
-      .where(eq(threatFeeds.id, id))
+    const [updatedFeed_toggle] = await db.update(schema.threatFeeds)
+      .set({ isActive, status: statusValue_threat_feed_toggle, updatedAt: now_threat_feed_toggle })
+      .where(and(...conditions_threat_feed_toggle))
       .returning();
-    
-    return updatedFeed;
+    return updatedFeed_toggle;
   }
 
-  async getPlaybook(id: number): Promise<Playbook | undefined> {
-    const [playbook] = await db.select().from(playbooks).where(eq(playbooks.id, id));
-    return playbook;
+  // Playbook methods
+  async getPlaybook(id: number, organizationId?: number): Promise<Playbook | undefined> {
+    const conditions_playbook_get: SQL[] = [eq(schema.playbooks.id, id)];
+    if (organizationId !== undefined) {
+      conditions_playbook_get.push(eq(schema.playbooks.organizationId, organizationId));
+    }
+    const [playbook_get_result] = await db.select().from(schema.playbooks).where(and(...conditions_playbook_get));
+    return playbook_get_result;
   }
 
   async createPlaybook(insertPlaybook: InsertPlaybook): Promise<Playbook> {
-    // Always set timestamps
-    const now = new Date();
-    const playbookWithTimestamps = {
-      ...insertPlaybook,
-      createdAt: now,
-      updatedAt: now
-    };
-    
-    const [playbook] = await db.insert(playbooks).values(playbookWithTimestamps).returning();
-    return playbook;
+    if (!insertPlaybook.organizationId) {
+      throw new Error("organizationId is required to create a playbook.");
+    }
+    const [playbook_create_result] = await db.insert(schema.playbooks).values(insertPlaybook).returning();
+    return playbook_create_result;
   }
 
-  async updatePlaybook(id: number, updateData: Partial<InsertPlaybook>): Promise<Playbook | undefined> {
-    // Always update the timestamp
-    const updatedData = {
-      ...updateData,
-      updatedAt: new Date()
-    } as Partial<InsertPlaybook>;
-    
-    const [updatedPlaybook] = await db
-      .update(playbooks)
-      .set(updatedData)
-      .where(eq(playbooks.id, id))
-      .returning();
-    
-    return updatedPlaybook;
+  async updatePlaybook(id: number, data: Partial<InsertPlaybook>, organizationId?: number): Promise<Playbook | undefined> {
+    const playbookToUpdate: Partial<schema.Playbook> = { ...data, lastModified: new Date() };
+    const conditions_playbook_update: SQL[] = [eq(schema.playbooks.id, id)];
+    if (organizationId !== undefined) {
+      conditions_playbook_update.push(eq(schema.playbooks.organizationId, organizationId));
+    }
+    const [updatedPlaybook_update_result] = await db.update(schema.playbooks).set(playbookToUpdate).where(and(...conditions_playbook_update)).returning();
+    return updatedPlaybook_update_result;
   }
 
-  async deletePlaybook(id: number): Promise<boolean> {
-    const result = await db.delete(playbooks).where(eq(playbooks.id, id));
-    return result !== undefined && Array.isArray(result) && result.length > 0;
+  async deletePlaybook(id: number, organizationId?: number): Promise<boolean> {
+    const conditions_playbook_delete: SQL[] = [eq(schema.playbooks.id, id)];
+    if (organizationId !== undefined) {
+      conditions_playbook_delete.push(eq(schema.playbooks.organizationId, organizationId));
+    }
+    const result_playbook_delete = await db.delete(schema.playbooks).where(and(...conditions_playbook_delete)).returning({ id: schema.playbooks.id });
+    return result_playbook_delete.length > 0;
   }
 
   async listPlaybooks(organizationId?: number): Promise<Playbook[]> {
-    let query = db.select().from(playbooks);
-    
-    if (organizationId) {
-      query = query.where(eq(playbooks.organizationId, organizationId));
+    if (organizationId !== undefined) {
+      return await db.select().from(schema.playbooks).where(eq(schema.playbooks.organizationId, organizationId));
     }
-    
-    return await query;
+    return await db.select().from(schema.playbooks);
   }
 
-  async togglePlaybookStatus(id: number, isActive: boolean): Promise<Playbook | undefined> {
-    const now = new Date();
-    
-    const [updatedPlaybook] = await db
-      .update(playbooks)
-      .set({
-        isActive,
-        status: isActive ? 'active' : 'inactive',
-        updatedAt: now
-      } as any)
-      .where(eq(playbooks.id, id))
+  async togglePlaybookStatus(id: number, isActive: boolean, organizationId?: number): Promise<Playbook | undefined> {
+    const now_playbook_toggle = new Date();
+    const statusValue_playbook_toggle = isActive ? PlaybookStatusTypes.Enum.active : PlaybookStatusTypes.Enum.inactive;
+    const conditions_playbook_toggle: SQL[] = [eq(schema.playbooks.id, id)];
+    if (organizationId !== undefined) {
+      conditions_playbook_toggle.push(eq(schema.playbooks.organizationId, organizationId));
+    }
+    const [updatedPlaybook_toggle_result] = await db.update(schema.playbooks)
+      .set({ isActive, status: statusValue_playbook_toggle, lastModified: now_playbook_toggle })
+      .where(and(...conditions_playbook_toggle))
       .returning();
-    
-    return updatedPlaybook;
+    return updatedPlaybook_toggle_result;
   }
 
-  async executePlaybook(id: number, triggeredBy?: number, triggerEntityId?: number): Promise<PlaybookExecution> {
-    // Verify the playbook exists
-    const playbook = await this.getPlaybook(id);
-    if (!playbook) {
-      throw new Error(`Playbook with ID ${id} not found`);
+  async executePlaybook(id: number, organizationId: number, triggeredBy?: number, triggerEntityId?: number): Promise<PlaybookExecution> {
+    const playbook_exec = await this.getPlaybook(id, organizationId);
+    if (!playbook_exec) {
+      throw new Error(`Playbook with id ${id} not found for organization ${organizationId}`);
     }
-    
-    // Create a new execution record
-    const now = new Date();
-    const execution = {
-      playbookId: id,
-      status: 'running',
-      triggerSource: triggerEntityId ? (triggerEntityId > 0 ? 'incident' : 'alert') : 'manual',
-      startedAt: now,
-      completedAt: null,
-      triggeredBy: triggeredBy || null,
-      triggerEntityId: triggerEntityId || null,
-      results: {},
-      error: null
-    };
-    
-    // Insert the execution
-    const [playbookExecution] = await db.insert(playbookExecutions).values(execution).returning();
-    
-    // Update the playbook's last run status
-    await db
-      .update(playbooks)
-      .set({
-        lastExecuted: now,
-        status: 'active',
-        lastModified: now
-      } as any)
-      .where(eq(playbooks.id, id));
-    
-    return playbookExecution;
-  }
-  
-  // Incrementa el contador de ejecuciones de un playbook
-  async incrementPlaybookExecutionCount(id: number, executionTimeMs?: number): Promise<void> {
-    const playbook = await this.getPlaybook(id);
-    if (!playbook) return;
-    
-    // Calcular el tiempo promedio de ejecución
-    let avgExecutionTime = playbook.avgExecutionTime || 0;
-    const executionCount = (playbook.executionCount || 0) + 1;
-    
-    if (executionTimeMs) {
-      if (avgExecutionTime === 0) {
-        avgExecutionTime = executionTimeMs;
+
+    let triggerSourceType: string | undefined = undefined;
+    if (triggerEntityId) {
+      const alert_trigger = await this.getAlert(triggerEntityId, organizationId);
+      if (alert_trigger) {
+        triggerSourceType = 'alert';
       } else {
-        // Promedio ponderado para dar más importancia a las ejecuciones recientes
-        avgExecutionTime = Math.round((avgExecutionTime * 0.7) + (executionTimeMs * 0.3));
+        const incident_trigger = await this.getIncident(triggerEntityId, organizationId);
+        if (incident_trigger) {
+          triggerSourceType = 'incident';
+        } else {
+          console.warn(`Trigger entity ID ${triggerEntityId} not found as alert or incident for playbook execution.`);
+        }
       }
     }
+
+    const executionToCreate: InsertPlaybookExecution = {
+      playbookId: id,
+      organizationId,
+      status: 'running',
+      triggeredBy,
+      triggerEntityId,
+      triggerSource: triggerSourceType || 'manual',
+      results: playbook_exec.steps as unknown[],
+    };
+
+    const [execution_result] = await db.insert(schema.playbookExecutions).values(executionToCreate).returning();
     
-    await db
-      .update(playbooks)
+    console.log(`Executing steps for playbook ${playbook_exec.id}, execution ${execution_result.id}. Steps: `, playbook_exec.steps as unknown[]);
+
+    return execution_result;
+  }
+
+  async incrementPlaybookExecutionCount(playbookId: number, organizationId: number, executionTimeMs?: number): Promise<void> {
+    const playbook_inc_count = await this.getPlaybook(playbookId, organizationId);
+    if (!playbook_inc_count) {
+        console.warn(`Playbook with id ${playbookId} not found for organization ${organizationId} during incrementExecutionCount.`);
+        return;
+    }
+
+    const currentExecutionCount_inc = playbook_inc_count.executionCount || 0;
+    const newExecutionCount_inc = currentExecutionCount_inc + 1;
+    let newAvgExecutionTime_inc = playbook_inc_count.avgExecutionTime;
+
+    if (executionTimeMs !== undefined) {
+        if (playbook_inc_count.avgExecutionTime === null || playbook_inc_count.avgExecutionTime === undefined || currentExecutionCount_inc === 0) {
+            newAvgExecutionTime_inc = executionTimeMs;
+        } else {
+            const currentTotalTime_inc = (playbook_inc_count.avgExecutionTime || 0) * currentExecutionCount_inc;
+            newAvgExecutionTime_inc = Math.round((currentTotalTime_inc + executionTimeMs) / newExecutionCount_inc);
+        }
+    }
+
+    await db.update(schema.playbooks)
       .set({
-        executionCount,
-        avgExecutionTime,
+        executionCount: newExecutionCount_inc,
+        avgExecutionTime: newAvgExecutionTime_inc,
+        lastExecuted: new Date(),
         lastModified: new Date()
-      } as any)
-      .where(eq(playbooks.id, id));
+      })
+      .where(and(eq(schema.playbooks.id, playbookId), eq(schema.playbooks.organizationId, organizationId)));
   }
 
-  async getPlaybookExecution(id: number): Promise<PlaybookExecution | undefined> {
-    const [execution] = await db.select().from(playbookExecutions).where(eq(playbookExecutions.id, id));
-    return execution;
-  }
-
-  async listPlaybookExecutions(playbookId?: number, limit?: number): Promise<PlaybookExecution[]> {
-    let query = db.select().from(playbookExecutions).orderBy(desc(playbookExecutions.startedAt as any));
-    
-    if (playbookId) {
-      query = query.where(eq(playbookExecutions.playbookId, playbookId));
+  // Playbook Execution methods
+  async getPlaybookExecution(id: number, organizationId?: number): Promise<PlaybookExecution | undefined> {
+    const conditions_pb_exec_get: SQL[] = [eq(schema.playbookExecutions.id, id)];
+    if (organizationId !== undefined) {
+      conditions_pb_exec_get.push(eq(schema.playbookExecutions.organizationId, organizationId));
     }
-    
-    if (limit) {
-      query = query.limit(limit);
-    }
-    
-    return await query;
+    const [execution_get_res] = await db.select().from(schema.playbookExecutions).where(and(...conditions_pb_exec_get));
+    return execution_get_res;
   }
 
-  async updatePlaybookExecution(id: number, data: Partial<PlaybookExecution>): Promise<PlaybookExecution | undefined> {
-    const [updatedExecution] = await db
-      .update(playbookExecutions)
-      .set(data)
-      .where(eq(playbookExecutions.id, id))
-      .returning();
+  async listPlaybookExecutions(
+    organizationId: number,
+    playbookId?: number,
+    limit: number = 10,
+    offset: number = 0,
+    status?: string
+  ): Promise<PlaybookExecution[]> {
+    const conditions_pb_exec_list: SQL[] = [eq(schema.playbookExecutions.organizationId, organizationId)];
+    if (playbookId) conditions_pb_exec_list.push(eq(schema.playbookExecutions.playbookId, playbookId));
+    if (status) conditions_pb_exec_list.push(eq(schema.playbookExecutions.status, status));
     
-    return updatedExecution;
+    let queryChain_pb_exec_list = db.select().from(schema.playbookExecutions).where(and(...conditions_pb_exec_list)).orderBy(desc(schema.playbookExecutions.startedAt)) as any;
+    return await queryChain_pb_exec_list.limit(limit).offset(offset);
+  }
+
+  async updatePlaybookExecution(
+    id: number,
+    data: Partial<InsertPlaybookExecution>,
+    organizationId?: number
+  ): Promise<PlaybookExecution | undefined> {
+    const updatePayload_pb_exec: Partial<schema.PlaybookExecution> = { ...data, completedAt: data.status === 'completed' || data.status === 'failed' ? new Date() : undefined };
+    const conditions_pb_exec_update: SQL[] = [eq(schema.playbookExecutions.id, id)];
+    if (organizationId !== undefined) {
+      conditions_pb_exec_update.push(eq(schema.playbookExecutions.organizationId, organizationId));
+    }
+    const [updatedExecution_res] = await db.update(schema.playbookExecutions).set(updatePayload_pb_exec).where(and(...conditions_pb_exec_update)).returning();
+    return updatedExecution_res;
   }
   
   // Agent methods
-  async getAgent(id: number): Promise<Agent | undefined> {
-    const [agent] = await db.select().from(agents).where(eq(agents.id, id));
-    return agent;
+  async getAgent(id: number, organizationId?: number): Promise<Agent | undefined> {
+    const conditions_agent_get: SQL[] = [eq(schema.agents.id, id)];
+    if (organizationId !== undefined) {
+      conditions_agent_get.push(eq(schema.agents.organizationId, organizationId));
+    }
+    const [agent_get_res] = await db.select().from(schema.agents).where(and(...conditions_agent_get));
+    return agent_get_res;
   }
 
-  async getAgentByIdentifier(agentIdentifier: string): Promise<Agent | undefined> {
-    const [agent] = await db.select().from(agents).where(eq(agents.agentIdentifier, agentIdentifier));
-    return agent;
+  async getAgentByIdentifier(agentIdentifier: string, organizationId?: number): Promise<Agent | undefined> {
+    const conditions_agent_get_id: SQL[] = [eq(schema.agents.agentIdentifier as unknown as AnyColumn, agentIdentifier)];
+    if (organizationId !== undefined) {
+      conditions_agent_get_id.push(eq(schema.agents.organizationId, organizationId));
+    }
+    const [agent_get_id_res] = await db.select().from(schema.agents).where(and(...conditions_agent_get_id));
+    return agent_get_id_res;
   }
 
   async createAgent(insertAgent: InsertAgent): Promise<Agent> {
-    // Always set timestamps
-    const now = new Date();
-    const agentWithTimestamps = {
-      ...insertAgent,
-      installedAt: now
-    };
-    
-    const [agent] = await db.insert(agents).values(agentWithTimestamps).returning();
-    return agent;
+    if (!insertAgent.organizationId) {
+      throw new Error("organizationId is required to create an agent.");
+    }
+    const [agent_create_res] = await db.insert(schema.agents).values(insertAgent).returning();
+    return agent_create_res;
   }
 
-  async updateAgent(id: number, updateData: Partial<InsertAgent>): Promise<Agent | undefined> {
-    const [updatedAgent] = await db
-      .update(agents)
-      .set(updateData)
-      .where(eq(agents.id, id))
-      .returning();
-    
-    return updatedAgent;
-  }
+  async updateAgent(id: number, data: Partial<InsertAgent>, organizationId?: number): Promise<Agent | undefined> {
+    const agentToUpdate: Partial<schema.Agent> = { ...data }; 
+    if ((data as Partial<schema.Agent>).organizationId && organizationId && (data as Partial<schema.Agent>).organizationId !== organizationId) {
+        throw new Error("Cannot change organizationId of an agent via this method if it conflicts with the query context.");
+    }
 
-  async deleteAgent(id: number): Promise<boolean> {
-    const result = await db.delete(agents).where(eq(agents.id, id));
-    return result !== undefined && Array.isArray(result) && result.length > 0;
-  }
-
-  async listAgents(userId?: number, organizationId?: number): Promise<Agent[]> {
-    let query = db.select().from(agents);
-    
-    if (userId) {
-      query = query.where(eq(agents.userId, userId));
+    const conditions_agent_update: SQL[] = [eq(schema.agents.id, id)];
+    if (organizationId !== undefined) {
+      conditions_agent_update.push(eq(schema.agents.organizationId, organizationId));
     }
     
-    if (organizationId) {
-      query = query.where(eq(agents.organizationId, organizationId));
+    const [updatedAgent_res] = await db.update(schema.agents).set(agentToUpdate).where(and(...conditions_agent_update)).returning();
+    return updatedAgent_res;
+  }
+
+  async deleteAgent(id: number, organizationId?: number): Promise<boolean> {
+    const conditions_agent_delete: SQL[] = [eq(schema.agents.id, id)];
+    if (organizationId !== undefined) {
+      conditions_agent_delete.push(eq(schema.agents.organizationId, organizationId));
     }
-    
-    return await query.orderBy(desc(agents.lastHeartbeat));
+    const result_agent_delete = await db.delete(schema.agents).where(and(...conditions_agent_delete)).returning({ id: schema.agents.id });
+    return result_agent_delete.length > 0;
   }
 
-  async updateAgentHeartbeat(id: number): Promise<void> {
-    const now = new Date();
-    await db
-      .update(agents)
-      .set({
-        lastHeartbeat: now
-      })
-      .where(eq(agents.id, id));
+  async listAgents(
+    organizationId: number,
+    limit: number = 10,
+    offset: number = 0,
+    userId?: number,
+    status?: string
+  ): Promise<Agent[]> {
+    const conditions_agent_list: SQL[] = [eq(schema.agents.organizationId, organizationId)];
+    if (userId) conditions_agent_list.push(eq(schema.agents.userId as unknown as AnyColumn, userId));
+    if (status) conditions_agent_list.push(eq(schema.agents.status, status));
+    
+    return await db.select().from(schema.agents).where(and(...conditions_agent_list)).orderBy(desc(schema.agents.lastHeartbeat as unknown as AnyColumn)).limit(limit).offset(offset);
   }
 
-  async updateAgentStatus(id: number, status: string): Promise<Agent | undefined> {
-    const [updatedAgent] = await db
-      .update(agents)
-      .set({ status })
-      .where(eq(agents.id, id))
-      .returning();
-    
-    return updatedAgent;
+  async updateAgentHeartbeat(id: number, organizationId?: number): Promise<void> {
+    const now_agent_hb = new Date();
+    const conditions_agent_hb: SQL[] = [eq(schema.agents.id, id)];
+    if (organizationId !== undefined) {
+      conditions_agent_hb.push(eq(schema.agents.organizationId, organizationId));
+    }
+    await db.update(schema.agents).set({ lastHeartbeat: now_agent_hb, status: AgentStatusTypes.Enum.active }).where(and(...conditions_agent_hb));
+  }
+
+  async updateAgentStatus(id: number, status: string, organizationId?: number): Promise<Agent | undefined> {
+    const conditions_agent_status: SQL[] = [eq(schema.agents.id, id)];
+    if (organizationId !== undefined) {
+      conditions_agent_status.push(eq(schema.agents.organizationId, organizationId));
+    }
+    const [updatedAgent_status_res] = await db.update(schema.agents).set({ status }).where(and(...conditions_agent_status)).returning();
+    return updatedAgent_status_res;
   }
 }
 

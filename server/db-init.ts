@@ -73,118 +73,118 @@ async function initializeDatabase() {
       console.log("Sample user already exists");
     }
     
-    // Crear métricas de ejemplo
-    const sampleMetrics: InsertMetric[] = [
-      { name: 'Active Alerts', value: 18, trend: 'up', changePercentage: 15 },
-      { name: 'Open Incidents', value: 5, trend: 'stable', changePercentage: 0 },
-      { name: 'Global Risk Score', value: 68, trend: 'down', changePercentage: 12 },
-      { name: 'Assets at Risk', value: 12, trend: 'up', changePercentage: 8 },
-      { name: 'MTTD', value: 32, trend: 'down', changePercentage: 22 },
-      { name: 'MTTR', value: 4, trend: 'down', changePercentage: 15 },
-      { name: 'Compliance Score', value: 81, trend: 'up', changePercentage: 3 },
-      { name: 'Connector Health', value: 92, trend: 'stable', changePercentage: 0 }
-    ];
+    // NO Crear métricas de ejemplo
+    // const sampleMetrics: InsertMetric[] = [
+    //   { name: 'Active Alerts', value: 18, trend: 'up', changePercentage: 15 },
+    //   { name: 'Open Incidents', value: 5, trend: 'stable', changePercentage: 0 },
+    //   { name: 'Global Risk Score', value: 68, trend: 'down', changePercentage: 12 },
+    //   { name: 'Assets at Risk', value: 12, trend: 'up', changePercentage: 8 },
+    //   { name: 'MTTD', value: 32, trend: 'down', changePercentage: 22 },
+    //   { name: 'MTTR', value: 4, trend: 'down', changePercentage: 15 },
+    //   { name: 'Compliance Score', value: 81, trend: 'up', changePercentage: 3 },
+    //   { name: 'Connector Health', value: 92, trend: 'stable', changePercentage: 0 }
+    // ];
     
     // Comprobar si ya hay métricas
     const existingMetrics = await storage.listMetrics();
     if (existingMetrics.length === 0) {
-      for (const metric of sampleMetrics) {
-        await storage.createMetric(metric);
-      }
-      console.log("Sample metrics created");
+    //   for (const metric of sampleMetrics) {
+    //     await storage.createMetric(metric);
+    //   }
+      console.log("No sample metrics created, will rely on real data.");
     } else {
-      console.log("Metrics already exist, skipping creation");
+      console.log("Metrics already exist, skipping creation of samples.");
     }
     
-    // Crear alertas de ejemplo
-    const sampleAlerts: InsertAlert[] = [
-      {
-        title: 'Ransomware Behavior Detected',
-        description: 'Multiple file encryption attempts from endpoint WIN-SRV-04',
-        severity: 'critical',
-        source: 'Endpoint Security',
-        sourceIp: '192.168.1.104',
-        status: 'new',
-        metadata: { detectionEngine: 'AI', detectionTime: new Date().toISOString() }
-      },
-      {
-        title: 'Brute Force Attack',
-        description: 'Multiple failed login attempts to admin console',
-        severity: 'high',
-        source: 'SIEM',
-        sourceIp: '203.0.113.45',
-        status: 'in_progress',
-        assignedTo: 1,
-        metadata: { attempts: 58, lastAttempt: new Date().toISOString() }
-      }
-    ];
+    // NO Crear alertas de ejemplo
+    // const sampleAlerts: InsertAlert[] = [
+    //   {
+    //     title: 'Ransomware Behavior Detected',
+    //     description: 'Multiple file encryption attempts from endpoint WIN-SRV-04',
+    //     severity: 'critical',
+    //     source: 'Endpoint Security',
+    //     sourceIp: '192.168.1.104',
+    //     status: 'new',
+    //     metadata: { detectionEngine: 'AI', detectionTime: new Date().toISOString() }
+    //   },
+    //   {
+    //     title: 'Brute Force Attack',
+    //     description: 'Multiple failed login attempts to admin console',
+    //     severity: 'high',
+    //     source: 'SIEM',
+    //     sourceIp: '203.0.113.45',
+    //     status: 'in_progress',
+    //     assignedTo: 1,
+    //     metadata: { attempts: 58, lastAttempt: new Date().toISOString() }
+    //   }
+    // ];
     
     // Comprobar si ya hay alertas
     const existingAlerts = await storage.listAlerts();
     if (existingAlerts.length === 0) {
-      for (const alert of sampleAlerts) {
-        await storage.createAlert(alert);
-      }
-      console.log("Sample alerts created");
+    //   for (const alert of sampleAlerts) {
+    //     await storage.createAlert(alert);
+    //   }
+      console.log("No sample alerts created, will rely on real data.");
     } else {
-      console.log("Alerts already exist, skipping creation");
+      console.log("Alerts already exist, skipping creation of samples.");
     }
     
-    // Crear insights AI
-    const sampleInsights: InsertAiInsight[] = [
-      {
-        title: 'Potential Data Exfiltration',
-        description: 'Unusual outbound traffic patterns detected from host 192.168.2.45',
-        type: 'detection',
-        severity: 'high',
-        confidence: 85,
-        status: 'new',
-        relatedEntities: { 
-          hosts: ['192.168.2.45'], 
-          ports: [443, 8080], 
-          destinations: ['203.0.113.12'] 
-        }
-      }
-    ];
+    // NO Crear insights AI de ejemplo
+    // const sampleInsights: InsertAiInsight[] = [
+    //   {
+    //     title: 'Potential Data Exfiltration',
+    //     description: 'Unusual outbound traffic patterns detected from host 192.168.2.45',
+    //     type: 'detection',
+    //     severity: 'high',
+    //     confidence: 85,
+    //     status: 'new',
+    //     relatedEntities: { 
+    //       hosts: ['192.168.2.45'], 
+    //       ports: [443, 8080], 
+    //       destinations: ['203.0.113.12'] 
+    //     }
+    //   }
+    // ];
     
     // Comprobar si ya hay insights
     const existingInsights = await storage.listAiInsights();
     if (existingInsights.length === 0) {
-      for (const insight of sampleInsights) {
-        await storage.createAiInsight(insight);
-      }
-      console.log("Sample AI insights created");
+    //   for (const insight of sampleInsights) {
+    //     await storage.createAiInsight(insight);
+    //   }
+      console.log("No sample AI insights created, will rely on real data.");
     } else {
-      console.log("AI insights already exist, skipping creation");
+      console.log("AI insights already exist, skipping creation of samples.");
     }
     
-    // Crear intel de amenazas
-    const sampleThreatIntel: InsertThreatIntel[] = [
-      {
-        type: 'apt',
-        title: 'New APT Campaign Targeting Financial Sector',
-        description: 'Multiple C2 servers linked to known threat actor observed in recent attacks.',
-        source: 'Threat Intelligence Feed',
-        severity: 'critical',
-        confidence: 92,
-        iocs: { 
-          ips: ['185.142.236.100', '198.51.100.23'], 
-          domains: ['analytics-metrics.com', 'cloud-service-update.net'], 
-          hashes: ['7ad32a5f1f9e9d10e67678fe8b0ce92178df43f88ce4b16692035798be541'] 
-        },
-        relevance: 'high'
-      }
-    ];
+    // NO Crear intel de amenazas de ejemplo
+    // const sampleThreatIntel: InsertThreatIntel[] = [
+    //   {
+    //     type: 'apt',
+    //     title: 'New APT Campaign Targeting Financial Sector',
+    //     description: 'Multiple C2 servers linked to known threat actor observed in recent attacks.',
+    //     source: 'Threat Intelligence Feed',
+    //     severity: 'critical',
+    //     confidence: 92,
+    //     iocs: { 
+    //       ips: ['185.142.236.100', '198.51.100.23'], 
+    //       domains: ['analytics-metrics.com', 'cloud-service-update.net'], 
+    //       hashes: ['7ad32a5f1f9e9d10e67678fe8b0ce92178df43f88ce4b16692035798be541'] 
+    //     },
+    //     relevance: 'high'
+    //   }
+    // ];
     
     // Comprobar si ya hay threat intel
     const existingThreatIntel = await storage.listThreatIntel();
     if (existingThreatIntel.length === 0) {
-      for (const intel of sampleThreatIntel) {
-        await storage.createThreatIntel(intel);
-      }
-      console.log("Sample threat intelligence created");
+    //   for (const intel of sampleThreatIntel) {
+    //     await storage.createThreatIntel(intel);
+    //   }
+      console.log("No sample threat intelligence created, will rely on real data.");
     } else {
-      console.log("Threat intelligence data already exists, skipping creation");
+      console.log("Threat intelligence data already exists, skipping creation of samples.");
     }
     
     console.log("Database initialization completed successfully");
