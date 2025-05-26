@@ -1,0 +1,101 @@
+Funcionalidades Detalladas para la Configuración de Conectores de Datos
+La sección de configuración de conectores es crucial, ya que permite a la plataforma ingerir datos de diversas fuentes del entorno del cliente para su análisis. Una buena interfaz para esta sección debe ser intuitiva, segura y ofrecer control granular.
+
+Aquí se detallan las funcionalidades clave:
+
+1. Gestión General de Conectores:
+
+Listado y Visualización:
+
+Mostrar una tabla o lista de todos los conectores configurados.
+
+Columnas importantes: Nombre del conector, Tipo (API, Agente, Syslog, etc.), Estado (Activo, Inactivo, Error, Recibiendo Datos), Última vez que se recibieron datos, Fuente/Sistema de origen.
+
+Iconos visuales para indicar el tipo y estado del conector rápidamente.
+
+
+
+www.edrawsoft.com
+Añadir Nuevo Conector:
+
+Un botón claro para iniciar el proceso de añadir un nuevo conector.
+
+Un asistente guiado (wizard) que simplifique la configuración según el tipo de conector seleccionado.
+
+Edición:
+
+Permitir modificar la configuración de un conector existente (ej. credenciales API, puerto Syslog, configuración del agente).
+
+Habilitar/Deshabilitar:
+
+Opción para activar o desactivar temporalmente un conector sin necesidad de eliminarlo. Útil para mantenimientos o pruebas.
+
+Eliminar:
+
+Permitir borrar la configuración de un conector que ya no se necesita.
+
+Prueba de Conexión:
+
+Una función para verificar si la configuración actual del conector permite establecer una conexión exitosa con la fuente de datos (ej. probar credenciales API, verificar si se recibe un paquete Syslog).
+
+Monitorización de Salud:
+
+Indicadores claros sobre el estado de cada conector.
+
+Alertas o notificaciones si un conector deja de enviar datos o presenta errores recurrentes.
+
+Visualización de métricas básicas (ej. volumen de datos recibidos, tasa de errores).
+
+2. Funcionalidades Específicas por Tipo de Conector:
+
+Conectores API (Para servicios Cloud, SaaS, Threat Intelligence Feeds):
+
+Selección de Servicio: Lista predefinida de servicios populares (AWS CloudTrail, Microsoft 365, Okta, Salesforce, etc.) con configuraciones pre-rellenadas o guías específicas. Opción genérica para APIs REST/GraphQL no listadas.
+
+Autenticación: Soporte para diversos métodos:
+
+Claves API (API Keys)
+
+OAuth 2.0 (con flujo de autorización claro)
+
+Autenticación Básica (Username/Password - usar con precaución)
+
+Configuración de Endpoint: URL base de la API.
+
+Parámetros de Solicitud: Definir parámetros específicos, cabeceras (headers), y cuerpo (body) si es necesario.
+
+Frecuencia de Polling: Configurar cada cuánto tiempo la plataforma debe consultar la API para nuevos datos (ej. cada 5 minutos, cada hora).
+
+Mapeo de Datos (Opcional Avanzado): Permitir mapear campos de la respuesta API a los campos internos estandarizados de la plataforma SOC.
+
+Gestión de Paginación: Configurar cómo manejar respuestas API paginadas.
+
+Conectores de Agente (Para Endpoints, Servidores):
+
+Descarga e Instrucciones: Proporcionar enlaces de descarga para los agentes (Windows, Linux, macOS) e instrucciones claras de instalación y registro.
+
+Gestión de Agentes: Listar los agentes instalados, su estado (Online/Offline), versión, SO, última conexión.
+
+Políticas de Configuración: Crear y asignar políticas a grupos de agentes para definir:
+
+Qué logs recolectar (Logs de eventos de Windows, /var/log en Linux, logs de aplicaciones específicas).
+
+Monitorización de integridad de archivos (FIM).
+
+Recolección de métricas de rendimiento.
+
+Frecuencia de envío de datos.
+
+Actualización Remota: Capacidad de actualizar los agentes a nuevas versiones desde la consola (opcional avanzado).
+
+Conectores Syslog / Log Forwarding:
+
+Instrucciones Claras: Indicar la dirección IP/hostname y el puerto (UDP/TCP) del servidor Syslog de la plataforma donde los dispositivos deben enviar los logs.
+
+Selección de Parser: Permitir seleccionar un parser adecuado para el formato de log esperado (ej. Cisco ASA, Palo Alto Firewall, Fortinet, CEF, LEEF, JSON genérico, Regex personalizado). La IA podría ayudar a identificar formatos desconocidos.
+
+Identificación de Fuente: Configurar cómo identificar el dispositivo origen (basado en IP de origen o hostname en el mensaje Syslog).
+
+Soporte Seguro: Opción para configurar Syslog sobre TLS para cifrar los logs en tránsito.
+
+Filtrado (Opcional): Permitir definir reglas básicas para descartar logs de bajo interés antes de que sean procesados o almacenados.

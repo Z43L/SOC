@@ -1,0 +1,28 @@
+# Enricher configurations and rate limits
+virustotal:
+  apiKey: ${VT_API_KEY}
+  dailyQuota: 500
+abuseipdb:
+  apiKey: ${ABUSE_API_KEY}
+  perMinute: 60
+ipinfo:
+  apiKey: ${IPINFO_API_KEY}
+  perMinute: 1000
+nvd:
+  apiKey: ${NVD_API_KEY}
+  perMinute: 1000
+shodan:
+  apiKey: ${SHODAN_API_KEY}
+  perMinute: 100
+# OSV.dev (no key required)
+osv:
+  timeout: ${timeout}
+# YARA meta (local)
+yara:
+  # no external API key needed
+# Global settings
+timeout: 5000       # ms per request
+maxConcurrency: 5   # concurrent enrichers
+maxRetries: 3       # per alert
+# Global queue settings
+pollInterval: 60000   # ms between worker runs

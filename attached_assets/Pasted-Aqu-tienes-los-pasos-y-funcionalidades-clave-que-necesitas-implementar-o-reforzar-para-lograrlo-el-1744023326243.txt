@@ -1,0 +1,59 @@
+Aquí tienes los pasos y funcionalidades clave que necesitas implementar o reforzar para lograrlo, eliminando la dependencia de los datos ficticios de db-init.ts y MemStorage:
+
+1. Eliminar la Dependencia de Datos Ficticios:
+
+Desactivar db-init.ts: Comenta o elimina la llamada a initializeDatabase() en server/index.ts. No querrás que los datos de ejemplo se mezclen con los datos reales de los clientes. Considera mantenerlo como un script opcional para entornos de desarrollo/test.
+Eliminar MemStorage: Asegúrate de que tu aplicación utilice exclusivamente DatabaseStorage (server/storage.ts) que interactúa con PostgreSQL. MemStorage ya no es relevante.
+2. Implementación Robusta de Conectores de Datos (connectors):
+
+Lógica de Ingesta Real: Esta es la parte más crítica. Para cada tipo de conector que quieras soportar (API, Syslog, Agente, etc.), necesitas implementar la lógica real para:
+Conectores API (Cloud, SaaS, Threat Feeds):
+Implementar llamadas seguras a las APIs de terceros usando las credenciales/API keys almacenadas en connectors.configuration.
+Gestionar la autenticación (OAuth, API Keys).
+Manejar el polling (recuperación periódica de datos) según la frecuencia configurada. [source: 19]
+Implementar la lógica de paginación de las APIs. [source: 20]
+Referencia: server/integrations/threatFeeds.ts ya intenta esto para algunos feeds; necesitas generalizarlo y hacerlo configurable a través de la tabla connectors.
+Conectores Syslog:
+Configurar un servidor Syslog (UDP/TCP, potencialmente sobre TLS [source: 29]) que escuche en el puerto especificado en connectors.configuration.
+Recibir los mensajes Syslog.
+Conectores de Agente:
+Desarrollar los agentes para los sistemas operativos objetivo (Windows, Linux, macOS). [source: 21]
+Implementar un endpoint seguro en tu backend para que los agentes envíen datos (logs, métricas FIM [source: 23]).
+Gestionar el registro y estado de los agentes. [source: 22]
+Parsing y Normalización:
+Una vez recibidos los datos (sean logs Syslog, respuestas API, datos de agentes), necesitas parsers robustos para extraer la información relevante. [source: 27]
+Normaliza los datos extraídos al esquema de tu base de datos (principalmente la tabla alerts, pero también podría ir a otras tablas como metrics o datos de activos - que actualmente no tienes definidos explícitamente). La IA podría ayudar a identificar formatos desconocidos. [source: 27]
+Gestión Segura de Credenciales: Almacena las API keys y credenciales de los conectores de forma segura (variables de entorno son un mínimo, considera soluciones de gestión de secretos como HashiCorp Vault, AWS Secrets Manager, etc., especialmente en producción). El campo configuration en connectors debería estar cifrado o manejarse con cuidado.
+Manejo de Errores y Estado: Implementa una lógica sólida para monitorizar el estado de cada conector (connectors.status, connectors.last_successful_connection). Actualiza el estado a 'error' si fallan las conexiones/polling, 'warning' si hay problemas intermitentes, 'active' si funciona correctamente. [source: 12, 13]
+3. Refinar la Integración de Threat Intelligence (TI):
+
+Activación de Feeds Reales: Asegúrate de que server/integrations/threatFeeds.ts (y las funciones que llama como WorkspaceOTXData, WorkspaceCISAVulnerabilities, etc.) utilicen las API keys y configuraciones almacenadas en la tabla threatFeeds para los feeds marcados como isActive.
+Enriquecimiento de Datos: Implementa la lógica para enriquecer automáticamente las alertas reales generadas a partir de los datos de los conectores. Cuando se cree una alerta con IPs, dominios o hashes, consulta tu tabla threatIntel (y potencialmente las APIs de TI en tiempo real si es necesario) para añadir contexto. [source: 35]
+Correlación TI <-> Eventos Internos: Implementa un mecanismo (podría ser un proceso en background o parte del flujo de análisis de alertas) que compruebe si los IoCs de los feeds de TI activos (threatFeeds) se observan en los datos de logs/alertas entrantes de los conectores. Si hay una coincidencia, se podría aumentar la severidad de la alerta interna o crear una nueva alerta específica. [source: 33]
+4. Adaptar y Optimizar la IA para Datos Reales:
+
+Disparadores de IA: Asegúrate de que las funciones en server/ai-service.ts se llamen cuando se creen alertas reales a partir de los datos de los conectores, no solo a través de endpoints manuales.
+Ajuste de Prompts: Los prompts actuales están diseñados para funcionar con la estructura de datos definida. Es posible que necesites ajustarlos ligeramente una vez que veas la naturaleza de los datos reales que ingresan (ej. formatos de descripción específicos de ciertas herramientas).
+Manejo de Volumen: El análisis con GPT-4o puede ser costoso y tener límites de tasa. Considera estrategias:
+Analizar solo alertas por encima de cierta severidad inicial.
+Usar modelos más pequeños/rápidos (o reglas heurísticas) para un primer triaje antes de enviar a GPT-4o.
+Implementar colas y reintentos para las llamadas a la API de OpenAI.
+Validación de Salidas: Valida rigurosamente las salidas JSON de la IA (especialmente campos como severity, confidence) antes de insertarlas en aiInsights o actualizar incidents. El código actual ya tiene una validación básica de severidad, lo cual es bueno.
+5. Implementar Flujos de Trabajo de SOC Completos:
+
+Triaje de Alertas: La UI necesita permitir a los analistas revisar eficientemente las alertas reales entrantes, filtrarlas, asignarlas y cambiar su estado (new, in_progress, resolved, acknowledged). [source: 94, 95]
+Gestión de Incidentes: El ciclo de vida completo: creación de incidentes (manual o por correlación IA), asignación, actualización de estado, adición de notas/evidencia (los endpoints existen, pero necesitan usarse en un flujo de trabajo coherente), vinculación de alertas reales, y cierre.
+Respuesta Orquestada (SOAR):
+La tabla playbooks y playbookExecutions existe. Necesitas implementar la lógica real de los pasos del playbook. [source: 99]
+Esto a menudo implica integrarse con otras APIs (del EDR para aislar un host, del firewall para bloquear una IP, del sistema de identidad para deshabilitar una cuenta). [source: 114]
+Define los steps en playbooks.steps con un formato claro que tu motor de ejecución pueda interpretar.
+6. Escalabilidad y Rendimiento:
+
+Procesamiento Asíncrono: Para manejar el volumen de datos reales, considera usar colas de mensajes (como RabbitMQ, Kafka, o incluso soluciones más simples como BullMQ si usas Redis) para desacoplar la ingesta, el parsing, el análisis IA y el almacenamiento. Los datos de los conectores se añadirían a una cola, y workers independientes los procesarían. [source: 85]
+Optimización de Base de Datos: Con datos reales, el volumen crecerá. Asegúrate de tener índices adecuados en las tablas (migrations/0007_add_playbooks.sql ya añade algunos). Monitoriza el rendimiento de las consultas. Considera particionar tablas grandes (como alerts) si es necesario.
+Bases de Datos Especializadas: Revisa si PostgreSQL es suficiente o si necesitas bases de datos optimizadas para series temporales (como TimescaleDB o InfluxDB) para almacenar logs y métricas a gran escala. [source: 87]
+7. Monitorización y Mantenimiento:
+
+Logging Robusto: Añade logging detallado para el estado de los conectores, el procesamiento de datos, las llamadas a APIs (IA, TI, conectores) y cualquier error.
+Monitorización de Salud: Implementa un endpoint /api/health más completo que verifique no solo que el servidor está activo, sino también la conexión a la base de datos y el estado de los conectores principales.
+Gestión de Errores: Define cómo manejarás los fallos en la ingesta, parsing, o análisis (ej. colas de mensajes muertos, reintentos, alertas administrativas).

@@ -1,0 +1,27 @@
+{
+  "include": ["server/**/*", "shared/**/*"],
+  "exclude": ["node_modules", "build", "dist", "**/*.test.ts"],
+  "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo",
+    // "noEmit": true,
+    "module": "ESNext",
+    "target": "ESNext",
+    "strict": true,
+    "lib": ["esnext", "dom", "dom.iterable", "es2015", "es2016", "es2017", "es2018"],
+    "jsx": "preserve",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    // "allowImportingTsExtensions": true,
+    "moduleResolution": "node",
+    "baseUrl": ".",
+    "types": ["node"],
+    "paths": {
+      "@/*": ["./client/src/*"],
+      "@shared/*": ["./shared/*"]
+    },
+    "downlevelIteration": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true
+  }
+}
