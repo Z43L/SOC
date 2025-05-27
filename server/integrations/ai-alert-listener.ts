@@ -37,7 +37,7 @@ export function initAiAlertListener(): void {
   log(`Initializing AI alert listener with min severity: ${config.minSeverityLevel}`, config.logPrefix);
   
   // Subscribe to alert.created events
-  eventBus.subscribeToEvent('alert.created', handleAlertCreated);
+  eventBus.on('alert.created', handleAlertCreated);
   
   log(`AI alert listener initialized and subscribed to alert.created events`, config.logPrefix);
 }
@@ -46,6 +46,7 @@ export function initAiAlertListener(): void {
  * Handles alert.created events
  * @param event The alert created event
  */
+// Fix 'publish' vs 'publishEvent' method issue
 async function handleAlertCreated(event: SOCEvent): Promise<void> {
   try {
     const alertEvent = event as AlertCreatedEvent;

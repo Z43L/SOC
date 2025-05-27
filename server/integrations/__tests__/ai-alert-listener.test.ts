@@ -75,7 +75,7 @@ describe('AI Alert Listener', () => {
     };
 
     // Emit the event
-    eventBus.publishEvent(alertEvent);
+    eventBus.emit('alert.created', alertEvent);
     
     // Wait for async operations
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -108,7 +108,7 @@ describe('AI Alert Listener', () => {
     };
 
     // Emit the event
-    eventBus.publishEvent(alertEvent);
+    eventBus.emit('alert.created', alertEvent);
     
     // Wait for async operations
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -137,7 +137,7 @@ describe('AI Alert Listener', () => {
     };
 
     // Emit the event
-    eventBus.publishEvent(alertEvent);
+    eventBus.emit('alert.created', alertEvent);
     
     // Wait for async operations
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -172,7 +172,7 @@ describe('AI Alert Listener', () => {
     };
 
     // Emit the event
-    eventBus.publishEvent(alertEvent);
+    eventBus.emit('alert.created', alertEvent);
     
     // Wait for async operations
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -200,7 +200,7 @@ describe('AI Alert Listener', () => {
     };
 
     // Emit the event
-    eventBus.publishEvent(criticalAlertEvent);
+    eventBus.emit('alert.created', criticalAlertEvent);
     
     // Wait for async operations
     await new Promise(resolve => setTimeout(resolve, 100));
