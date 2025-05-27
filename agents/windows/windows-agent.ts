@@ -17,12 +17,18 @@ const exec = promisify(childProcess.exec);
 /**
  * Agente específico para sistemas Windows
  */
+import { Collector } from '../collectors/index';
+import { initializeCollectors, stopCollectors } from './collectors-manager';
+
 export class WindowsAgent extends AgentBase {
   // Monitores activos
   private fileWatcher: any = null;
   private processWatcher: NodeJS.Timeout | null = null;
   private networkWatcher: NodeJS.Timeout | null = null;
   private registryWatcher: NodeJS.Timeout | null = null;
+  
+  // Colectores del nuevo sistema
+  private activeCollectors: Collector[] = [];
   
   // Cache de información para detectar cambios
   private lastProcessList: Map<number, Monitoring.ProcessInfo> = new Map();
@@ -217,6 +223,15 @@ export class WindowsAgent extends AgentBase {
   protected async startMonitoring(): Promise<void> {
     console.log('Iniciando monitoreo específico de Windows...');
     
+    // Iniciar el nuevo sistema de colectores
+    try {
+      this.activeCollectors = await initializeCollectors((event) => {
+        this.handleCollectorEvent(event);
+      });
+    } catch (error) {
+      console.error('Error al iniciar colectores:', error);
+    }
+    
     // Iniciar monitoreo de procesos
     if (this.config.capabilities.processMonitoring) {
       console.log('Iniciando monitoreo de procesos');
@@ -268,6 +283,12 @@ export class WindowsAgent extends AgentBase {
   protected async stopMonitoring(): Promise<void> {
     console.log('Deteniendo monitoreo específico de Windows...');
     
+    // Detener los colectores del nuevo sistema
+    if (this.activeCollectors.length > 0) {
+      await stopCollectors(this.activeCollectors);
+      this.activeCollectors = [];
+    }
+    
     // Detener monitoreo de procesos
     if (this.processWatcher) {
       clearInterval(this.processWatcher);
@@ -287,6 +308,31 @@ export class WindowsAgent extends AgentBase {
     }
     
     console.log('Monitoreo de Windows detenido correctamente');
+  }
+  
+  /**
+   * Procesa eventos recibidos de los colectores
+   */
+  private async handleCollectorEvent(event: any): Promise<void> {
+    try {
+      if (!event || !event.source) {
+        return;
+      }
+      
+      // Convertir el evento del colector al formato esperado por el agente
+      const agentEvent = {
+        eventType: event.type || event.source,
+        severity: event.severity || 'info',
+        timestamp: event.timestamp || new Date(),
+        message: event.message || `Evento de ${event.source}`,
+        details: event.details || {}
+      };
+      
+      // Encolar el evento para su envío
+      await this.queueEvent(agentEvent);
+    } catch (error) {
+      console.error('Error procesando evento de colector:', error);
+    }
   }
   
   /**
