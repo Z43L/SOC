@@ -941,6 +941,74 @@ export class APIConnector extends BaseConnector {
       default: return 'medium';
     }
   }
+  
+  /**
+   * Obtiene un token OAuth si es necesario
+   */
+  private async getOAuthToken(endpoint: any): Promise<string | null> {
+    // Verificar si este endpoint usa OAuth
+    if (!endpoint.oauth || !endpoint.oauth.enabled) {
+      return null;
+    }
+    
+    try {
+      const credentials = this.credentialsManager.getCredentials(this.connector.id);
+      
+      // Verificar si ya tenemos un token válido
+      if (credentials.accessToken) {
+        // Aquí habría una lógica para verificar si el token ha expirado
+        // Por ejemplo, comparando con la fecha de expiración almacenada
+        // Si no ha expirado, devolver el token existente
+        return credentials.accessToken;
+      }
+      
+      // Si no hay token o ha expirado, solicitar uno nuevo
+      const tokenUrl = endpoint.oauth.tokenUrl || this.config.oauthConfig?.tokenUrl;
+      if (!tokenUrl) {
+        throw new Error('OAuth token URL no configurada');
+      }
+      
+      const oauthParams = new URLSearchParams();
+      oauthParams.append('grant_type', 'client_credentials');
+      
+      if (credentials.apiKey && credentials.apiSecret) {
+        oauthParams.append('client_id', credentials.apiKey);
+        oauthParams.append('client_secret', credentials.apiSecret);
+      } else if (endpoint.oauth.clientId && endpoint.oauth.clientSecret) {
+        oauthParams.append('client_id', endpoint.oauth.clientId);
+        oauthParams.append('client_secret', endpoint.oauth.clientSecret);
+      } else {
+        throw new Error('Credenciales OAuth no disponibles');
+      }
+      
+      if (endpoint.oauth.scope) {
+        oauthParams.append('scope', endpoint.oauth.scope);
+      }
+      
+      const response = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json'
+        },
+        body: oauthParams.toString()
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Error obteniendo token OAuth: ${response.status} ${response.statusText}`);
+      }
+      
+      const tokenData = await response.json();
+      
+      // Aquí se almacenaría el token en la base de datos
+      // Por ejemplo: await db.query('UPDATE connectors SET oauth_token = ? WHERE id = ?', [tokenData.access_token, this.connector.id]);
+      
+      return tokenData.access_token;
+    } catch (error) {
+      log(`Error obteniendo token OAuth: ${error}`, 'connector');
+      return null;
+    }
+  }
 
   /**
    * Maneja fallos del circuit breaker
