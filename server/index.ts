@@ -133,5 +133,14 @@ app.use((req, res, next) => {
       console.error('Failed to initialize SOAR PlaybookExecutor', err);
     }
 
+    // Initialize AI Alert Listener
+    try {
+      const { initAiAlertListener } = await import('./integrations/ai-alert-listener');
+      initAiAlertListener();
+      log('AI Alert Listener initialized and subscribed to events');
+    } catch (err) {
+      console.error('Failed to initialize AI Alert Listener', err);
+    }
+
   });
 })();
