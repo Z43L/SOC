@@ -1,22 +1,36 @@
 /**
- * Módulo principal de conectores
- * Proporciona funciones para gestionar y utilizar los diferentes tipos de conectores
+ * Connector Module - Main entry point
+ * Provides functions for managing and using different types of connectors
  */
 
-import { Connector } from '@shared/schema';
+import express from 'express';
+import { Connector as DBConnector } from '@shared/schema';
 import { storage } from '../../storage';
 import { log } from '../../vite';
-import { BaseConnector, ConnectorType, ConnectorConfig } from './base';
+
+// Import old connectors for backwards compatibility
+import { BaseConnector, ConnectorType as OldConnectorType, ConnectorConfig as OldConnectorConfig } from './base';
 import type { ConnectorResult } from './base';
 import { APIConnector } from './api';
 import { SyslogConnector } from './syslog';
 import { AgentConnector } from './agent';
 import { VirusTotalConnector, OTXConnector, MISPConnector } from './implementations';
-import express from 'express';
 
-// Exportar tipos y clases
+// Import new connector implementation
+import { Connector, ConnectorConfig, ConnectorStatus, RawEvent, connectorRegistry } from './connector.interface';
+import { connectorScheduler } from './connector-scheduler';
+import { initializeConnectors as initNewConnectors, shutdownConnectors } from './connector-init';
+import { eventPipeline } from './event-pipeline';
+import { SyslogConnector as EnhancedSyslogConnector } from './syslog-connector-enhanced';
+import { AgentConnector as EnhancedAgentConnector } from './agent-connector-enhanced';
+import { AwsCloudWatchLogsConnector } from './aws-cloudwatch-connector';
+import { GoogleWorkspaceConnector } from './google-workspace-connector';
+import { ConnectorFactory } from './connector-factory';
+
+// Export types and classes (both old and new)
 export { 
-  ConnectorType, 
+  // Old exports for backward compatibility
+  OldConnectorType as ConnectorType, 
   ConnectorResult,
   BaseConnector, 
   APIConnector, 
@@ -24,79 +38,97 @@ export {
   AgentConnector,
   VirusTotalConnector,
   OTXConnector,
-  MISPConnector
- };
+  MISPConnector,
+  
+  // New exports
+  Connector,
+  ConnectorConfig,
+  ConnectorStatus,
+  RawEvent,
+  connectorRegistry,
+  connectorScheduler,
+  EnhancedSyslogConnector,
+  EnhancedAgentConnector,
+  AwsCloudWatchLogsConnector,
+  GoogleWorkspaceConnector,
+  ConnectorFactory,
+  eventPipeline
+};
 
-// Mapa de conectores activos
+// Legacy maps for backward compatibility
 const activeConnectors: Map<number, BaseConnector> = new Map();
-
-// Mapa de intervalos de polling
 const pollingIntervals: Map<number, NodeJS.Timeout> = new Map();
 
 /**
- * Inicializa todos los conectores en el sistema
+ * Initialize all connectors in the system
+ * This function now delegates to the new connector system
  */
 export async function initializeConnectors(app: express.Express): Promise<void> {
   try {
-    log('Inicializando conectores...', 'connectors');
+    // Initialize the new connector system
+    await initNewConnectors(app);
     
-    // Obtener todos los conectores de la base de datos
+    // For backward compatibility, also initialize old-style connectors
+    log('Initializing legacy connectors...', 'connectors');
+    
+    // Get all connectors from the database
     const connectors = await storage.listConnectors();
     
-    log(`Se encontraron ${connectors.length} conectores configurados`, 'connectors');
+    log(`Found ${connectors.length} configured connectors`, 'connectors');
     
-    // Inicializar cada conector activo
+    // Initialize each active connector
     for (const connector of connectors) {
       if (connector.isActive) {
         await initializeConnector(connector, app);
       }
     }
     
-    log('Inicialización de conectores completada', 'connectors');
+    log('Connector initialization complete', 'connectors');
   } catch (error) {
-    log(`Error inicializando conectores: ${error instanceof Error ? error.message : 'Error desconocido'}`, 'connectors');
+    log(`Error initializing connectors: ${error instanceof Error ? error.message : 'Unknown error'}`, 'connectors');
   }
 }
 
 /**
- * Inicializa un conector específico
+ * Initialize a specific connector
+ * This is kept for backward compatibility
  */
-export async function initializeConnector(connector: Connector, app: express.Express): Promise<BaseConnector | null> {
+export async function initializeConnector(connector: DBConnector, app: express.Express): Promise<BaseConnector | null> {
   try {
-    log(`Inicializando conector ${connector.name} (ID: ${connector.id})`, 'connectors');
+    log(`Initializing connector ${connector.name} (ID: ${connector.id})`, 'connectors');
     
-    // Detener si ya existe un conector activo con el mismo ID
+    // Stop if there's already an active connector with the same ID
     if (activeConnectors.has(connector.id)) {
       shutdownConnector(connector.id);
     }
     
-    // Crear instancia del conector según su tipo
+    // Create connector instance based on type
     let connectorInstance: BaseConnector | null = null;
     
-    // Leer y tipar configuración
-    const config = connector.configuration as ConnectorConfig;
+    // Read and type configuration
+    const config = connector.configuration as OldConnectorConfig;
     const connectorType = config.connectionMethod?.toLowerCase() || 'api';
     
-    // Primero intentamos detectar proveedores específicos
+    // First try to detect specific providers
     const vendor = connector.vendor.toLowerCase();
     
     if (connectorType === 'api') {
-      // Usar conectores específicos para proveedores conocidos
+      // Use specific connectors for known providers
       if (vendor === 'virustotal') {
-        log(`Inicializando conector específico de VirusTotal para ${connector.name}`, 'connectors');
+        log(`Initializing specific VirusTotal connector for ${connector.name}`, 'connectors');
         connectorInstance = new VirusTotalConnector(connector);
       } else if (vendor === 'otx' || vendor === 'alienvault' || vendor === 'alienvault otx') {
-        log(`Inicializando conector específico de OTX AlienVault para ${connector.name}`, 'connectors');
+        log(`Initializing specific OTX AlienVault connector for ${connector.name}`, 'connectors');
         connectorInstance = new OTXConnector(connector);
       } else if (vendor === 'misp') {
-        log(`Inicializando conector específico de MISP para ${connector.name}`, 'connectors');
+        log(`Initializing specific MISP connector for ${connector.name}`, 'connectors');
         connectorInstance = new MISPConnector(connector);
       } else {
-        log(`Inicializando conector API genérico para ${connector.name}`, 'connectors');
+        log(`Initializing generic API connector for ${connector.name}`, 'connectors');
         connectorInstance = new APIConnector(connector);
       }
     } else {
-      // Para otros tipos de conectores
+      // For other connector types
       switch (connectorType) {
         case 'syslog':
           connectorInstance = new SyslogConnector(connector);
@@ -104,122 +136,124 @@ export async function initializeConnector(connector: Connector, app: express.Exp
         case 'agent':
           const agentConnector = new AgentConnector(connector);
           
-          // Registrar endpoints en Express para los agentes
+          // Register endpoints in Express for agents
           app.use(agentConnector.getRouter());
           
           connectorInstance = agentConnector;
           break;
         default:
-          log(`Tipo de conector no soportado: ${connectorType}`, 'connectors');
+          log(`Unsupported connector type: ${connectorType}`, 'connectors');
           return null;
       }
     }
     
-    // Configuración válida
+    // Valid configuration
     if (!connectorInstance.validateConfig()) {
-      log(`Configuración inválida para conector ${connector.name}`, 'connectors');
+      log(`Invalid configuration for connector ${connector.name}`, 'connectors');
       return null;
     }
     
-    // Ejecutar el conector por primera vez
+    // Execute the connector for the first time
     const result = await connectorInstance.execute();
     
     if (result.success) {
-      log(`Conector ${connector.name} inicializado correctamente`, 'connectors');
+      log(`Connector ${connector.name} initialized successfully`, 'connectors');
       
-      // Guardar en mapa de conectores activos
+      // Save in active connectors map
       activeConnectors.set(connector.id, connectorInstance);
       
-      // Configurar polling periódico si es un conector API
+      // Configure periodic polling if it's an API connector
       if (connectorType === 'api') {
         const apiConfig = config as any;
-        const pollingInterval = apiConfig.pollingInterval || 300; // 5 minutos por defecto
+        const pollingInterval = apiConfig.pollingInterval || 300; // Default: 5 minutes
         
-        log(`Configurando polling para ${connector.name} cada ${pollingInterval} segundos`, 'connectors');
+        log(`Configuring polling for ${connector.name} every ${pollingInterval} seconds`, 'connectors');
         
         const intervalId = setInterval(async () => {
           try {
-            log(`Ejecutando polling para ${connector.name}`, 'connectors');
+            log(`Executing polling for ${connector.name}`, 'connectors');
             const pollResult = await connectorInstance!.execute();
-            log(`Resultado de polling para ${connector.name}: ${pollResult.success ? 'Éxito' : 'Error'} - ${pollResult.message}`, 'connectors');
+            log(`Polling result for ${connector.name}: ${pollResult.success ? 'Success' : 'Error'} - ${pollResult.message}`, 'connectors');
           } catch (error) {
-            log(`Error en polling para ${connector.name}: ${error instanceof Error ? error.message : 'Error desconocido'}`, 'connectors');
+            log(`Error in polling for ${connector.name}: ${error instanceof Error ? error.message : 'Unknown error'}`, 'connectors');
           }
         }, pollingInterval * 1000);
         
-        // Guardar referencia al intervalo
+        // Save reference to the interval
         pollingIntervals.set(connector.id, intervalId);
       }
       
       return connectorInstance;
     } else {
-      log(`Error inicializando conector ${connector.name}: ${result.message}`, 'connectors');
+      log(`Error initializing connector ${connector.name}: ${result.message}`, 'connectors');
       return null;
     }
   } catch (error) {
-    log(`Error inicializando conector ${connector.name}: ${error instanceof Error ? error.message : 'Error desconocido'}`, 'connectors');
+    log(`Error initializing connector ${connector.name}: ${error instanceof Error ? error.message : 'Unknown error'}`, 'connectors');
     return null;
   }
 }
 
 /**
- * Detiene y elimina un conector activo
+ * Stop and remove an active connector
+ * This is kept for backward compatibility
  */
 export function shutdownConnector(connectorId: number): void {
-  // Detener intervalo de polling si existe
+  // Stop polling interval if it exists
   if (pollingIntervals.has(connectorId)) {
     clearInterval(pollingIntervals.get(connectorId)!);
     pollingIntervals.delete(connectorId);
-    log(`Polling detenido para conector ID ${connectorId}`, 'connectors');
+    log(`Polling stopped for connector ID ${connectorId}`, 'connectors');
   }
   
-  // Eliminar del mapa de conectores activos
+  // Remove from active connectors map
   if (activeConnectors.has(connectorId)) {
     activeConnectors.delete(connectorId);
-    log(`Conector ID ${connectorId} apagado`, 'connectors');
+    log(`Connector ID ${connectorId} shut down`, 'connectors');
   }
 }
 
 /**
- * Ejecuta un conector específico manualmente
+ * Execute a specific connector manually
+ * This is kept for backward compatibility
  */
 export async function executeConnector(connectorId: number): Promise<ConnectorResult> {
   try {
-    // Verificar si el conector está activo
+    // Check if the connector is active
     if (!activeConnectors.has(connectorId)) {
-      // Intentar cargar desde la base de datos
+      // Try to load from the database
       const connector = await storage.getConnector(connectorId);
       
       if (!connector) {
         return {
           success: false,
-          message: `Conector ID ${connectorId} no encontrado`
+          message: `Connector ID ${connectorId} not found`
         };
       }
       
-      // No inicializar, solo crear una instancia temporal
+      // Don't initialize, just create a temporary instance
       let connectorInstance: BaseConnector;
       
-      // Leer y tipar configuración
-      const config = connector.configuration as ConnectorConfig;
+      // Read and type configuration
+      const config = connector.configuration as OldConnectorConfig;
       const connectorType = config.connectionMethod?.toLowerCase() || 'api';
       
-      // Detectar el vendor para conectores específicos
+      // Detect vendor for specific connectors
       const vendor = connector.vendor.toLowerCase();
       
       if (connectorType === 'api') {
-        // Usar conectores específicos para proveedores conocidos
+        // Use specific connectors for known providers
         if (vendor === 'virustotal') {
-          log(`Utilizando conector específico de VirusTotal para ejecución manual`, 'connectors');
+          log(`Using specific VirusTotal connector for manual execution`, 'connectors');
           connectorInstance = new VirusTotalConnector(connector);
         } else if (vendor === 'otx' || vendor === 'alienvault' || vendor === 'alienvault otx') {
-          log(`Utilizando conector específico de OTX AlienVault para ejecución manual`, 'connectors');
+          log(`Using specific OTX AlienVault connector for manual execution`, 'connectors');
           connectorInstance = new OTXConnector(connector);
         } else if (vendor === 'misp') {
-          log(`Utilizando conector específico de MISP para ejecución manual`, 'connectors');
+          log(`Using specific MISP connector for manual execution`, 'connectors');
           connectorInstance = new MISPConnector(connector);
         } else {
-          log(`Utilizando conector API genérico para ejecución manual`, 'connectors');
+          log(`Using generic API connector for manual execution`, 'connectors');
           connectorInstance = new APIConnector(connector);
         }
       } else {
@@ -233,29 +267,30 @@ export async function executeConnector(connectorId: number): Promise<ConnectorRe
           default:
             return {
               success: false,
-              message: `Tipo de conector no soportado: ${connectorType}`
+              message: `Unsupported connector type: ${connectorType}`
             };
         }
       }
       
-      // Ejecutar
+      // Execute
       return await connectorInstance.execute();
     }
     
-    // Usar el conector activo existente
+    // Use the existing active connector
     const connectorInstance = activeConnectors.get(connectorId)!;
     return await connectorInstance.execute();
   } catch (error) {
-    log(`Error ejecutando conector ID ${connectorId}: ${error instanceof Error ? error.message : 'Error desconocido'}`, 'connectors');
+    log(`Error executing connector ID ${connectorId}: ${error instanceof Error ? error.message : 'Unknown error'}`, 'connectors');
     return {
       success: false,
-      message: `Error ejecutando conector: ${error instanceof Error ? error.message : 'Error desconocido'}`
+      message: `Error executing connector: ${error instanceof Error ? error.message : 'Unknown error'}`
     };
   }
 }
 
 /**
- * Obtiene el estado de todos los conectores activos
+ * Get the status of all active connectors
+ * This is kept for backward compatibility
  */
 export function getActiveConnectors(): { id: number, name: string, type: string }[] {
   return Array.from(activeConnectors.entries()).map(([id, connector]) => ({
@@ -266,20 +301,21 @@ export function getActiveConnectors(): { id: number, name: string, type: string 
 }
 
 /**
- * Actualiza el estado de activación de un conector
+ * Update the activation status of a connector
+ * This is kept for backward compatibility
  */
 export async function toggleConnector(connectorId: number, active: boolean): Promise<boolean> {
   try {
-    // Obtener conector de la base de datos
+    // Get connector from the database
     const connector = await storage.getConnector(connectorId);
     
     if (!connector) {
-      log(`Conector ID ${connectorId} no encontrado`, 'connectors');
+      log(`Connector ID ${connectorId} not found`, 'connectors');
       return false;
     }
     
     if (active) {
-      // Activar conector
+      // Activate connector
       if (!activeConnectors.has(connectorId)) {
         const app = (global as any).expressApp as express.Express;
         const result = await initializeConnector(connector, app);
@@ -287,12 +323,44 @@ export async function toggleConnector(connectorId: number, active: boolean): Pro
       }
       return true;
     } else {
-      // Desactivar conector
+      // Deactivate connector
       shutdownConnector(connectorId);
       return true;
     }
   } catch (error) {
-    log(`Error en toggleConnector para ID ${connectorId}: ${error instanceof Error ? error.message : 'Error desconocido'}`, 'connectors');
+    log(`Error in toggleConnector for ID ${connectorId}: ${error instanceof Error ? error.message : 'Unknown error'}`, 'connectors');
     return false;
+  }
+}
+
+/**
+ * Run a connector once by ID (using the new system)
+ */
+export async function runConnector(connectorId: string): Promise<boolean> {
+  try {
+    await connectorScheduler.runConnectorNow(connectorId);
+    return true;
+  } catch (error) {
+    log(`Error running connector ${connectorId}: ${error}`, 'connectors');
+    return false;
+  }
+}
+
+/**
+ * Test a connector connection
+ */
+export async function testConnectorConnection(connectorId: string): Promise<{ success: boolean; message: string }> {
+  try {
+    const connector = connectorRegistry.getConnector(connectorId);
+    if (!connector) {
+      return { success: false, message: `Connector ${connectorId} not found` };
+    }
+    
+    return await connector.testConnection();
+  } catch (error) {
+    return { 
+      success: false, 
+      message: `Error testing connector: ${error instanceof Error ? error.message : String(error)}`
+    };
   }
 }

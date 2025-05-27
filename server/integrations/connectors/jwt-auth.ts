@@ -4,21 +4,79 @@
 
 import * as crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import { Request, Response, NextFunction } from 'express';
+import { log } from '../../vite';
 
 // Clave secreta para firmar los tokens (en producción debería ser una clave fuerte y almacenada de forma segura)
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(64).toString('hex');
 const JWT_EXPIRES_IN = '30d'; // Los tokens expiran en 30 días
 
+// Extend Express Request interface to include user property
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        agentId: string;
+        organizationId: string;
+        userId?: number;
+        type?: string;
+      };
+    }
+  }
+}
 
+/**
+ * Middleware to verify agent JWT tokens
+ */
+export function verifyAgentJwt(req: Request, res: Response, next: NextFunction): void {
+  try {
+    // Get token from header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({
+        success: false,
+        message: 'Authentication token required'
+      });
+      return;
+    }
+    
+    // Extract token
+    const token = authHeader.split(' ')[1];
+    
+    // Verify token
+    const decoded = jwt.verify(
+      token,
+      JWT_SECRET
+    ) as {
+      agentId: string;
+      organizationId: string;
+      userId?: number;
+      type?: string;
+    };
+    
+    // Attach user info to request
+    req.user = decoded;
+    
+    // Continue
+    next();
+  } catch (error) {
+    log(`JWT verification error: ${error}`, 'agent-jwt');
+    res.status(401).json({
+      success: false,
+      message: 'Invalid or expired token'
+    });
+  }
+}
 
 /**
  * Genera un token JWT para un agente
  */
-export function generateAgentToken(agentId: string, userId: number): string {
+export function generateAgentToken(agentId: string, userId: number, organizationId: string): string {
   return jwt.sign(
     {
       agentId,
       userId,
+      organizationId,
       type: 'agent'
     },
     JWT_SECRET,
@@ -31,13 +89,14 @@ export function generateAgentToken(agentId: string, userId: number): string {
 /**
  * Verifica un token JWT de agente
  */
-export function verifyAgentToken(token: string, verifySignature = true): { agentId: string; userId: number } | null {
+export function verifyAgentToken(token: string, verifySignature = true): { agentId: string; userId: number; organizationId: string } | null {
   if (!verifySignature) {
     const decoded = jwt.decode(token) as jwt.JwtPayload;
     if (!decoded) return null;
     return {
       agentId: decoded.agentId as string,
-      userId: decoded.userId as number
+      userId: decoded.userId as number,
+      organizationId: decoded.organizationId as string
     };
   }
   try {
@@ -53,12 +112,13 @@ export function verifyAgentToken(token: string, verifySignature = true): { agent
       return null;
     }
     // Verificar que es un token de agente
-    if (decoded.type !== 'agent' || !decoded.agentId || !decoded.userId) {
+    if (decoded.type !== 'agent' || !decoded.agentId || !decoded.userId || !decoded.organizationId) {
       return null;
     }
     return {
       agentId: decoded.agentId as string,
-      userId: decoded.userId as number
+      userId: decoded.userId as number,
+      organizationId: decoded.organizationId as string
     };
   } catch (error) {
     console.error('Error verifying agent token:', error);
