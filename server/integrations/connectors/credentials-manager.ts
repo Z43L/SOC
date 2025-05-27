@@ -161,6 +161,27 @@ export class CredentialsManager {
         return true; // Para tipos personalizados, asumir válido
     }
   }
+  
+  /**
+   * Obtiene las credenciales de un conector específico
+   * Si no están en caché, las obtiene de la base de datos y las descifra
+   */
+  public getCredentials(connectorId: number): ConnectorCredentials {
+    try {
+      // Esta implementación es un placeholder. En una implementación real,
+      // obtendría las credenciales cifradas de la base de datos y las descifraría.
+      
+      // En producción, usar algo como:
+      // const encryptedCreds = await db.query('SELECT encrypted_credentials FROM connectors WHERE id = ?', [connectorId]);
+      // return this.decryptCredentials(encryptedCreds);
+      
+      // Por ahora, devolver un objeto vacío para cumplir con la interfaz
+      return {};
+    } catch (error) {
+      log(`Error obteniendo credenciales para el conector ${connectorId}: ${error}`, 'credentials');
+      return {};
+    }
+  }
 
   /**
    * Genera un token de autenticación para agentes
