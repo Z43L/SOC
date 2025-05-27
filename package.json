@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.37.0",
+    "@aws-sdk/client-cloudwatch-logs": "^3.817.0",
     "@hookform/resolvers": "^3.9.1",
     "@jridgewell/trace-mapping": "^0.3.25",
     "@neondatabase/serverless": "^0.10.4",
@@ -72,6 +73,7 @@
     "express": "^4.21.2",
     "express-session": "^1.18.1",
     "framer-motion": "^11.18.2",
+    "googleapis": "^149.0.0",
     "handlebars": "^4.7.8",
     "input-otp": "^1.2.4",
     "js-yaml": "^4.1.0",
