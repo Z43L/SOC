@@ -8,6 +8,11 @@ import { BaseConnector, ConnectorConfig, ConnectorResult, ConnectorType } from '
 import { log } from '../../vite';
 import { storage } from '../../storage';
 import { aiParser } from '../ai-parser-service';
+import { DataProcessor, DataSource } from './data-processor';
+import { connectorQueue } from './queue-processor';
+import { CredentialsManager } from './credentials-manager';
+import fetch from 'node-fetch';
+import https from 'https';
 
 /**
  * Configuración específica para conectores de tipo API
@@ -17,27 +22,82 @@ export interface APIConnectorConfig extends ConnectorConfig {
   endpoints?: {
     [key: string]: {
       path: string;
-      method: 'GET' | 'POST' | 'PUT';
+      method: 'GET' | 'POST' | 'PUT' | 'DELETE';
       contentType?: string;
-      responseType?: 'alerts' | 'threatIntel' | 'metrics';
+      responseType?: 'alerts' | 'threatIntel' | 'metrics' | 'logs';
       params?: Record<string, string>;
       bodyTemplate?: string | object;
+      rateLimit?: {
+        requests: number;
+        window: number; // en millisegundos
+      };
+      pagination?: {
+        enabled: boolean;
+        limitParam?: string;
+        offsetParam?: string;
+        pageParam?: string;
+        maxPages?: number;
+      };
     }
   };
   apiKeyHeader?: string;
   defaultHeaders?: Record<string, string>;
   pollingInterval: number; // en segundos
+  retryConfig?: {
+    maxRetries: number;
+    backoffFactor: number;
+    retryableStatuses: number[];
+  };
+  tlsConfig?: {
+    rejectUnauthorized: boolean;
+    ca?: string;
+    cert?: string;
+    key?: string;
+  };
+  circuitBreaker?: {
+    failureThreshold: number;
+    resetTimeout: number;
+  };
 }
 
 /**
- * Conector para APIs externas
+ * Conector para APIs externas con capacidades avanzadas
  */
 export class APIConnector extends BaseConnector {
   protected config: APIConnectorConfig;
+  private credentialsManager: CredentialsManager;
+  private dataProcessor: DataProcessor;
+  private requestCount: Map<string, { count: number; resetTime: number }> = new Map();
+  private circuitBreakerState: 'closed' | 'open' | 'half-open' = 'closed';
+  private circuitBreakerFailures: number = 0;
+  private circuitBreakerLastFailure: number = 0;
   
   constructor(connector: Connector) {
     super(connector);
     this.config = this.connector.configuration as APIConnectorConfig;
+    this.credentialsManager = CredentialsManager.getInstance();
+    this.dataProcessor = new DataProcessor(connector);
+    this.initializeRetryConfig();
+  }
+  
+  /**
+   * Inicializa configuración de reintentos por defecto
+   */
+  private initializeRetryConfig(): void {
+    if (!this.config.retryConfig) {
+      this.config.retryConfig = {
+        maxRetries: 3,
+        backoffFactor: 2,
+        retryableStatuses: [429, 500, 502, 503, 504]
+      };
+    }
+    
+    if (!this.config.circuitBreaker) {
+      this.config.circuitBreaker = {
+        failureThreshold: 5,
+        resetTimeout: 60000 // 1 minuto
+      };
+    }
   }
   
   /**
@@ -65,15 +125,26 @@ export class APIConnector extends BaseConnector {
   }
   
   /**
-   * Ejecutar el conector para obtener datos
+   * Ejecutar el conector para obtener datos con manejo robusto de errores
    */
   public async execute(): Promise<ConnectorResult> {
     const startTime = Date.now();
-    let alerts: InsertAlert[] = [];
-    let threatIntel: InsertThreatIntel[] = [];
-    let totalProcessed = 0;
     
     try {
+      // Verificar circuit breaker
+      if (this.circuitBreakerState === 'open') {
+        const now = Date.now();
+        if (now - this.circuitBreakerLastFailure < this.config.circuitBreaker!.resetTimeout) {
+          return {
+            success: false,
+            message: 'Circuit breaker is open, skipping execution'
+          };
+        } else {
+          this.circuitBreakerState = 'half-open';
+          log(`Circuit breaker entering half-open state for ${this.connector.name}`, 'connector');
+        }
+      }
+
       // Validar configuración
       if (!this.validateConfig()) {
         await this.updateConnectorStatus(false, 'Configuración inválida');
@@ -85,10 +156,105 @@ export class APIConnector extends BaseConnector {
       
       log(`Ejecutando conector API ${this.connector.name}`, 'connector');
       
-      // Procesar cada endpoint configurado
-      for (const [endpointName, endpoint] of Object.entries(this.config.endpoints || {})) {
-        try {
-          log(`Procesando endpoint ${endpointName}`, 'connector');
+      const results = await this.processAllEndpoints();
+      
+      // Éxito - resetear circuit breaker
+      if (this.circuitBreakerState === 'half-open') {
+        this.circuitBreakerState = 'closed';
+        this.circuitBreakerFailures = 0;
+        log(`Circuit breaker closed for ${this.connector.name}`, 'connector');
+      }
+      
+      const executionTime = Date.now() - startTime;
+      await this.updateConnectorStatus(true, `Processed ${results.totalRecords} records`);
+      
+      return {
+        success: true,
+        message: `Procesados ${results.totalRecords} registros exitosamente`,
+        alerts: results.alerts,
+        threatIntel: results.threatIntel,
+        metrics: {
+          itemsProcessed: results.totalRecords,
+          bytesProcessed: results.bytesProcessed,
+          executionTime
+        }
+      };
+      
+    } catch (error) {
+      // Manejar falla del circuit breaker
+      this.handleCircuitBreakerFailure();
+      
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log(`Error en conector ${this.connector.name}: ${errorMessage}`, 'connector');
+      
+      await this.updateConnectorStatus(false, errorMessage);
+      
+      return {
+        success: false,
+        message: errorMessage
+      };
+    }
+  }
+
+  /**
+   * Procesa todos los endpoints configurados
+   */
+  private async processAllEndpoints(): Promise<{
+    alerts: InsertAlert[];
+    threatIntel: InsertThreatIntel[];
+    totalRecords: number;
+    bytesProcessed: number;
+  }> {
+    const results = {
+      alerts: [] as InsertAlert[],
+      threatIntel: [] as InsertThreatIntel[],
+      totalRecords: 0,
+      bytesProcessed: 0
+    };
+
+    // Procesar cada endpoint configurado
+    for (const [endpointName, endpoint] of Object.entries(this.config.endpoints || {})) {
+      try {
+        log(`Procesando endpoint ${endpointName}`, 'connector');
+        
+        const endpointData = await this.fetchEndpointData(endpointName, endpoint);
+        
+        if (endpointData && endpointData.length > 0) {
+          // Procesar usando cola para alto volumen
+          const dataSource: DataSource = {
+            vendor: this.connector.vendor,
+            product: this.connector.name,
+            format: 'json'
+          };
+          
+          // Para volúmenes pequeños, procesar directamente
+          if (endpointData.length <= 100) {
+            const processingResult = await this.dataProcessor.processData(endpointData, dataSource);
+            results.alerts.push(...processingResult.alerts);
+            results.threatIntel.push(...processingResult.threatIntel);
+            results.totalRecords += processingResult.metrics.successfulRecords;
+            results.bytesProcessed += processingResult.metrics.bytesProcessed;
+          } else {
+            // Para volúmenes grandes, usar cola
+            await connectorQueue.enqueue(
+              this.connector.id,
+              endpointData,
+              dataSource,
+              this.determinePriority(endpoint.responseType)
+            );
+            results.totalRecords += endpointData.length;
+            results.bytesProcessed += JSON.stringify(endpointData).length;
+          }
+        }
+        
+      } catch (endpointError) {
+        log(`Error procesando endpoint ${endpointName}: ${endpointError}`, 'connector');
+        // Continuar con otros endpoints
+      }
+    }
+
+    return results;
+  }
           
           // Construir URL completa
           const url = new URL(endpoint.path, this.config.baseUrl).toString();
@@ -520,5 +686,279 @@ export class APIConnector extends BaseConnector {
     if (['low', 'minor', 'info', 'informational', 'green'].includes(sevStr)) return 'low';
     
     return 'medium';
+  }
+
+  /**
+   * Obtiene datos de un endpoint específico con reintentos y paginación
+   */
+  private async fetchEndpointData(endpointName: string, endpoint: any): Promise<any[]> {
+    const allData: any[] = [];
+    let currentPage = 0;
+    let hasMoreData = true;
+    
+    while (hasMoreData && (!endpoint.pagination?.maxPages || currentPage < endpoint.pagination.maxPages)) {
+      try {
+        // Verificar rate limiting
+        await this.checkRateLimit(endpointName, endpoint.rateLimit);
+        
+        const url = this.buildUrl(endpoint, currentPage);
+        const options = await this.buildRequestOptions(endpoint);
+        
+        const data = await this.makeHttpRequest(url, options);
+        
+        if (data && Array.isArray(data)) {
+          allData.push(...data);
+          
+          // Verificar si hay más páginas
+          if (endpoint.pagination?.enabled) {
+            hasMoreData = data.length > 0 && 
+              (!endpoint.pagination.limitParam || data.length >= parseInt(endpoint.params?.[endpoint.pagination.limitParam] || '100'));
+            currentPage++;
+          } else {
+            hasMoreData = false;
+          }
+        } else if (data) {
+          allData.push(data);
+          hasMoreData = false;
+        } else {
+          hasMoreData = false;
+        }
+        
+      } catch (error) {
+        log(`Error fetching page ${currentPage} from ${endpointName}: ${error}`, 'connector');
+        throw error;
+      }
+    }
+    
+    return allData;
+  }
+
+  /**
+   * Construye la URL con parámetros y paginación
+   */
+  private buildUrl(endpoint: any, page: number = 0): string {
+    let url = this.config.baseUrl;
+    if (!url.endsWith('/') && !endpoint.path.startsWith('/')) {
+      url += '/';
+    }
+    url += endpoint.path;
+    
+    const params = new URLSearchParams();
+    
+    // Añadir parámetros base
+    if (endpoint.params) {
+      Object.entries(endpoint.params).forEach(([key, value]) => {
+        params.append(key, String(value));
+      });
+    }
+    
+    // Añadir parámetros de paginación
+    if (endpoint.pagination?.enabled && page > 0) {
+      if (endpoint.pagination.pageParam) {
+        params.append(endpoint.pagination.pageParam, String(page));
+      }
+      if (endpoint.pagination.offsetParam && endpoint.pagination.limitParam) {
+        const limit = parseInt(endpoint.params?.[endpoint.pagination.limitParam] || '100');
+        params.append(endpoint.pagination.offsetParam, String(page * limit));
+      }
+    }
+    
+    const queryString = params.toString();
+    if (queryString) {
+      url += '?' + queryString;
+    }
+    
+    return url;
+  }
+
+  /**
+   * Construye las opciones de la petición HTTP
+   */
+  private async buildRequestOptions(endpoint: any): Promise<any> {
+    const options: any = {
+      method: endpoint.method || 'GET',
+      headers: {
+        'Content-Type': endpoint.contentType || 'application/json',
+        'User-Agent': `SOC-Connector/${this.connector.name}`,
+        ...this.config.defaultHeaders
+      }
+    };
+
+    // Configurar TLS si es necesario
+    if (this.config.tlsConfig) {
+      const agent = new https.Agent({
+        rejectUnauthorized: this.config.tlsConfig.rejectUnauthorized !== false,
+        ca: this.config.tlsConfig.ca,
+        cert: this.config.tlsConfig.cert,
+        key: this.config.tlsConfig.key
+      });
+      options.agent = agent;
+    }
+
+    // Obtener credenciales y configurar autenticación
+    try {
+      const credentials = this.credentialsManager.getCredentials(this.connector.id);
+      
+      if (credentials.apiKey) {
+        const headerName = this.config.apiKeyHeader || 'X-API-Key';
+        options.headers[headerName] = credentials.apiKey;
+      }
+      
+      if (credentials.token) {
+        options.headers['Authorization'] = `Bearer ${credentials.token}`;
+      }
+      
+      if (credentials.username && credentials.password) {
+        const auth = Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64');
+        options.headers['Authorization'] = `Basic ${auth}`;
+      }
+    } catch (credError) {
+      log(`Warning: Could not load credentials for ${this.connector.name}: ${credError}`, 'connector');
+    }
+
+    // Configurar body para métodos POST/PUT
+    if (endpoint.method === 'POST' || endpoint.method === 'PUT') {
+      if (endpoint.bodyTemplate) {
+        if (typeof endpoint.bodyTemplate === 'string') {
+          options.body = endpoint.bodyTemplate;
+        } else {
+          options.body = JSON.stringify(endpoint.bodyTemplate);
+        }
+      }
+    }
+
+    return options;
+  }
+
+  /**
+   * Realiza petición HTTP con reintentos
+   */
+  private async makeHttpRequest(url: string, options: any): Promise<any> {
+    let lastError: Error | null = null;
+    const maxRetries = this.config.retryConfig?.maxRetries || 3;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        log(`Making HTTP request to ${url} (attempt ${attempt + 1})`, 'connector');
+        
+        const response = await fetch(url, {
+          ...options,
+          timeout: this.config.timeout || 30000
+        });
+        
+        // Verificar si el status es reintentable
+        if (!response.ok) {
+          const isRetryable = this.config.retryConfig?.retryableStatuses?.includes(response.status) || false;
+          
+          if (attempt < maxRetries && isRetryable) {
+            const delay = this.calculateBackoffDelay(attempt);
+            log(`HTTP ${response.status} received, retrying in ${delay}ms`, 'connector');
+            await this.sleep(delay);
+            continue;
+          } else {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+        }
+        
+        const contentType = response.headers.get('content-type');
+        let data: any;
+        
+        if (contentType?.includes('application/json')) {
+          data = await response.json();
+        } else if (contentType?.includes('text/')) {
+          data = await response.text();
+        } else {
+          data = await response.buffer();
+        }
+        
+        log(`Successfully fetched data from ${url}`, 'connector');
+        return data;
+        
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        log(`Request failed (attempt ${attempt + 1}): ${lastError.message}`, 'connector');
+        
+        if (attempt < maxRetries) {
+          const delay = this.calculateBackoffDelay(attempt);
+          await this.sleep(delay);
+        }
+      }
+    }
+    
+    throw lastError || new Error('Maximum retries exceeded');
+  }
+
+  /**
+   * Verifica y aplica rate limiting
+   */
+  private async checkRateLimit(endpointName: string, rateLimit?: { requests: number; window: number }): Promise<void> {
+    if (!rateLimit) return;
+    
+    const now = Date.now();
+    const key = `${this.connector.id}_${endpointName}`;
+    const current = this.requestCount.get(key);
+    
+    if (!current || now > current.resetTime) {
+      // Reiniciar ventana
+      this.requestCount.set(key, {
+        count: 1,
+        resetTime: now + rateLimit.window
+      });
+    } else if (current.count >= rateLimit.requests) {
+      // Rate limit excedido, esperar
+      const waitTime = current.resetTime - now;
+      log(`Rate limit exceeded for ${endpointName}, waiting ${waitTime}ms`, 'connector');
+      await this.sleep(waitTime);
+      
+      // Reiniciar después de esperar
+      this.requestCount.set(key, {
+        count: 1,
+        resetTime: now + rateLimit.window
+      });
+    } else {
+      // Incrementar contador
+      current.count++;
+    }
+  }
+
+  /**
+   * Calcula el delay de backoff exponencial
+   */
+  private calculateBackoffDelay(attempt: number): number {
+    const backoffFactor = this.config.retryConfig?.backoffFactor || 2;
+    const baseDelay = 1000; // 1 segundo base
+    return Math.min(baseDelay * Math.pow(backoffFactor, attempt), 30000); // Máximo 30 segundos
+  }
+
+  /**
+   * Determina la prioridad basada en el tipo de respuesta
+   */
+  private determinePriority(responseType?: string): 'low' | 'medium' | 'high' | 'critical' {
+    switch (responseType) {
+      case 'alerts': return 'high';
+      case 'threatIntel': return 'medium';
+      case 'logs': return 'low';
+      default: return 'medium';
+    }
+  }
+
+  /**
+   * Maneja fallos del circuit breaker
+   */
+  private handleCircuitBreakerFailure(): void {
+    this.circuitBreakerFailures++;
+    this.circuitBreakerLastFailure = Date.now();
+    
+    if (this.circuitBreakerFailures >= this.config.circuitBreaker!.failureThreshold) {
+      this.circuitBreakerState = 'open';
+      log(`Circuit breaker opened for ${this.connector.name} after ${this.circuitBreakerFailures} failures`, 'connector');
+    }
+  }
+
+  /**
+   * Función de espera
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, interval } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, numeric, interval, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 // Define JSON type
@@ -255,6 +255,10 @@ export const connectors = pgTable("connectors", {
   dataVolume: text("data_volume"), // ex: "850 MB/day"
   status: text("status").notNull().default('inactive'), // Reference ConnectorStatusTypes
   lastData: text("last_data"), // ex: "2 min ago"
+  encryptedCredentials: jsonb("encrypted_credentials"),
+  lastEventAt: timestamp("last_event_at"),
+  eventsPerMin: numeric("events_per_min"),
+  errorMessage: text("error_message"),
   isActive: boolean("is_active").notNull().default(false),
   icon: text("icon").default('plug'),
   configuration: jsonb("configuration"), // Store connection details, API keys, etc.
@@ -273,6 +277,15 @@ export const insertConnectorSchema = createInsertSchema(connectors).omit({
 
 export type InsertConnector = z.infer<typeof insertConnectorSchema>;
 export type Connector = typeof connectors.$inferSelect;
+
+// Table for connector logs
+export const connectorLogs = pgTable("connector_logs", {
+  id: serial("id").primaryKey(),
+  connectorId: integer("connector_id").notNull().references(() => connectors.id),
+  ts: timestamp("ts").notNull().defaultNow(),
+  level: varchar("level", { length: 20 }).notNull(),
+  message: text("message").notNull(),
+});
 
 // Threat Feed Status and Types
 export const ThreatFeedStatusTypes = z.enum(['active', 'inactive', 'error']);
@@ -544,3 +557,302 @@ export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
 
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
+
+// Metrics Rollup schema for historical analytics
+export const metricsRollup = pgTable(
+  "metrics_rollup",
+  {
+    organizationId: integer("org_id").references(() => organizations.id).notNull(),
+    metric: text("metric").notNull(),
+    period: text("period").notNull(), // 'hour' | 'day' | 'week'
+    tsBucket: timestamp("ts_bucket").notNull(), // start of interval
+    value: jsonb("value").notNull(),
+  },
+  (table) => ({
+    primaryKey: primaryKey(table.organizationId, table.metric, table.period, table.tsBucket),
+  })
+);
+
+export const insertMetricsRollupSchema = createInsertSchema(metricsRollup);
+export type InsertMetricsRollup = z.infer<typeof insertMetricsRollupSchema>;
+export type MetricsRollup = typeof metricsRollup.$inferSelect;
+
+// Report Types
+export const ReportTypes = z.enum(['executive_summary', 'technical_incidents', 'compliance_audit', 'agent_health', 'vulnerability_assessment', 'threat_intelligence', 'soc_performance', 'custom']);
+export type ReportType = z.infer<typeof ReportTypes>;
+
+export const ReportStatusTypes = z.enum(['scheduled', 'generating', 'completed', 'failed', 'cancelled']);
+export type ReportStatusType = z.infer<typeof ReportStatusTypes>;
+
+export const ReportFormatTypes = z.enum(['pdf', 'html', 'csv', 'xlsx']);
+export type ReportFormatType = z.infer<typeof ReportFormatTypes>;
+
+// Report Templates schema
+export const reportTemplates = pgTable("report_templates", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  name: text("name").notNull(),
+  type: text("type").notNull(), // Reference ReportTypes
+  description: text("description"),
+  scheduleCron: text("schedule_cron"), // Cron expression for automated generation
+  parameters: jsonb("parameters").notNull(), // Report-specific parameters (filters, date ranges, etc.)
+  notifyEmails: jsonb("notify_emails"), // Array of email addresses to notify
+  isEnabled: boolean("is_enabled").notNull().default(true),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertReportTemplateSchema = createInsertSchema(reportTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertReportTemplate = z.infer<typeof insertReportTemplateSchema>;
+export type ReportTemplate = typeof reportTemplates.$inferSelect;
+
+// Generated Reports schema
+export const reportsGenerated = pgTable("reports_generated", {
+  id: serial("id").primaryKey(),
+  templateId: integer("template_id").references(() => reportTemplates.id),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  name: text("name").notNull(),
+  type: text("type").notNull(), // Reference ReportTypes
+  status: text("status").notNull().default('scheduled'), // Reference ReportStatusTypes
+  format: text("format").notNull().default('pdf'), // Reference ReportFormatTypes
+  periodFrom: timestamp("period_from").notNull(),
+  periodTo: timestamp("period_to").notNull(),
+  filePath: text("file_path"), // Path to generated file
+  fileSize: integer("file_size"), // File size in bytes
+  hashSha256: text("hash_sha256"), // SHA-256 hash for integrity
+  metadata: jsonb("metadata"), // Additional metadata about the report
+  generatedBy: integer("generated_by").references(() => users.id),
+  requestedBy: integer("requested_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  generatedAt: timestamp("generated_at"),
+  error: text("error"), // Error message if generation failed
+});
+
+export const insertReportGeneratedSchema = createInsertSchema(reportsGenerated).omit({
+  id: true,
+  createdAt: true,
+  generatedAt: true,
+});
+
+export type InsertReportGenerated = z.infer<typeof insertReportGeneratedSchema>;
+export type ReportGenerated = typeof reportsGenerated.$inferSelect;
+
+// Report Artifacts schema (for attachments, charts, etc.)
+export const reportArtifacts = pgTable("report_artifacts", {
+  id: serial("id").primaryKey(),
+  reportId: integer("report_id").references(() => reportsGenerated.id).notNull(),
+  artifactType: text("artifact_type").notNull(), // 'chart', 'attachment', 'signature', 'evidence'
+  name: text("name").notNull(),
+  path: text("path").notNull(),
+  mimeType: text("mime_type"),
+  size: integer("size"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertReportArtifactSchema = createInsertSchema(reportArtifacts).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertReportArtifact = z.infer<typeof insertReportArtifactSchema>;
+export type ReportArtifact = typeof reportArtifacts.$inferSelect;
+
+// User Settings schema
+export const userSettings = pgTable("user_settings", {
+  userId: integer("user_id").references(() => users.id).primaryKey(),
+  locale: text("locale").default('en-US'),
+  timezone: text("timezone").default('UTC'),
+  mfaEnabled: boolean("mfa_enabled").notNull().default(false),
+  mfaSecret: text("mfa_secret"), // Encrypted TOTP secret
+  notifyChannel: jsonb("notify_channel").notNull().default('{}'), // {email: true, slack: {...}, etc}
+  avatarUrl: text("avatar_url"),
+  theme: text("theme").default('system'), // 'light', 'dark', 'system'
+  dateFormat: text("date_format").default('MM/dd/yyyy'),
+  timeFormat: text("time_format").default('12h'), // '12h' or '24h'
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertUserSettingsSchema = createInsertSchema(userSettings).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertUserSettings = z.infer<typeof insertUserSettingsSchema>;
+export type UserSettings = typeof userSettings.$inferSelect;
+
+// Organization Settings schema
+export const orgSettings = pgTable("org_settings", {
+  organizationId: integer("organization_id").references(() => organizations.id).primaryKey(),
+  branding: jsonb("branding").notNull().default('{}'), // {logoUrl, primaryColor, secondaryColor, favicon}
+  security: jsonb("security").notNull().default('{}'), // {passwordPolicy, ipAllowList, mfaRequired, sessionTimeout}
+  defaultLocale: text("default_locale").default('en-US'),
+  defaultTimezone: text("default_timezone").default('UTC'),
+  integrations: jsonb("integrations").notNull().default('{}'), // Encrypted external API keys and webhooks
+  notifications: jsonb("notifications").notNull().default('{}'), // Default notification settings
+  compliance: jsonb("compliance").notNull().default('{}'), // Compliance-specific settings
+  auditRetentionDays: integer("audit_retention_days").default(365),
+  allowedDomains: jsonb("allowed_domains"), // Array of domains for SSO
+  ssoEnabled: boolean("sso_enabled").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertOrgSettingsSchema = createInsertSchema(orgSettings).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertOrgSettings = z.infer<typeof insertOrgSettingsSchema>;
+export type OrgSettings = typeof orgSettings.$inferSelect;
+
+// Settings History for audit trail
+export const settingsHistory = pgTable("settings_history", {
+  id: serial("id").primaryKey(),
+  entityType: text("entity_type").notNull(), // 'user' | 'organization'
+  entityId: integer("entity_id").notNull(),
+  changedBy: integer("changed_by").references(() => users.id).notNull(),
+  changeType: text("change_type").notNull(), // 'update', 'create', 'delete'
+  fieldName: text("field_name").notNull(),
+  oldValue: jsonb("old_value"),
+  newValue: jsonb("new_value"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+});
+
+export const insertSettingsHistorySchema = createInsertSchema(settingsHistory).omit({
+  id: true,
+  timestamp: true,
+});
+
+export type InsertSettingsHistory = z.infer<typeof insertSettingsHistorySchema>;
+export type SettingsHistory = typeof settingsHistory.$inferSelect;
+
+// Upload Files schema (for avatars, logos, etc.)
+export const uploadedFiles = pgTable("uploaded_files", {
+  id: serial("id").primaryKey(),
+  filename: text("filename").notNull(),
+  originalName: text("original_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  size: integer("size").notNull(),
+  path: text("path").notNull(),
+  uploadedBy: integer("uploaded_by").references(() => users.id).notNull(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  purpose: text("purpose").notNull(), // 'avatar', 'logo', 'attachment', etc.
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertUploadedFileSchema = createInsertSchema(uploadedFiles).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertUploadedFile = z.infer<typeof insertUploadedFileSchema>;
+export type UploadedFile = typeof uploadedFiles.$inferSelect;
+
+// Notification Types and Settings
+export const NotificationChannelTypes = z.enum(['email', 'slack', 'teams', 'webhook', 'pagerduty', 'sms']);
+export type NotificationChannelType = z.infer<typeof NotificationChannelTypes>;
+
+export const NotificationSeverityTypes = z.enum(['low', 'medium', 'high', 'critical']);
+export type NotificationSeverityType = z.infer<typeof NotificationSeverityTypes>;
+
+// Password Policy Types
+export const PasswordPolicySchema = z.object({
+  minLength: z.number().min(8).max(128).default(12),
+  requireUppercase: z.boolean().default(true),
+  requireLowercase: z.boolean().default(true),
+  requireNumbers: z.boolean().default(true),
+  requireSpecialChars: z.boolean().default(true),
+  maxAge: z.number().optional(), // Days before password expires
+  preventReuse: z.number().default(5), // Number of previous passwords to remember
+});
+export type PasswordPolicy = z.infer<typeof PasswordPolicySchema>;
+
+// Security Settings Schema
+export const SecuritySettingsSchema = z.object({
+  passwordPolicy: PasswordPolicySchema.optional(),
+  ipAllowList: z.array(z.string()).optional(), // CIDR ranges
+  mfaRequired: z.boolean().default(false),
+  sessionTimeout: z.number().default(480), // Minutes
+  maxLoginAttempts: z.number().default(5),
+  lockoutDuration: z.number().default(30), // Minutes
+});
+export type SecuritySettings = z.infer<typeof SecuritySettingsSchema>;
+
+// Branding Settings Schema
+export const BrandingSettingsSchema = z.object({
+  logoUrl: z.string().optional(),
+  primaryColor: z.string().default('#3b82f6'),
+  secondaryColor: z.string().default('#64748b'),
+  accentColor: z.string().default('#06b6d4'),
+  favicon: z.string().optional(),
+  companyName: z.string().optional(),
+});
+export type BrandingSettings = z.infer<typeof BrandingSettingsSchema>;
+
+// Integration Settings Schema
+export const IntegrationSettingsSchema = z.object({
+  slack: z.object({
+    enabled: z.boolean().default(false),
+    webhookUrl: z.string().optional(),
+    channel: z.string().optional(),
+  }).optional(),
+  teams: z.object({
+    enabled: z.boolean().default(false),
+    webhookUrl: z.string().optional(),
+  }).optional(),
+  jira: z.object({
+    enabled: z.boolean().default(false),
+    baseUrl: z.string().optional(),
+    username: z.string().optional(),
+    apiToken: z.string().optional(),
+    projectKey: z.string().optional(),
+  }).optional(),
+  pagerduty: z.object({
+    enabled: z.boolean().default(false),
+    integrationKey: z.string().optional(),
+  }).optional(),
+  webhook: z.object({
+    enabled: z.boolean().default(false),
+    url: z.string().optional(),
+    secret: z.string().optional(),
+  }).optional(),
+});
+export type IntegrationSettings = z.infer<typeof IntegrationSettingsSchema>;
+
+// User Settings Update Schemas
+export const UserSettingsUpdateSchema = z.object({
+  locale: z.string().optional(),
+  timezone: z.string().optional(),
+  notifyChannel: z.record(z.any()).optional(),
+  avatarUrl: z.string().optional(),
+  theme: z.enum(['light', 'dark', 'system']).optional(),
+  dateFormat: z.string().optional(),
+  timeFormat: z.enum(['12h', '24h']).optional(),
+});
+export type UserSettingsUpdate = z.infer<typeof UserSettingsUpdateSchema>;
+
+// Organization Settings Update Schemas
+export const OrgSettingsUpdateSchema = z.object({
+  branding: BrandingSettingsSchema.optional(),
+  security: SecuritySettingsSchema.optional(),
+  defaultLocale: z.string().optional(),
+  defaultTimezone: z.string().optional(),
+  integrations: IntegrationSettingsSchema.optional(),
+  notifications: z.record(z.any()).optional(),
+  compliance: z.record(z.any()).optional(),
+  auditRetentionDays: z.number().optional(),
+  allowedDomains: z.array(z.string()).optional(),
+  ssoEnabled: z.boolean().optional(),
+});
+export type OrgSettingsUpdate = z.infer<typeof OrgSettingsUpdateSchema>;

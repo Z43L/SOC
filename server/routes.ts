@@ -51,6 +51,7 @@ import { aiQueue } from "./integrations/ai-processing-queue";
 import { aiCorrelation } from "./integrations/ai-correlation-engine";
 import { aiParser } from "./integrations/ai-parser-service";
 import { playbookExecutor } from "./src/services/playbookExecutor";
+import { getTimeSeries, getTopN } from "./src/services/analyticsService";
 // Importar servicio de integración con Stripe
 import { StripeService } from "./integrations/stripe-service";
 import { createCheckoutSession as createStripeCheckoutSession } from "./integrations/stripe-service-wrapper";
@@ -74,6 +75,16 @@ import {
 // Import billing routes
 import billingRoutes from "./src/routes/billing";
 
+// Import settings routes
+import settingsRoutes from "./routes/settings";
+
+// Import connectors routes
+import connectorsRoutes from "./routes/connectors";
+import connectorsRoutes from "./routes/connectors";
+
+// Import analytics service
+import { getTimeSeries, getTopN } from './src/services/analyticsService';
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Set up authentication
   setupAuth(app);
@@ -96,6 +107,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Registrar las nuevas rutas de facturación
   apiRouter.use('/billing', billingRoutes);
+
+  // Registrar las rutas de configuración/settings
+  apiRouter.use('/settings', settingsRoutes);
+
+  // Registrar las rutas de conectores
+  apiRouter.use('/connectors', connectorsRoutes);
   
   // --- AGENT PUBLIC ENDPOINTS (NO AUTH) ---
   // Agent heartbeat endpoint (no auth required, agent uses token)
@@ -1817,77 +1834,43 @@ app.use("/downloads", express.static(path.join(process.cwd(), "public", "downloa
     }
   });
   
-  apiRouter.delete("/connectors/:id", isAuthenticated, async (req: Request, res: Response) => {
+  // Delete connector
+  apiRouter.delete("/connectors/:id", isAuthenticated, requireRole('ADMIN'), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
-      const success = await storage.deleteConnector(id);
-      
-      if (!success) {
-        return res.status(404).json({ message: "Connector not found or could not be deleted" });
-      }
-      
-      res.status(200).json({ success: true, message: "Connector deleted successfully" });
+      const id = req.params.id;
+      await connectorManager.deleteConnector(id);
+      res.json({ success: true, message: `Connector ${id} deleted` });
     } catch (error: any) {
       res.status(500).json({ message: String(error) });
     }
   });
-  
-  apiRouter.post("/connectors/:id/toggle", isAuthenticated, async (req: Request, res: Response) => {
+
+  // Update connector status (pause or resume)
+  apiRouter.patch("/connectors/:id", isAuthenticated, requireRole('ADMIN'), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
-      const { isActive } = req.body;
-      
-      if (typeof isActive !== 'boolean') {
-        return res.status(400).json({ message: "isActive must be a boolean value" });
+      const id = req.params.id;
+      const { status } = req.body;
+      if (status === 'paused') {
+        await connectorManager.pauseConnector(id);
+      } else if (status === 'active') {
+        await connectorManager.resumeConnector(id);
+      } else {
+        return res.status(400).json({ message: 'Invalid status value' });
       }
-      
-      const connector = await storage.toggleConnectorStatus(id, isActive);
-      
-      if (!connector) {
-        return res.status(404).json({ message: "Connector not found" });
-      }
-      
-      // Utilizar el gestor de conectores para activar/desactivar
-      const success = await toggleConnector(id, isActive);
-      
-      if (!success) {
-        log(`Fallo al ${isActive ? 'activar' : 'desactivar'} conector ${id} a través del gestor`, 'routes');
-      }
-      
-      res.json(connector);
+      res.json({ success: true, id, status });
     } catch (error: any) {
       res.status(500).json({ message: String(error) });
     }
   });
-  
-  // Ejecutar un conector manualmente
-  apiRouter.post("/connectors/:id/execute", isAuthenticated, async (req: Request, res: Response) => {
+
+  // Test connector connection
+  apiRouter.post("/connectors/:id/test", isAuthenticated, requireRole('ADMIN'), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
-      
-      // Verificar que el conector existe
-      const connector = await storage.getConnector(id);
-      if (!connector) {
-        return res.status(404).json({ message: "Connector not found" });
-      }
-      
-      log(`Ejecutando manualmente el conector ${connector.name} (ID: ${id})`, 'routes');
-      
-      // Ejecutar el conector a través del gestor
-      const result = await executeConnector(id);
-      
-      res.json({
-        success: result.success,
-        message: result.message,
-        data: {
-          alerts: result.alerts?.length || 0,
-          threatIntel: result.threatIntel?.length || 0,
-          metrics: result.metrics
-        }
-      });
+      const id = req.params.id;
+      const result = await connectorManager.testConnector(id);
+      res.json(result);
     } catch (error: any) {
-      log(`Error ejecutando conector manualmente: ${error instanceof Error ? error.message : 'Error desconocido'}`, 'routes');
-      res.status(500).json({ message: `Error executing connector: ${error instanceof Error ? error.message : 'Unknown error'}` });
+      res.status(500).json({ success: false, message: String(error) });
     }
   });
   
@@ -1897,7 +1880,7 @@ app.use("/downloads", express.static(path.join(process.cwd(), "public", "downloa
       const feeds = await storage.listThreatFeeds();
       res.json(feeds);
     } catch (error: any) {
-      res.status(500).json({ message: String(error) });
+      res.status(500).json({ message: error.message });
     }
   });
   
@@ -1965,7 +1948,7 @@ app.use("/downloads", express.static(path.join(process.cwd(), "public", "downloa
       
       res.json(feed);
     } catch (error: any) {
-      res.status(500).json({ message: String(error) });
+      res.status(500).json({ message: error.message });
     }
   });
   
@@ -1982,7 +1965,7 @@ app.use("/downloads", express.static(path.join(process.cwd(), "public", "downloa
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid feed data", errors: error.format() });
       }
-      res.status(500).json({ message: String(error) });
+      res.status(500).json({ message: error.message });
     }
   });
   
@@ -1999,7 +1982,7 @@ app.use("/downloads", express.static(path.join(process.cwd(), "public", "downloa
       
       res.json(updatedFeed);
     } catch (error: any) {
-      res.status(500).json({ message: String(error) });
+      res.status(500).json({ message: error.message });
     }
   });
   
@@ -2014,7 +1997,7 @@ app.use("/downloads", express.static(path.join(process.cwd(), "public", "downloa
       
       res.status(200).json({ success: true, message: "Threat feed deleted successfully" });
     } catch (error: any) {
-      res.status(500).json({ message: String(error) });
+      res.status(500).json({ message: error.message });
     }
   });
   
@@ -2025,7 +2008,7 @@ app.use("/downloads", express.static(path.join(process.cwd(), "public", "downloa
       
       if (typeof isActive !== 'boolean') {
         return res.status(400).json({ message: "isActive must be a boolean value" });
-      }
+           }
       
       const feed = await storage.toggleThreatFeedStatus(id, isActive);
       
@@ -2035,7 +2018,7 @@ app.use("/downloads", express.static(path.join(process.cwd(), "public", "downloa
       
       res.json(feed);
     } catch (error: any) {
-      res.status(500).json({ message: String(error) });
+      res.status(500).json({ message: error.message });
     }
   });
   
@@ -2045,7 +2028,7 @@ app.use("/downloads", express.static(path.join(process.cwd(), "public", "downloa
       const playbooks = await storage.listPlaybooks();
       res.json(playbooks);
     } catch (error: any) {
-      res.status(500).json({ message: String(error) });
+      res.status(500).json({ message: error.message });
     }
   });
   
@@ -2057,7 +2040,7 @@ app.use("/downloads", express.static(path.join(process.cwd(), "public", "downloa
       }
       res.json(playbook);
     } catch (error: any) {
-      res.status(500).json({ message: String(error) });
+      res.status(500).json({ message: error.message });
     }
   });
   
@@ -2073,7 +2056,7 @@ app.use("/downloads", express.static(path.join(process.cwd(), "public", "downloa
       if (error instanceof z.ZodError) {
         res.status(400).json({ message: "Invalid playbook data", errors: error.format() });
       } else {
-        res.status(500).json({ message: String(error) });
+        res.status(500).json({ message: error.message });
       }
     }
   });
@@ -2097,7 +2080,7 @@ app.use("/downloads", express.static(path.join(process.cwd(), "public", "downloa
       if (error instanceof z.ZodError) {
         res.status(400).json({ message: "Invalid playbook data", errors: error.format() });
       } else {
-        res.status(500).json({ message: String(error) });
+        res.status(500).json({ message: error.message });
       }
     }
   });
@@ -2110,7 +2093,7 @@ app.use("/downloads", express.static(path.join(process.cwd(), "public", "downloa
       }
       res.status(204).send();
     } catch (error: any) {
-      res.status(500).json({ message: String(error) });
+      res.status(500).json({ message: error.message });
     }
   });
   
@@ -2131,7 +2114,7 @@ app.use("/downloads", express.static(path.join(process.cwd(), "public", "downloa
       
       res.json(playbook);
     } catch (error: any) {
-      res.status(500).json({ message: String(error) });
+      res.status(500).json({ message: error.message });
     }
   });
   
@@ -2218,288 +2201,353 @@ app.use("/downloads", express.static(path.join(process.cwd(), "public", "downloa
     }
   });
   
-  // Endpoints para importar datos reales
-  // Importar todos los feeds de amenazas
-  apiRouter.post("/import/threat-feeds", isAuthenticated, async (req: Request, res: Response) => {
-    try {
-      const result = await importAllFeeds();
-      res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ 
-        success: false, 
-        message: error instanceof Error ? error.message : 'Error desconocido importando feeds' 
-      });
-    }
-  });
+  // Reports routes - Security Report Management
   
-  // Importar todas las alertas de fuentes externas
-  apiRouter.post("/import/alerts", isAuthenticated, async (req: Request, res: Response) => {
+  // Report Templates
+  apiRouter.get("/report-templates", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const result = await importAllAlerts();
-      res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ 
-        success: false, 
-        message: error instanceof Error ? error.message : 'Error desconocido importando alertas' 
-      });
-    }
-  });
-  
-  // Endpoint combinado para importar todos los datos
-  apiRouter.post("/import/all", isAuthenticated, async (req: Request, res: Response) => {
-    try {
-      const [feedsResult, alertsResult] = await Promise.all([
-        importAllFeeds(),
-        importAllAlerts()
-      ]);
-      
-      res.json({
-        success: feedsResult.success || alertsResult.success,
-        message: "Importación de datos completada",
-        details: {
-          feeds: feedsResult,
-          alerts: alertsResult
-        }
-      });
-    } catch (error: any) {
-      res.status(500).json({ 
-        success: false, 
-        message: error instanceof Error ? error.message : 'Error desconocido en la importación de datos' 
-      });
-    }
-  });
-  
-  apiRouter.get("/playbook-executions", isAuthenticated, async (req: Request, res: Response) => {
-    try {
-      const playbookId = req.query.playbookId ? parseInt(req.query.playbookId as string) : undefined;
+      const organizationId = req.user?.organizationId || 1;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+      const reportType = req.query.type as string | undefined;
       
-      const executions = await storage.listPlaybookExecutions(playbookId ?? 0, limit);
-      res.json(executions);
+      const templates = await storage.listReportTemplates(organizationId, limit, 0, reportType as any);
+      
+      res.json(templates);
     } catch (error: any) {
-      res.status(500).json({ message: String(error) });
+      res.status(500).json({ message: error.message });
     }
   });
-  
-  apiRouter.get("/playbook-executions/:id", isAuthenticated, async (req: Request, res: Response) => {
+
+  apiRouter.get("/report-templates/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const execution = await storage.getPlaybookExecution(parseInt(req.params.id));
-      if (!execution) {
-        return res.status(404).json({ message: "Playbook execution not found" });
+      const id = parseInt(req.params.id);
+      const organizationId = req.user?.organizationId || 1;
+      const template = await storage.getReportTemplate(id, organizationId);
+      
+      if (!template) {
+        return res.status(404).json({ message: "Report template not found" });
       }
-      res.json(execution);
+      
+      res.json(template);
     } catch (error: any) {
-      res.status(500).json({ message: String(error) });
+      res.status(500).json({ message: error.message });
     }
   });
-  
-  // Dashboard Data route - combines multiple data points for dashboard
-  apiRouter.get("/dashboard", isAuthenticated, async (req: Request, res: Response) => {
+
+  apiRouter.post("/report-templates", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      // Get recent alerts and incidents for calculations
-      const allAlerts = await storage.listAlerts(50);
-      const allIncidents = await storage.listIncidents(50);
+      const templateSchema = z.object({
+        name: z.string().min(3, "Name must be at least 3 characters"),
+        description: z.string().optional(),
+        type: z.enum(['executive_summary', 'technical_incidents', 'compliance_audit', 'agent_health', 'vulnerability_assessment', 'threat_intelligence', 'soc_performance']),
+        scheduleCron: z.string().optional(), // cron expression
+        isEnabled: z.boolean().default(true),
+        parameters: z.any().default({}),
+        notifyEmails: z.any().optional()
+      });
+
+      const validData = templateSchema.parse(req.body);
       
-      // Calculate KPIs for dashboard
-      
-      // 1. Alertas Abiertas (con desglose por severidad)
-      const openAlerts = allAlerts.filter(alert => alert.status !== 'resolved');
-      const openAlertsBySeverity = {
-        critical: openAlerts.filter(a => a.severity === 'critical').length,
-        high: openAlerts.filter(a => a.severity === 'high').length,
-        medium: openAlerts.filter(a => a.severity === 'medium').length,
-        low: openAlerts.filter(a => a.severity === 'low').length
+      // Add organization context
+      const templateData = {
+        ...validData,
+        organizationId: req.user?.organizationId || 1,
+        createdBy: req.user?.id || 1
       };
-      
-      // 2. Incidentes Activos
-      const activeIncidents = allIncidents.filter(inc => 
-        inc.status !== 'closed' && inc.status !== 'resolved'
-      );
-      
-      // 3. MTTD y MTTR (calculado usando timestamps reales)
-      const resolvedAlerts = allAlerts.filter(alert => alert.status === 'resolved');
-      const mttd = resolvedAlerts.length > 0 ? 
-        resolvedAlerts.reduce((sum, alert) => {
-          const detectionTime = new Date(alert.timestamp ?? Date.now()).getTime();
-          const createdTime = new Date(alert.timestamp ?? Date.now()).getTime();
-          return sum + (detectionTime - createdTime);
-        }, 0) / resolvedAlerts.length / 60000 : 0; // en minutos
 
-      const closedIncidents = allIncidents.filter(inc => inc.status === 'closed');
-      const mttr = closedIncidents.length > 0 ?
-        closedIncidents.reduce((sum, inc) => {
-          const closedTime = new Date(inc.closedAt ?? Date.now()).getTime();
-          const createdTime = new Date(inc.createdAt ?? Date.now()).getTime();
-          return sum + (closedTime - createdTime);
-        }, 0) / closedIncidents.length / 3600000 : 0; // en horas
+      const template = await storage.createReportTemplate(templateData);
+      res.status(201).json(template);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid template data", errors: error.format() });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  apiRouter.patch("/report-templates/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const organizationId = req.user?.organizationId || 1;
+      const template = await storage.getReportTemplate(id, organizationId);
       
-      // 4. Activos en Riesgo (calculado usando datos reales)
-      const assetsAtRisk = allAlerts.reduce((sum, alert) => {
-        if (alert.severity === 'critical') return sum + 2;
-        if (alert.severity === 'high') return sum + 1;
-        return sum;
-      }, 0);
+      if (!template) {
+        return res.status(404).json({ message: "Report template not found" });
+      }
+
+      const updateSchema = z.object({
+        name: z.string().min(3).optional(),
+        description: z.string().optional(),
+        scheduleCron: z.string().optional(),
+        isEnabled: z.boolean().optional(),
+        parameters: z.any().optional(),
+        notifyEmails: z.any().optional()
+      });
+
+      const validData = updateSchema.parse(req.body);
+      const updatedTemplate = await storage.updateReportTemplate(id, validData, organizationId);
       
-      // 5. Estado de Cumplimiento (calculado usando datos reales)
-      const totalAlerts = allAlerts.length;
-      const resolvedAlerts2 = allAlerts.filter(alert => alert.status === 'resolved').length;
-      const complianceScore = totalAlerts > 0 ? Math.round((resolvedAlerts2 / totalAlerts) * 100) : 100;
+      res.json(updatedTemplate);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid update data", errors: error.format() });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  apiRouter.delete("/report-templates/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const organizationId = req.user?.organizationId || 1;
+      const success = await storage.deleteReportTemplate(id, organizationId);
       
-      // 6. Salud de Conectores (calculado usando datos reales)
-      const connectors = await storage.listConnectors();
-      const totalConnectors = connectors.length;
-      const healthyConnectors = connectors.filter(conn => conn.status === 'healthy').length;
-      const connectorHealth = totalConnectors > 0 ? Math.round((healthyConnectors / totalConnectors) * 100) : 100;
+      if (!success) {
+        return res.status(404).json({ message: "Report template not found or could not be deleted" });
+      }
       
-      // 7. Indicador de Riesgo Global (calculado en base a varias métricas)
-      const globalRiskScore = Math.min(100, Math.max(0, 
-        (openAlertsBySeverity.critical * 5) + 
-        (openAlertsBySeverity.high * 2) + 
-        (openAlertsBySeverity.medium *  0.5) + 
-        (activeIncidents.length * 8) + 
-        (mttr < 6 ? 0 : 10) - 
-        (complianceScore / 10)
-      ));
+      res.status(200).json({ success: true, message: "Report template deleted successfully" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Generated Reports
+  apiRouter.get("/reports", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const organizationId = req.user?.organizationId || 1;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+      const templateId = req.query.templateId ? parseInt(req.query.templateId as string) : undefined;
+      const status = req.query.status as string | undefined;
       
-      // Preparar métricas para el dashboard
-      const dashboardMetrics = [
-        {
-          name: 'Active Alerts',
-          value: openAlerts.length,
-          subvalue: `${openAlertsBySeverity.critical} critical`,
-          trend: 'up',
-          changePercentage: 8.5,
-          progressPercent: Math.min(100, Math.round((openAlerts.length / 30) * 100))
-        },
-        {
-          name: 'Open Incidents',
-          value: activeIncidents.length,
-          subvalue: `${activeIncidents.filter(i => i.severity === 'high').length} high`,
-          trend: 'stable',
-          changePercentage: 0,
-          progressPercent: Math.min(100, Math.round((activeIncidents.length / 10) * 100))
-        },
-        {
-          name: 'MTTD',
-          value: mttd,
-          subvalue: 'minutes',
-          trend: 'down',
-          changePercentage: 12.3,
-          progressPercent: Math.min(100, Math.round((mttd / 180) * 100))
-        },
-        {
-          name: 'MTTR',
-          value: mttr,
-          subvalue: 'hours',
-          trend: 'stable',
-          changePercentage: 2.1,
-          progressPercent: Math.min(100, Math.round((mttr / 48) * 100))
-        },
-        {
-          name: 'Assets at Risk',
-          value: assetsAtRisk,
-          subvalue: 'endpoints',
-          trend: 'up',
-          changePercentage: 3.2,
-          progressPercent: Math.min(100, Math.round((assetsAtRisk / 20) * 100))
-        },
-        {
-          name: 'Compliance Score',
-          value: complianceScore,
-          subvalue: '%',
-          trend: 'up',
-          changePercentage: 1.5,
-          progressPercent: complianceScore
-        },
-        {
-          name: 'Connector Health',
-          value: connectorHealth,
-          subvalue: `${healthyConnectors}/${totalConnectors}`,
-          trend: 'stable',
-          changePercentage: 0,
-          progressPercent: connectorHealth
-        },
-        {
-          name: 'Global Risk Score',
-          value: Math.round(globalRiskScore),
-          subvalue: 'medium',
-          trend: globalRiskScore > 50 ? 'up' : 'down',
-          changePercentage: 4.2,
-          progressPercent: globalRiskScore
-        }
-      ];
+      let reports;
       
-      // Get actual data from storage
-      // Get recent alerts for display
-      const recentAlerts = await storage.listAlerts(5);
+      if (templateId) {
+        reports = await storage.getReportsGeneratedByTemplate(templateId, organizationId);
+      } else {
+        const filters: any = {};
+        if (status) filters.status = status;
+        reports = await storage.listReportsGenerated(organizationId, limit, 0, filters);
+      }
       
-      // Get AI insights
-      const aiInsights = await storage.listAiInsights(4);
+      res.json(reports);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  apiRouter.get("/reports/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const organizationId = req.user?.organizationId || 1;
+      const report = await storage.getReportGenerated(id, organizationId);
       
-      // Get threat intel
-      const threatIntel = await storage.listThreatIntel(3);
+      if (!report) {
+        return res.status(404).json({ message: "Report not found" });
+      }
       
-      // Calculate severity counts for weekly data (datos reales)
-      // Agrupar alertas por día de la semana y severidad
-      const alertsByDayMap: Record<string, { critical: number; high: number; medium: number; low: number }> = {
-        Mon: { critical: 0, high: 0, medium: 0, low: 0 },
-        Tue: { critical: 0, high: 0, medium: 0, low: 0 },
-        Wed: { critical: 0, high: 0, medium: 0, low: 0 },
-        Thu: { critical: 0, high: 0, medium: 0, low: 0 },
-        Fri: { critical: 0, high: 0, medium: 0, low: 0 },
-        Sat: { critical: 0, high: 0, medium: 0, low: 0 },
-        Sun: { critical: 0, high: 0, medium: 0, low: 0 }
+      res.json(report);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  apiRouter.post("/reports/generate", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const generateSchema = z.object({
+        templateId: z.number().min(1, "Valid template ID is required"),
+        format: z.enum(['pdf', 'html']).default('pdf'),
+        periodFrom: z.string().optional(),
+        periodTo: z.string().optional(),
+        parameters: z.any().optional()
+      });
+
+      const { templateId, format, periodFrom, periodTo, parameters } = generateSchema.parse(req.body);
+      
+      // Get the template
+      const organizationId = req.user?.organizationId || 1;
+      const template = await storage.getReportTemplate(templateId, organizationId);
+      if (!template) {
+        return res.status(404).json({ message: "Report template not found" });
+      }
+
+      // Set default period (last 30 days if not provided)
+      const now = new Date();
+      const defaultPeriodFrom = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      
+      // Create report generation record
+      const reportData = {
+        templateId,
+        organizationId,
+        name: `${template.name} - ${new Date().toLocaleDateString()}`,
+        type: template.type,
+        format,
+        periodFrom: periodFrom ? new Date(periodFrom) : defaultPeriodFrom,
+        periodTo: periodTo ? new Date(periodTo) : now,
+        status: 'scheduled' as const,
+        metadata: parameters || template.parameters,
+        requestedBy: req.user?.id || 1
       };
-      allAlerts.forEach(alert => {
-        const date = new Date(alert.timestamp ?? Date.now());
-        const day = date.toLocaleDateString('en-US', { weekday: 'short' });
-        const sev = String(alert.severity) as keyof typeof alertsByDayMap["Mon"];
-        if (alertsByDayMap[day] && ['critical','high','medium','low'].includes(sev)) {
-          alertsByDayMap[day][sev]!++;
-        }
-      });
-      const alertsByDay = Object.entries(alertsByDayMap).map(([day, counts]) => ({ ...counts, day }));
 
-      // MITRE ATT&CK tactics data (reales)
-      const tacticCounts: Record<string, { id: string, name: string, count: number }> = {};
-      allIncidents.forEach(incident => {
-        if (Array.isArray(incident.mitreTactics)) {
-          incident.mitreTactics.forEach((tactic: any) => {
-            if (!tacticCounts[tactic]) {
-              tacticCounts[tactic] = { id: tactic, name: tactic, count: 0 };
-            }
-            tacticCounts[tactic].count++;
-          });
-        }
+      const report = await storage.createReportGenerated(reportData);
+      
+      // Note: In a real implementation, you would trigger the ReportGeneratorService here
+      // For now, we'll just create the record and return it
+      res.status(201).json({
+        ...report,
+        message: "Report generation started. You will be notified when complete."
       });
-      // Top 5 tactics
-      const mitreTactics = Object.values(tacticCounts)
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 5)
-        .map((t, i, arr) => ({
-          id: t.id,
-          name: t.name,
-          count: t.count,
-          percentage: arr[0] ? Math.round((t.count / arr[0].count) * 100) : 0
-        }));
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid generation request", errors: error.format() });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
 
-      // Compliance data (reales, pero simple: basado en resolved/open alerts)
-      const compliance = [
-        { framework: "ISO 27001", score: complianceScore, status: complianceScore > 80 ? "compliant" : "at-risk", lastAssessment: "2 weeks ago" },
-        { framework: "NIST CSF", score: complianceScore - 8, status: complianceScore > 70 ? "compliant" : "at-risk", lastAssessment: "1 month ago" },
-        { framework: "GDPR", score: complianceScore - 20, status: complianceScore > 60 ? "compliant" : "at-risk", lastAssessment: "3 weeks ago" },
-        { framework: "PCI DSS", score: complianceScore - 4, status: complianceScore > 75 ? "compliant" : "at-risk", lastAssessment: "2 months ago" }
-      ];
+  apiRouter.patch("/reports/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const organizationId = req.user?.organizationId || 1;
+      const report = await storage.getReportGenerated(id, organizationId);
+      
+      if (!report) {
+        return res.status(404).json({ message: "Report not found" });
+      }
 
-      res.json({
-        metrics: dashboardMetrics,
-        recentAlerts,
-        aiInsights,
-        threatIntel,
-        alertsByDay,
-        mitreTactics,
-        compliance
+      const updateSchema = z.object({
+        status: z.enum(['scheduled', 'generating', 'completed', 'failed']).optional(),
+        filePath: z.string().optional(),
+        fileSize: z.number().optional(),
+        hashSha256: z.string().optional(),
+        generatedAt: z.string().optional(),
+        error: z.string().optional()
       });
+
+      const validData = updateSchema.parse(req.body);
+      
+      // Convert date string if provided
+      let updateData: any = { ...validData };
+      if (validData.generatedAt) {
+        updateData.generatedAt = new Date(validData.generatedAt);
+      }
+      
+      const updatedReport = await storage.updateReportGenerated(id, updateData, organizationId);
+      res.json(updatedReport);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid update data", errors: error.format() });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  apiRouter.delete("/reports/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const organizationId = req.user?.organizationId || 1;
+      const success = await storage.deleteReportGenerated(id, organizationId);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Report not found or could not be deleted" });
+      }
+      
+      res.status(200).json({ success: true, message: "Report deleted successfully" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Report Artifacts (attachments, charts, etc.)
+  apiRouter.get("/reports/:reportId/artifacts", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const reportId = parseInt(req.params.reportId);
+      const artifacts = await storage.listReportArtifacts(reportId);
+      
+      res.json(artifacts);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  apiRouter.post("/reports/:reportId/artifacts", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const reportId = parseInt(req.params.reportId);
+      
+      const artifactSchema = z.object({
+        artifactType: z.enum(['chart', 'attachment', 'image', 'data']),
+        name: z.string().min(1, "Artifact name is required"),
+        path: z.string().min(1, "Artifact path is required"),
+        mimeType: z.string().optional(),
+        size: z.number().optional(),
+        metadata: z.any().optional()
+      });
+
+      const validData = artifactSchema.parse(req.body);
+      
+      const artifactData = {
+        ...validData,
+        reportId
+      };
+
+      const artifact = await storage.createReportArtifact(artifactData);
+      res.status(201).json(artifact);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid artifact data", errors: error.format() });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  apiRouter.delete("/reports/:reportId/artifacts/:artifactId", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const artifactId = parseInt(req.params.artifactId);
+      const success = await storage.deleteReportArtifact(artifactId);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Artifact not found or could not be deleted" });
+      }
+      
+      res.status(200).json({ success: true, message: "Artifact deleted successfully" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Report Statistics and Analytics
+  apiRouter.get("/reports/statistics", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const organizationId = req.user?.organizationId || 1;
+      const days = req.query.days ? parseInt(req.query.days as string) : 30;
+      const statistics = await storage.getReportStatistics(organizationId, days);
+      
+      res.json(statistics);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get enabled report templates for scheduling
+  apiRouter.get("/report-templates/enabled", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const organizationId = req.user?.organizationId || 1;
+      const templates = await storage.getEnabledReportTemplates(organizationId);
+      
+      res.json(templates);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get recent reports for dashboard
+  apiRouter.get("/reports/recent", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+      const organizationId = req.user?.organizationId || 1;
+      const reports = await storage.getRecentReportsGenerated(organizationId, limit);
+      
+      res.json(reports);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

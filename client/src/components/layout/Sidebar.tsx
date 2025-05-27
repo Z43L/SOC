@@ -156,9 +156,15 @@ const Sidebar: FC<SidebarProps> = ({ user, activeSection }) => {
               active={location === "/reports"} 
             />
             <NavItem 
+              href="/settings" 
+              label="Settings" 
+              icon={<Cog className="h-4 w-4" />} 
+              active={location === "/settings"} 
+            />
+            <NavItem 
               href="/configuration" 
               label="Configuración" 
-              icon={<Cog className="h-4 w-4" />} 
+              icon={<Lock className="h-4 w-4" />} 
               active={location === "/configuration"} 
             />
             <NavItem 

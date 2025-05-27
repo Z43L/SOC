@@ -14,7 +14,12 @@ import {
   ThreatFeed, InsertThreatFeed, ThreatFeedStatusTypes,
   Agent, InsertAgent, AgentStatusTypes,
   Plan, InsertPlan,
-  Organization, InsertOrganization
+  Organization, InsertOrganization,
+  // Report types
+  ReportTemplate, InsertReportTemplate,
+  ReportGenerated, InsertReportGenerated,
+  ReportArtifact, InsertReportArtifact,
+  ReportType, ReportStatusType, ReportFormatType
 } from '@shared/schema';
 import { IStorage } from './istorage';
 import { eq, desc, asc, sql, and, or, gte, lte, ilike, SQL, AnyColumn } from 'drizzle-orm';
@@ -811,6 +816,276 @@ export class DatabaseStorage implements IStorage {
     }
     const [updatedAgent_status_res] = await db.update(schema.agents).set({ status }).where(and(...conditions_agent_status)).returning();
     return updatedAgent_status_res;
+  }
+
+  // Report Template methods
+  async getReportTemplate(id: number, organizationId?: number): Promise<ReportTemplate | undefined> {
+    const conditions: SQL[] = [eq(schema.reportTemplates.id, id)];
+    if (organizationId !== undefined) {
+      conditions.push(eq(schema.reportTemplates.organizationId, organizationId));
+    }
+    const [template] = await db.select().from(schema.reportTemplates).where(and(...conditions));
+    return template;
+  }
+
+  async createReportTemplate(insertTemplate: InsertReportTemplate): Promise<ReportTemplate> {
+    if (!insertTemplate.organizationId) {
+      throw new Error("organizationId is required to create a report template.");
+    }
+    const [template] = await db.insert(schema.reportTemplates).values(insertTemplate).returning();
+    return template;
+  }
+
+  async updateReportTemplate(id: number, data: Partial<InsertReportTemplate>, organizationId?: number): Promise<ReportTemplate | undefined> {
+    const templateToUpdate: Partial<schema.ReportTemplate> = { ...data, updatedAt: new Date() };
+    const conditions: SQL[] = [eq(schema.reportTemplates.id, id)];
+    if (organizationId !== undefined) {
+      conditions.push(eq(schema.reportTemplates.organizationId, organizationId));
+    }
+    const [updatedTemplate] = await db.update(schema.reportTemplates).set(templateToUpdate).where(and(...conditions)).returning();
+    return updatedTemplate;
+  }
+
+  async deleteReportTemplate(id: number, organizationId?: number): Promise<boolean> {
+    const conditions: SQL[] = [eq(schema.reportTemplates.id, id)];
+    if (organizationId !== undefined) {
+      conditions.push(eq(schema.reportTemplates.organizationId, organizationId));
+    }
+    const result = await db.delete(schema.reportTemplates).where(and(...conditions)).returning({ id: schema.reportTemplates.id });
+    return result.length > 0;
+  }
+
+  async listReportTemplates(
+    organizationId: number,
+    limit: number = 10,
+    offset: number = 0,
+    type?: ReportType
+  ): Promise<ReportTemplate[]> {
+    const conditions: SQL[] = [eq(schema.reportTemplates.organizationId, organizationId)];
+    if (type) conditions.push(eq(schema.reportTemplates.type, type));
+
+    return await db.select()
+      .from(schema.reportTemplates)
+      .where(and(...conditions))
+      .orderBy(desc(schema.reportTemplates.createdAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  async getEnabledReportTemplates(organizationId: number): Promise<ReportTemplate[]> {
+    return await db.select()
+      .from(schema.reportTemplates)
+      .where(and(
+        eq(schema.reportTemplates.organizationId, organizationId),
+        eq(schema.reportTemplates.isEnabled, true)
+      ))
+      .orderBy(asc(schema.reportTemplates.name));
+  }
+
+  // Generated Reports methods
+  async getReportGenerated(id: number, organizationId?: number): Promise<ReportGenerated | undefined> {
+    const conditions: SQL[] = [eq(schema.reportsGenerated.id, id)];
+    if (organizationId !== undefined) {
+      conditions.push(eq(schema.reportsGenerated.organizationId, organizationId));
+    }
+    const [report] = await db.select().from(schema.reportsGenerated).where(and(...conditions));
+    return report;
+  }
+
+  async createReportGenerated(insertReport: InsertReportGenerated): Promise<ReportGenerated> {
+    if (!insertReport.organizationId) {
+      throw new Error("organizationId is required to create a generated report.");
+    }
+    const [report] = await db.insert(schema.reportsGenerated).values(insertReport).returning();
+    return report;
+  }
+
+  async updateReportGenerated(id: number, data: Partial<InsertReportGenerated>, organizationId?: number): Promise<ReportGenerated | undefined> {
+    const reportToUpdate: Partial<schema.ReportGenerated> = { ...data };
+    const conditions: SQL[] = [eq(schema.reportsGenerated.id, id)];
+    if (organizationId !== undefined) {
+      conditions.push(eq(schema.reportsGenerated.organizationId, organizationId));
+    }
+    const [updatedReport] = await db.update(schema.reportsGenerated).set(reportToUpdate).where(and(...conditions)).returning();
+    return updatedReport;
+  }
+
+  async deleteReportGenerated(id: number, organizationId?: number): Promise<boolean> {
+    const conditions: SQL[] = [eq(schema.reportsGenerated.id, id)];
+    if (organizationId !== undefined) {
+      conditions.push(eq(schema.reportsGenerated.organizationId, organizationId));
+    }
+    
+    // First delete associated artifacts
+    await db.delete(schema.reportArtifacts).where(eq(schema.reportArtifacts.reportId, id));
+    
+    // Then delete the report
+    const result = await db.delete(schema.reportsGenerated).where(and(...conditions)).returning({ id: schema.reportsGenerated.id });
+    return result.length > 0;
+  }
+
+  async listReportsGenerated(
+    organizationId: number,
+    limit: number = 10,
+    offset: number = 0,
+    filters?: { 
+      status?: ReportStatusType; 
+      type?: ReportType; 
+      dateFrom?: Date; 
+      dateTo?: Date;
+      templateId?: number;
+    }
+  ): Promise<ReportGenerated[]> {
+    const conditions: SQL[] = [eq(schema.reportsGenerated.organizationId, organizationId)];
+    
+    if (filters?.status) conditions.push(eq(schema.reportsGenerated.status, filters.status));
+    if (filters?.type) conditions.push(eq(schema.reportsGenerated.type, filters.type));
+    if (filters?.templateId) conditions.push(eq(schema.reportsGenerated.templateId, filters.templateId));
+    if (filters?.dateFrom) conditions.push(gte(schema.reportsGenerated.createdAt, filters.dateFrom));
+    if (filters?.dateTo) conditions.push(lte(schema.reportsGenerated.createdAt, filters.dateTo));
+
+    return await db.select()
+      .from(schema.reportsGenerated)
+      .where(and(...conditions))
+      .orderBy(desc(schema.reportsGenerated.createdAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  async getReportsGeneratedByTemplate(templateId: number, organizationId: number): Promise<ReportGenerated[]> {
+    return await db.select()
+      .from(schema.reportsGenerated)
+      .where(and(
+        eq(schema.reportsGenerated.templateId, templateId),
+        eq(schema.reportsGenerated.organizationId, organizationId)
+      ))
+      .orderBy(desc(schema.reportsGenerated.createdAt));
+  }
+
+  async getRecentReportsGenerated(organizationId: number, limit: number = 5): Promise<ReportGenerated[]> {
+    return await db.select()
+      .from(schema.reportsGenerated)
+      .where(and(
+        eq(schema.reportsGenerated.organizationId, organizationId),
+        eq(schema.reportsGenerated.status, 'completed')
+      ))
+      .orderBy(desc(schema.reportsGenerated.generatedAt))
+      .limit(limit);
+  }
+
+  // Report Artifacts methods
+  async getReportArtifact(id: number): Promise<ReportArtifact | undefined> {
+    const [artifact] = await db.select().from(schema.reportArtifacts).where(eq(schema.reportArtifacts.id, id));
+    return artifact;
+  }
+
+  async createReportArtifact(insertArtifact: InsertReportArtifact): Promise<ReportArtifact> {
+    const [artifact] = await db.insert(schema.reportArtifacts).values(insertArtifact).returning();
+    return artifact;
+  }
+
+  async listReportArtifacts(reportId: number): Promise<ReportArtifact[]> {
+    return await db.select()
+      .from(schema.reportArtifacts)
+      .where(eq(schema.reportArtifacts.reportId, reportId))
+      .orderBy(asc(schema.reportArtifacts.name));
+  }
+
+  async deleteReportArtifact(id: number): Promise<boolean> {
+    const result = await db.delete(schema.reportArtifacts).where(eq(schema.reportArtifacts.id, id)).returning({ id: schema.reportArtifacts.id });
+    return result.length > 0;
+  }
+
+  // Report Statistics and Analytics methods
+  async getReportStatistics(organizationId: number, days: number = 30): Promise<{
+    totalReports: number;
+    completedReports: number;
+    failedReports: number;
+    averageGenerationTime: number;
+    reportsByType: Array<{ type: string; count: number }>;
+    recentActivity: Array<{ date: string; count: number }>;
+  }> {
+    const dateFrom = new Date();
+    dateFrom.setDate(dateFrom.getDate() - days);
+
+    // Total reports in period
+    const totalQuery = await db.select({ count: sql<number>`count(*)` })
+      .from(schema.reportsGenerated)
+      .where(and(
+        eq(schema.reportsGenerated.organizationId, organizationId),
+        gte(schema.reportsGenerated.createdAt, dateFrom)
+      ));
+    const totalReports = Number(totalQuery[0]?.count || 0);
+
+    // Completed reports
+    const completedQuery = await db.select({ count: sql<number>`count(*)` })
+      .from(schema.reportsGenerated)
+      .where(and(
+        eq(schema.reportsGenerated.organizationId, organizationId),
+        eq(schema.reportsGenerated.status, 'completed'),
+        gte(schema.reportsGenerated.createdAt, dateFrom)
+      ));
+    const completedReports = Number(completedQuery[0]?.count || 0);
+
+    // Failed reports
+    const failedQuery = await db.select({ count: sql<number>`count(*)` })
+      .from(schema.reportsGenerated)
+      .where(and(
+        eq(schema.reportsGenerated.organizationId, organizationId),
+        eq(schema.reportsGenerated.status, 'failed'),
+        gte(schema.reportsGenerated.createdAt, dateFrom)
+      ));
+    const failedReports = Number(failedQuery[0]?.count || 0);
+
+    // Average generation time (for completed reports)
+    const avgTimeQuery = await db.execute(sql`
+      SELECT AVG(EXTRACT(EPOCH FROM (generated_at - created_at))) as avg_time
+      FROM ${schema.reportsGenerated}
+      WHERE ${schema.reportsGenerated.organizationId} = ${organizationId}
+        AND ${schema.reportsGenerated.status} = 'completed'
+        AND ${schema.reportsGenerated.generatedAt} IS NOT NULL
+        AND ${schema.reportsGenerated.createdAt} >= ${dateFrom}
+    `);
+    const averageGenerationTime = Number(avgTimeQuery[0]?.avg_time || 0);
+
+    // Reports by type
+    const typeQuery = await db.execute(sql`
+      SELECT type, COUNT(*)::int as count
+      FROM ${schema.reportsGenerated}
+      WHERE ${schema.reportsGenerated.organizationId} = ${organizationId}
+        AND ${schema.reportsGenerated.createdAt} >= ${dateFrom}
+      GROUP BY type
+      ORDER BY count DESC
+    `);
+    const reportsByType = typeQuery.map((row: any) => ({
+      type: row.type,
+      count: Number(row.count)
+    }));
+
+    // Recent activity (daily counts)
+    const activityQuery = await db.execute(sql`
+      SELECT 
+        to_char(date_trunc('day', created_at), 'YYYY-MM-DD') as date,
+        COUNT(*)::int as count
+      FROM ${schema.reportsGenerated}
+      WHERE ${schema.reportsGenerated.organizationId} = ${organizationId}
+        AND ${schema.reportsGenerated.createdAt} >= ${dateFrom}
+      GROUP BY date_trunc('day', created_at)
+      ORDER BY date_trunc('day', created_at) ASC
+    `);
+    const recentActivity = activityQuery.map((row: any) => ({
+      date: row.date,
+      count: Number(row.count)
+    }));
+
+    return {
+      totalReports,
+      completedReports,
+      failedReports,
+      averageGenerationTime: Math.round(averageGenerationTime),
+      reportsByType,
+      recentActivity
+    };
   }
 }
 

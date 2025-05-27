@@ -3,7 +3,7 @@
  * Gestiona la comunicación con agentes instalados en sistemas objetivo
  */
 
-import { Connector, InsertAlert } from '@shared/schema';
+import { Connector, InsertAlert, DataSource } from '@shared/schema'; // Added DataSource
 import { BaseConnector, ConnectorConfig, ConnectorResult } from './base';
 import { log } from '../../vite';
 import { storage } from '../../storage';
@@ -13,13 +13,14 @@ import { aiParser } from '../ai-parser-service';
 import { generateAlertInsight } from '../../advanced-ai-service';
 import { createIncidentIfNeededAndLinkAlert } from '../../utils/incident-linker'; // Utilidad para incidentes automáticos
 import { notifyCriticalEvent } from '../../utils/notifier'; // Utilidad para notificaciones
+import { CredentialsManager } from './credentials-manager'; // Added import
 
 /**
  * Configuración específica para conectores de tipo Agente
  */
 export interface AgentConnectorConfig extends ConnectorConfig {
   // Configuración de gestión de agentes
-  registrationKey?: string;
+  masterRegistrationToken?: string; // Changed from registrationKey
   heartbeatInterval?: number; // en segundos
   agentTimeout?: number; // en segundos
   dataEndpoint?: string;
@@ -35,13 +36,14 @@ export interface AgentConnectorConfig extends ConnectorConfig {
       lastHeartbeat: string;
       capabilities: string[];
       config?: any;
+      authToken?: string; // Added to store agent-specific token
     }
   };
   // Configuración de seguridad
-  signatureVerification?: boolean;
-  publicKey?: string;
-  useJWT?: boolean;
-  jwtSecret?: string;
+  signatureVerification?: boolean; // Will be revisited for message signing
+  publicKey?: string; // Will be revisited
+  useJWT?: boolean; // Will be replaced by CredentialsManager tokens
+  jwtSecret?: string; // Will be replaced
 }
 
 /**
@@ -53,9 +55,7 @@ interface AgentRegistration {
   os: string;
   version: string;
   capabilities: string[];
-  // Opcional, para verificación de firma
-  signature?: string;
-  publicKey?: string;
+  // signature and publicKey removed for now, will be handled by secure communication
 }
 
 /**
@@ -63,6 +63,7 @@ interface AgentRegistration {
  */
 interface AgentHeartbeat {
   agentId: string;
+  // authToken: string; // Token for authentication - will be sent in header
   timestamp: string;
   status: 'active' | 'warning' | 'error';
   metrics?: {
@@ -70,8 +71,7 @@ interface AgentHeartbeat {
     memoryUsage?: number;
     diskUsage?: number;
   };
-  // Opcional, para verificación de firma
-  signature?: string;
+  // signature removed for now
 }
 
 /**
@@ -79,13 +79,13 @@ interface AgentHeartbeat {
  */
 interface AgentEvent {
   agentId: string;
+  // authToken: string; // Token for authentication - will be sent in header
   timestamp: string;
   eventType: string;
   severity: string;
   message: string;
   details: any;
-  // Opcional, para verificación de firma
-  signature?: string;
+  // signature removed for now
 }
 
 /**
@@ -96,54 +96,63 @@ export class AgentConnector extends BaseConnector {
   private pendingEvents: AgentEvent[] = [];
   private processingInterval: NodeJS.Timeout | null = null;
   private agentEndpoints: express.Router;
-  
+  private credentialsManager: CredentialsManager; // Added instance
+  private agentCheckInterval: NodeJS.Timeout | null = null; // For checking inactive agents
+
   constructor(connector: Connector) {
     super(connector);
     this.config = this.connector.configuration as AgentConnectorConfig;
-    
+    this.credentialsManager = CredentialsManager.getInstance(); // Initialize CredentialsManager
+
+    // Ensure agents object is initialized
+    if (!this.config.agents) {
+      this.config.agents = {};
+    }
+
     // Crear endpoints para la comunicación con agentes
     this.agentEndpoints = express.Router();
     this.setupEndpoints();
   }
-  
+
   /**
    * Validar la configuración del conector
    */
   public validateConfig(): boolean {
     // Verificar campos obligatorios
-    if (!this.config.registrationKey) {
-      log(`Conector ${this.connector.name} no tiene clave de registro configurada`, 'connector');
-      // Generar una clave aleatoria en lugar de fallar
-      this.config.registrationKey = crypto.randomBytes(16).toString('hex');
-      log(`Se ha generado automáticamente una clave de registro: ${this.config.registrationKey}`, 'connector');
+    if (!this.config.masterRegistrationToken) {
+      log(`Conector ${this.connector.name} no tiene masterRegistrationToken configurado. Generando uno.`, 'connector');
+      this.config.masterRegistrationToken = crypto.randomBytes(32).toString('hex');
+      log(`Se ha generado automáticamente un masterRegistrationToken: ${this.config.masterRegistrationToken}`, 'connector');
+      // Persist this generated token
+      this.updateConfig(this.config).catch(err => log(`Error saving generated master token: ${err}`, 'connector'));
     }
-    
+
     // Configurar valores por defecto
     if (!this.config.heartbeatInterval || this.config.heartbeatInterval < 60) {
       this.config.heartbeatInterval = 300; // 5 minutos por defecto
     }
-    
+
     if (!this.config.agentTimeout || this.config.agentTimeout < this.config.heartbeatInterval) {
       this.config.agentTimeout = this.config.heartbeatInterval * 2; // Doble del intervalo de heartbeat
     }
-    
-    // Inicializar registro de agentes si no existe
+
+    // Inicializar registro de agentes si no existe (redundant due to constructor check, but safe)
     if (!this.config.agents) {
       this.config.agents = {};
     }
-    
+
     // Configurar endpoints si no están definidos
     if (!this.config.dataEndpoint) {
       this.config.dataEndpoint = '/api/agents/data';
     }
-    
+
     if (!this.config.registrationEndpoint) {
       this.config.registrationEndpoint = '/api/agents/register';
     }
-    
+
     return true;
   }
-  
+
   /**
    * Configurar endpoints para la comunicación con agentes
    */
@@ -152,35 +161,24 @@ export class AgentConnector extends BaseConnector {
     this.agentEndpoints.post(this.config.registrationEndpoint || '/api/agents/register', express.json(), async (req, res) => {
       try {
         const registration = req.body as AgentRegistration;
-        
-        // Validar datos básicos
+        const providedMasterToken = req.headers['x-registration-token'] as string;
+
         if (!registration.hostname || !registration.os || !registration.version) {
           return res.status(400).json({ success: false, message: 'Datos de registro incompletos' });
         }
-        
-        // Verificar clave de registro
-        const apiKey = req.headers['x-api-key'] || req.query.api_key;
-        if (!apiKey || apiKey !== this.config.registrationKey) {
-          return res.status(401).json({ success: false, message: 'Clave de registro inválida' });
+
+        if (!providedMasterToken || providedMasterToken !== this.config.masterRegistrationToken) {
+          log(`Intento de registro fallido para ${this.connector.name}. Token maestro inválido.`, 'connector');
+          return res.status(401).json({ success: false, message: 'Token de registro maestro inválido' });
         }
-        
-        // Verificar firma si está habilitado
-        if (this.config.signatureVerification && registration.signature) {
-          const isValid = this.verifySignature(
-            JSON.stringify({ ...registration, signature: undefined }),
-            registration.signature,
-            registration.publicKey || this.config.publicKey
-          );
-          
-          if (!isValid) {
-            return res.status(401).json({ success: false, message: 'Firma inválida' });
-          }
-        }
-        
-        // Generar ID único para el agente
+
         const agentId = crypto.randomUUID();
-        
-        // Registrar agente
+        const organizationId = this.connector.organizationId || 1; // Placeholder
+        const agentAuthToken = this.credentialsManager.generateAgentToken(agentId, organizationId);
+
+        if (!this.config.agents) { // Ensure agents is initialized
+            this.config.agents = {};
+        }
         this.config.agents[agentId] = {
           hostname: registration.hostname,
           ip: registration.ip || req.ip || 'unknown',
@@ -189,167 +187,151 @@ export class AgentConnector extends BaseConnector {
           capabilities: registration.capabilities || [],
           status: 'active',
           lastHeartbeat: new Date().toISOString(),
-          config: {}
+          config: {},
+          authToken: agentAuthToken
         };
-        
-        // Guardar configuración actualizada
-        await this.updateConfig();
-        
-        // Responder con ID y configuración
+
+        await this.updateConfig(this.config);
+
         res.status(200).json({
           success: true,
           agentId,
-          config: {
-            heartbeatInterval: this.config.heartbeatInterval,
-            endpoints: {
-              data: this.config.dataEndpoint,
-              heartbeat: this.config.dataEndpoint + '/heartbeat'
-            }
-          }
+          authToken: agentAuthToken,
+          message: 'Agente registrado exitosamente.'
         });
-        
-        log(`Nuevo agente registrado: ${registration.hostname} (${agentId})`, 'connector');
-      } catch (error) {
-        log(`Error en registro de agente: ${error instanceof Error ? error.message : 'Error desconocido'}`, 'connector');
-        res.status(500).json({ success: false, message: 'Error interno' });
-      }
-    });
-    
-    // Endpoint de heartbeat
-    this.agentEndpoints.post(`${this.config.dataEndpoint}/heartbeat`, express.json(), async (req, res) => {
-      try {
-        const heartbeat = req.body as AgentHeartbeat;
-        
-        // Validar datos básicos
-        if (!heartbeat.agentId) {
-          return res.status(400).json({ success: false, message: 'ID de agente requerido' });
-        }
-        
-        // Verificar que el agente existe
-        if (!this.config.agents[heartbeat.agentId]) {
-          return res.status(404).json({ success: false, message: 'Agente no registrado' });
-        }
-        
-        // Verificar firma si está habilitado
-        if (this.config.signatureVerification && heartbeat.signature) {
-          const agent = this.config.agents[heartbeat.agentId];
-          const publicKey = this.config.agents[heartbeat.agentId].config?.publicKey || this.config.publicKey;
-          
-          const isValid = this.verifySignature(
-            JSON.stringify({ ...heartbeat, signature: undefined }),
-            heartbeat.signature,
-            publicKey
-          );
-          
-          if (!isValid) {
-            return res.status(401).json({ success: false, message: 'Firma inválida' });
-          }
-        }
-        
-        // Actualizar estado del agente
-        this.config.agents[heartbeat.agentId].lastHeartbeat = new Date().toISOString();
-        this.config.agents[heartbeat.agentId].status = heartbeat.status || 'active';
-        
-        // Guardar métricas si existen
-        if (heartbeat.metrics) {
-          this.config.agents[heartbeat.agentId].metrics = heartbeat.metrics;
-        }
-        
-        // Guardar configuración actualizada
-        await this.updateConfig();
-        
-        // Responder con OK y configuración actualizada si la hay
-        res.status(200).json({
-          success: true,
-          config: this.config.agents[heartbeat.agentId].config || {}
-        });
-      } catch (error) {
-        log(`Error en heartbeat de agente: ${error instanceof Error ? error.message : 'Error desconocido'}`, 'connector');
-        res.status(500).json({ success: false, message: 'Error interno' });
-      }
-    });
-    
-    // Endpoint para recibir datos
-    this.agentEndpoints.post(this.config.dataEndpoint, express.json(), async (req, res) => {
-      try {
-        const event = req.body as AgentEvent;
-        
-        // Validar datos básicos
-        if (!event.agentId || !event.eventType) {
-          return res.status(400).json({ success: false, message: 'Datos incompletos' });
-        }
-        
-        // Verificar que el agente existe
-        if (!this.config.agents[event.agentId]) {
-          return res.status(404).json({ success: false, message: 'Agente no registrado' });
-        }
-        
-        // Verificar firma si está habilitado
-        if (this.config.signatureVerification && event.signature) {
-          const agent = this.config.agents[event.agentId];
-          const publicKey = this.config.agents[event.agentId].config?.publicKey || this.config.publicKey;
-          
-          const isValid = this.verifySignature(
-            JSON.stringify({ ...event, signature: undefined }),
-            event.signature,
-            publicKey
-          );
-          
-          if (!isValid) {
-            return res.status(401).json({ success: false, message: 'Firma inválida' });
-          }
-        }
-        
-        // Actualizar timestamp de último contacto
-        this.config.agents[event.agentId].lastHeartbeat = new Date().toISOString();
-        
-        // Añadir evento a la cola de procesamiento
-        this.pendingEvents.push(event);
-        
-        // Actualizar estadísticas
-        this.state.dataProcessed++;
-        this.state.bytesProcessed += JSON.stringify(event).length;
-        
-        // Si hay muchos eventos pendientes, procesarlos
-        if (this.pendingEvents.length >= 20) {
-          this.processAgentEvents();
-        }
-        
-        res.status(200).json({ success: true });
-      } catch (error) {
-        log(`Error recibiendo datos de agente: ${error instanceof Error ? error.message : 'Error desconocido'}`, 'connector');
-        res.status(500).json({ success: false, message: 'Error interno' });
-      }
-    });
-    
-    // Endpoint para consultar agentes registrados
-    this.agentEndpoints.get('/api/agents', async (req, res) => {
-      try {
-        const agents = Object.entries(this.config.agents || {}).map(([id, data]) => ({ id, ...data }));
-        res.status(200).json({ success: true, agents });
-      } catch (error) {
-        log(`Error consultando agentes: ${error instanceof Error ? error.message : 'Error desconocido'}`, 'connector');
-        res.status(500).json({ success: false, message: 'Error interno' });
+
+      } catch (error: any) {
+        log(`Error en el registro de agente para ${this.connector.name}: ${error.message}`, 'connector');
+        res.status(500).json({ success: false, message: 'Error interno del servidor durante el registro' });
       }
     });
 
-    // Endpoint para consultar eventos recientes
-    this.agentEndpoints.get('/api/agents/events', async (req, res) => {
+    // Endpoint de recepción de datos de agentes
+    this.agentEndpoints.post(this.config.dataEndpoint || '/api/agents/data', express.json(), async (req, res) => {
       try {
-        res.status(200).json({ success: true, events: this.pendingEvents.slice(-50) });
-      } catch (error) {
-        log(`Error consultando eventos: ${error instanceof Error ? error.message : 'Error desconocido'}`, 'connector');
-        res.status(500).json({ success: false, message: 'Error interno' });
+        const event = req.body as AgentEvent;
+        const authHeader = req.headers.authorization;
+        const authToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
+
+        if (!authToken) {
+          return res.status(401).json({ success: false, message: 'Token de autenticación no proporcionado' });
+        }
+
+        const { valid, agentId: validatedAgentId } = this.credentialsManager.validateAgentToken(authToken);
+
+        if (!valid || !validatedAgentId || validatedAgentId !== event.agentId) {
+            log(`Token inválido o no coincide para el agente ${event.agentId} en ${this.connector.name}.`, 'connector');
+            return res.status(401).json({ success: false, message: 'Token de autenticación inválido o no coincide con el agente' });
+        }
+        
+        const agent = this.config.agents?.[validatedAgentId];
+        if (!agent || agent.authToken !== authToken) {
+             log(`Agente ${validatedAgentId} no encontrado o token no coincide en la configuración para ${this.connector.name}.`, 'connector');
+             return res.status(401).json({ success: false, message: 'Agente no encontrado o token desactualizado.' });
+        }
+
+        // Verificar firma si está habilitado (revisitar esta lógica para message signing)
+        // if (this.config.signatureVerification && event.signature) {
+        //   const agent = this.config.agents?.[event.agentId];
+        //   if (!agent) {
+        //     return res.status(404).json({ success: false, message: 'Agente no encontrado' });
+        //   }
+        //   const isValid = this.verifySignature(
+        //     JSON.stringify({ ...event, signature: undefined }),
+        //     event.signature,
+        //     agent.publicKey || this.config.publicKey // Assuming agent might have its own key
+        //   );
+        //   if (!isValid) {
+        //     return res.status(401).json({ success: false, message: 'Firma de evento inválida' });
+        //   }
+        // }
+
+        // Procesar el evento (ejemplo básico)
+        log(`Evento recibido del agente ${event.agentId} (${this.connector.name}): ${event.message}`, 'connector');
+        this.pendingEvents.push(event);
+        
+        // Actualizar último heartbeat si el evento es de tipo heartbeat (o si se considera cualquier comunicación como heartbeat)
+        if (this.config.agents && this.config.agents[event.agentId]) {
+            this.config.agents[event.agentId].lastHeartbeat = new Date().toISOString();
+            this.config.agents[event.agentId].status = 'active';
+            await this.updateConfig(this.config); // Persist heartbeat update
+        }
+
+
+        res.status(200).json({ success: true, message: 'Evento recibido' });
+      } catch (error: any) {
+        log(`Error procesando evento de agente para ${this.connector.name}: ${error.message}`, 'connector');
+        res.status(500).json({ success: false, message: 'Error interno del servidor' });
+      }
+    });
+
+    // Endpoint de heartbeat de agentes
+    this.agentEndpoints.post('/api/agents/heartbeat', express.json(), async (req, res) => {
+      try {
+        const heartbeat = req.body as AgentHeartbeat;
+        const authHeader = req.headers.authorization;
+        const authToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
+
+        if (!authToken) {
+          return res.status(401).json({ success: false, message: 'Token de autenticación no proporcionado' });
+        }
+        
+        const { valid, agentId: validatedAgentId } = this.credentialsManager.validateAgentToken(authToken);
+
+        if (!valid || !validatedAgentId || validatedAgentId !== heartbeat.agentId) {
+             log(`Token inválido o no coincide para el heartbeat del agente ${heartbeat.agentId} en ${this.connector.name}.`, 'connector');
+            return res.status(401).json({ success: false, message: 'Token de autenticación inválido o no coincide con el agente' });
+        }
+        
+        const agent = this.config.agents?.[validatedAgentId];
+        if (!agent || agent.authToken !== authToken) {
+             log(`Agente ${validatedAgentId} no encontrado o token no coincide en la configuración para heartbeat en ${this.connector.name}.`, 'connector');
+             return res.status(401).json({ success: false, message: 'Agente no encontrado o token desactualizado.' });
+        }
+
+
+        // Verificar firma si está habilitado (revisitar)
+        // if (this.config.signatureVerification && heartbeat.signature) {
+        //   const agent = this.config.agents?.[heartbeat.agentId];
+        //   if (!agent) {
+        //     return res.status(404).json({ success: false, message: 'Agente no encontrado' });
+        //   }
+        //   const isValid = this.verifySignature(
+        //     JSON.stringify({ ...heartbeat, signature: undefined }),
+        //     heartbeat.signature,
+        //     agent.publicKey || this.config.publicKey
+        //   );
+        //   if (!isValid) {
+        //     return res.status(401).json({ success: false, message: 'Firma de heartbeat inválida' });
+        //   }
+        // }
+
+        // Actualizar estado del agente
+        if (this.config.agents && this.config.agents[heartbeat.agentId]) {
+          this.config.agents[heartbeat.agentId].lastHeartbeat = new Date(heartbeat.timestamp).toISOString();
+          this.config.agents[heartbeat.agentId].status = heartbeat.status;
+          // Opcional: actualizar métricas si se envían
+          // if (heartbeat.metrics) { ... }
+          await this.updateConfig(this.config); // Persist heartbeat update
+          log(`Heartbeat recibido del agente ${heartbeat.agentId} (${this.connector.name})`, 'connector');
+          res.status(200).json({ success: true, message: 'Heartbeat recibido' });
+        } else {
+          log(`Heartbeat de agente desconocido: ${heartbeat.agentId} (${this.connector.name})`, 'connector');
+          res.status(404).json({ success: false, message: 'Agente no registrado' });
+        }
+      } catch (error: any) {
+        log(`Error procesando heartbeat de agente para ${this.connector.name}: ${error.message}`, 'connector');
+        res.status(500).json({ success: false, message: 'Error interno del servidor' });
       }
     });
   }
-  
+
   /**
    * Ejecutar el conector
    */
   public async execute(): Promise<ConnectorResult> {
     const startTime = Date.now();
-    
+
     try {
       // Validar configuración
       if (!this.validateConfig()) {
@@ -359,29 +341,29 @@ export class AgentConnector extends BaseConnector {
           message: 'Configuración del conector inválida'
         };
       }
-      
+
       log(`Ejecutando conector de Agentes ${this.connector.name}`, 'connector');
-      
+
       // Comprobar agentes inactivos
       await this.checkInactiveAgents();
-      
+
       // Configurar procesamiento periódico de eventos
       if (!this.processingInterval) {
         this.processingInterval = setInterval(() => {
           this.processAgentEvents();
         }, 15000); // Procesar cada 15 segundos
       }
-      
+
       // Actualizar estadísticas
       this.state.executionTime = Date.now() - startTime;
-      
+
       // Actualizar estado del conector
       await this.updateConnectorStatus(true);
-      
+
       // Retornar resumen
       const activeAgents = Object.values(this.config.agents || {})
         .filter(agent => agent.status === 'active').length;
-      
+
       return {
         success: true,
         message: `Conector de agentes activo. ${activeAgents} agentes conectados.`,
@@ -390,7 +372,7 @@ export class AgentConnector extends BaseConnector {
           totalAgents: Object.keys(this.config.agents || {}).length,
           registration: {
             endpoint: this.config.registrationEndpoint,
-            key: this.config.registrationKey ? '***' + this.config.registrationKey.substring(this.config.registrationKey.length - 4) : 'No configurada'
+            key: this.config.masterRegistrationToken ? '***' + this.config.masterRegistrationToken.substring(this.config.masterRegistrationToken.length - 4) : 'No configurada'
           }
         },
         metrics: {
@@ -401,24 +383,24 @@ export class AgentConnector extends BaseConnector {
       };
     } catch (error) {
       log(`Error ejecutando conector de Agentes ${this.connector.name}: ${error instanceof Error ? error.message : 'Error desconocido'}`, 'connector');
-      
+
       // Actualizar estado
       await this.updateConnectorStatus(false, error instanceof Error ? error.message : 'Error desconocido');
-      
+
       return {
         success: false,
         message: `Error ejecutando conector: ${error instanceof Error ? error.message : 'Error desconocido'}`
       };
     }
   }
-  
+
   /**
    * Obtiene el router de Express con los endpoints de agentes
    */
   public getRouter(): express.Router {
     return this.agentEndpoints;
   }
-  
+
   /**
    * Procesa los eventos pendientes de agentes
    */
@@ -512,10 +494,10 @@ export class AgentConnector extends BaseConnector {
       }
     }
     if (updated) {
-      await this.updateConfig();
+      await this.updateConfig(this.config);
     }
   }
-  
+
   /**
    * Determina si un evento de agente debe generar una alerta
    */
@@ -524,19 +506,19 @@ export class AgentConnector extends BaseConnector {
     if (event.eventType.includes('security')) {
       return true;
     }
-    
+
     // Eventos críticos o altos
     if (['critical', 'high'].includes(event.severity.toLowerCase())) {
       return true;
     }
-    
+
     // Detección de amenazas
     if (event.eventType.includes('threat') || 
         event.eventType.includes('malware') || 
         event.eventType.includes('attack')) {
       return true;
     }
-    
+
     // Cambios en archivos críticos
     if (event.eventType === 'file_change' && 
         event.details?.path && 
@@ -545,10 +527,10 @@ export class AgentConnector extends BaseConnector {
          event.details.path.includes('C:\\Windows\\System32\\'))) {
       return true;
     }
-    
+
     return false;
   }
-  
+
   /**
    * Crea una alerta a partir de un evento de agente
    */
@@ -598,7 +580,8 @@ export class AgentConnector extends BaseConnector {
           eventType: event.eventType,
           timestamp: event.timestamp || new Date().toISOString(),
           details: event.details || {}
-        }
+        },
+        dataSource: DataSource.AGENT, // Specify data source
       };
     } catch (error) {
       log(`Error creando alerta desde evento de agente: ${error instanceof Error ? error.message : 'Error desconocido'}`, 'connector');
@@ -609,50 +592,38 @@ export class AgentConnector extends BaseConnector {
   /**
    * Actualiza la configuración en la base de datos
    */
-  private async updateConfig(): Promise<void> {
+  private async updateConfig(config: AgentConnectorConfig): Promise<void> {
     await storage.updateConnector(this.connector.id, {
-      configuration: this.config
+      configuration: config
     });
   }
   
-  /**
-   * Verifica la firma de un mensaje
-   */
+  // This method is not used with token-based auth but kept for potential future message signing
   private verifySignature(message: string, signature: string, publicKeyStr?: string): boolean {
+    if (!publicKeyStr) {
+      log('No se proporcionó clave pública para la verificación de firma', 'connector');
+      return false;
+    }
     try {
-      if (!publicKeyStr) {
-        log('No se puede verificar firma: clave pública no disponible', 'connector');
-        return false;
-      }
-      
       const verifier = crypto.createVerify('SHA256');
       verifier.update(message);
-      
       return verifier.verify(publicKeyStr, Buffer.from(signature, 'base64'));
-    } catch (error) {
-      log(`Error verificando firma: ${error instanceof Error ? error.message : 'Error desconocido'}`, 'connector');
+    } catch (error: any) {
+      log(`Error verificando firma: ${error.message}`, 'connector');
       return false;
     }
   }
-
-  /**
-   * Limita intentos de registro fallidos y bloquea IPs sospechosas
-   */
-  private failedAttempts: Record<string, number> = {};
-  private blockedIps: Set<string> = new Set();
-
-  // Refuerza el endpoint de registro
-  // ...en setupEndpoints, dentro del endpoint de registro...
-  // Antes de procesar el registro:
-  //   if (this.blockedIps.has(req.ip)) {
-  //     return res.status(403).json({ success: false, message: 'IP bloqueada por múltiples intentos fallidos' });
-  //   }
-  //   // ...si el registro falla por clave...
-  //   this.failedAttempts[req.ip] = (this.failedAttempts[req.ip] || 0) + 1;
-  //   if (this.failedAttempts[req.ip] > 5) {
-  //     this.blockedIps.add(req.ip);
-  //     log(`[SECURITY] IP ${req.ip} bloqueada por múltiples intentos de registro fallidos`, 'connector');
-  //   }
-  //   // ...si el registro es exitoso, resetear contador...
-  //   this.failedAttempts[req.ip] = 0;
+  
+  public getExpressRouter(): express.Router {
+      return this.agentEndpoints;
+  }
 }
+
+// TODO:
+// - Implementar registro seguro de los endpoints (this.agentEndpoints) con el servidor Express principal.
+// - Implementar HTTPS para los endpoints de agente.
+// - Implementar firma de mensajes para integridad de datos (revisitar verifySignature).
+// - Mejorar la lógica de `shouldCreateAlert` y `createAlertFromAgentEvent`.
+// - Gestión de estado de agentes más robusta (active, inactive, warning, error).
+// - Desregistro automático de agentes que han estado inactivos por mucho tiempo.
+// - Considerar rate limiting y protección contra fuerza bruta en el endpoint de registro.

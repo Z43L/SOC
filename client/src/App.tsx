@@ -13,6 +13,7 @@ import Reports from "@/pages/reports";
 import Users from "@/pages/users";
 import Connectors from "@/pages/connectors";
 import Configuration from "@/pages/configuration";
+import Settings from "@/pages/settings";
 import Soar from "@/pages/soar";
 import Agents from "@/pages/agents";
 import AuthPage from "@/pages/auth-page";
@@ -54,6 +55,7 @@ function Router() {
       <ProtectedRoute path="/users" component={() => <Users user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/connectors" component={() => <Connectors user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/agents" component={() => <Agents user={userInfo} organization={organization} />} />
+      <ProtectedRoute path="/settings" component={() => <Settings user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/configuration" component={() => <Configuration user={userInfo} organization={organization} />} />
       {/* La página de facturación ahora maneja su propia autenticación */}
       <Route path="/billing" component={BillingPage} />

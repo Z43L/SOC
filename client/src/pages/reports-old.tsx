@@ -491,6 +491,267 @@ const Reports: FC<ReportsProps> = ({ user, organization }) => {
                 )}
               </div>
             )}
+              
+              <Card>
+                <CardHeader>
+                  <CardTitle>Threat Intelligence</CardTitle>
+                  <CardDescription>
+                    Detailed analysis of threats and intelligence
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Emerging threats</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>IOC summary</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Threat actor profiles</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Mitigation recommendations</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Industry-specific threats</span>
+                    </div>
+                  </div>
+                </CardContent>
+                <CardFooter>
+                  <Button 
+                    className="w-full" 
+                    onClick={() => handleGenerateReport("Threat Intelligence")}
+                    disabled={isGenerating}
+                  >
+                    {isGenerating ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin mr-2"></i>
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-file-pdf mr-2"></i>
+                        Generate Report
+                      </>
+                    )}
+                  </Button>
+                </CardFooter>
+              </Card>
+              
+              <Card>
+                <CardHeader>
+                  <CardTitle>Security Incidents</CardTitle>
+                  <CardDescription>
+                    Comprehensive incident analysis and response
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Incident timeline</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Attack vectors</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Impact assessment</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Response actions</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Lessons learned</span>
+                    </div>
+                  </div>
+                </CardContent>
+                <CardFooter>
+                  <Button 
+                    className="w-full" 
+                    onClick={() => handleGenerateReport("Security Incidents")}
+                    disabled={isGenerating}
+                  >
+                    {isGenerating ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin mr-2"></i>
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-file-pdf mr-2"></i>
+                        Generate Report
+                      </>
+                    )}
+                  </Button>
+                </CardFooter>
+              </Card>
+              
+              <Card>
+                <CardHeader>
+                  <CardTitle>Vulnerability Assessment</CardTitle>
+                  <CardDescription>
+                    Detailed analysis of system vulnerabilities
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Vulnerability summary</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Risk-based prioritization</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Patch status</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Remediation plan</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Trending vulnerabilities</span>
+                    </div>
+                  </div>
+                </CardContent>
+                <CardFooter>
+                  <Button 
+                    className="w-full" 
+                    onClick={() => handleGenerateReport("Vulnerability Assessment")}
+                    disabled={isGenerating}
+                  >
+                    {isGenerating ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin mr-2"></i>
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-file-pdf mr-2"></i>
+                        Generate Report
+                      </>
+                    )}
+                  </Button>
+                </CardFooter>
+              </Card>
+              
+              <Card>
+                <CardHeader>
+                  <CardTitle>Compliance Report</CardTitle>
+                  <CardDescription>
+                    Regulatory compliance status and gaps
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Compliance frameworks</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Control effectiveness</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Gap analysis</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Remediation roadmap</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Evidence collection</span>
+                    </div>
+                  </div>
+                </CardContent>
+                <CardFooter>
+                  <Button 
+                    className="w-full" 
+                    onClick={() => handleGenerateReport("Compliance Report")}
+                    disabled={isGenerating}
+                  >
+                    {isGenerating ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin mr-2"></i>
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-file-pdf mr-2"></i>
+                        Generate Report
+                      </>
+                    )}
+                  </Button>
+                </CardFooter>
+              </Card>
+              
+              <Card>
+                <CardHeader>
+                  <CardTitle>SOC Performance</CardTitle>
+                  <CardDescription>
+                    Security operations center efficiency metrics
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Analyst performance</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>MTTD & MTTR</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Alert triaging</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Incident handling</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-check text-green-500 mr-2"></i>
+                      <span>Resource utilization</span>
+                    </div>
+                  </div>
+                </CardContent>
+                <CardFooter>
+                  <Button 
+                    className="w-full" 
+                    onClick={() => handleGenerateReport("SOC Performance")}
+                    disabled={isGenerating}
+                  >
+                    {isGenerating ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin mr-2"></i>
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-file-pdf mr-2"></i>
+                        Generate Report
+                      </>
+                    )}
+                  </Button>
+                </CardFooter>
+              </Card>
+            </div>
           </TabsContent>
           
           <TabsContent value="scheduled">

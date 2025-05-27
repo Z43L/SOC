@@ -18,6 +18,7 @@ import * as path from 'path';
 // SOAR imports
 import { PlaybookExecutor } from './src/services/playbookExecutor';
 import { eventBus } from './src/services/eventBus';
+import { startAnalyticsRollupWorker } from './src/services/analyticsRollupWorker';
 
 const app = express();
 // Allow cross-origin requests from frontend and include credentials
@@ -93,6 +94,9 @@ app.use((req, res, next) => {
     log(`serving on port ${port}`);
     // Start the enrichment worker immediately
     processAlerts().catch(err => console.error('Error processing alerts:', err));
+    // Start analytics rollup worker
+    startAnalyticsRollupWorker();
+
     // Schedule periodic enrichment
     try {
       const enrichersPath = path.join(process.cwd(), 'server', 'enrichers.yaml');

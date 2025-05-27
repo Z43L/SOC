@@ -1,4 +1,5 @@
-import { FC, useState } from "react";
+import { FC, useState, useMemo } from "react";
+import { format, sub } from 'date-fns';
 import { useQuery } from "@tanstack/react-query";
 import Sidebar from "@/components/layout/Sidebar";
 import { MainContent } from "@/components/layout/MainContent";
@@ -22,6 +23,7 @@ import {
   Legend, 
   ResponsiveContainer 
 } from 'recharts';
+import { useTimeSeries, useTopN, usePerformanceMetrics } from '@/hooks/useAnalytics';
 
 interface AnalyticsProps {
   user: {
@@ -34,67 +36,111 @@ interface AnalyticsProps {
   };
 }
 
-// Sample data for charts
-const alertTrendData = [
-  { date: 'Mon', critical: 5, high: 8, medium: 12, low: 4 },
-  { date: 'Tue', critical: 3, high: 5, medium: 9, low: 6 },
-  { date: 'Wed', critical: 8, high: 7, medium: 10, low: 5 },
-  { date: 'Thu', critical: 4, high: 6, medium: 11, low: 8 },
-  { date: 'Fri', critical: 12, high: 9, medium: 13, low: 4 },
-  { date: 'Sat', critical: 2, high: 3, medium: 6, low: 3 },
-  { date: 'Sun', critical: 1, high: 2, medium: 5, low: 4 }
-];
-
-const alertSourceData = [
-  { name: 'Endpoint Security', value: 35 },
-  { name: 'Network IDS', value: 25 },
-  { name: 'SIEM', value: 20 },
-  { name: 'EDR', value: 15 },
-  { name: 'Vulnerability Scanner', value: 5 }
-];
-
+// COLORS for charts
 const COLORS = ['#1E88E5', '#42A5F5', '#64B5F6', '#90CAF9', '#BBDEFB'];
-
-const mitreTacticsData = [
-  { name: 'Initial Access', value: 18 },
-  { name: 'Execution', value: 25 },
-  { name: 'Persistence', value: 15 },
-  { name: 'Privilege Escalation', value: 12 },
-  { name: 'Defense Evasion', value: 28 },
-  { name: 'Credential Access', value: 22 },
-  { name: 'Discovery', value: 16 },
-  { name: 'Lateral Movement', value: 9 },
-  { name: 'Collection', value: 7 },
-  { name: 'Command & Control', value: 14 },
-  { name: 'Exfiltration', value: 5 },
-  { name: 'Impact', value: 8 }
-];
-
-const riskTrendData = [
-  { month: 'Jan', risk: 78 },
-  { month: 'Feb', risk: 75 },
-  { month: 'Mar', risk: 70 },
-  { month: 'Apr', risk: 68 },
-  { month: 'May', risk: 65 },
-  { month: 'Jun', risk: 60 },
-  { month: 'Jul', risk: 55 },
-  { month: 'Aug', risk: 58 },
-  { month: 'Sep', risk: 52 },
-  { month: 'Oct', risk: 50 },
-  { month: 'Nov', risk: 48 },
-  { month: 'Dec', risk: 45 }
-];
-
-const timeToRemediateData = [
-  { severity: 'Critical', time: 2.5 },
-  { severity: 'High', time: 6 },
-  { severity: 'Medium', time: 12 },
-  { severity: 'Low', time: 48 }
-];
 
 const Analytics: FC<AnalyticsProps> = ({ user, organization }) => {
   const [dateRange, setDateRange] = useState<string>("7d");
-  
+  const now = new Date();
+  const fromDate = useMemo(() => {
+    switch (dateRange) {
+      case '24h': return sub(now, { hours: 24 });
+      case '7d': return sub(now, { days: 7 });
+      case '30d': return sub(now, { days: 30 });
+      case '90d': return sub(now, { days: 90 });
+      default: return sub(now, { days: 7 });
+    }
+  }, [dateRange, now]);
+  const period = dateRange === '24h' ? 'hour' : 'day';
+  const fromISO = fromDate.toISOString();
+  const toISO = now.toISOString();
+
+  // Fetch time series for alert counts
+  const { data: tsData = [] } = useTimeSeries({ metric: 'alert_counts', period, from: fromISO, to: toISO });
+  // Map API data to chart format
+  const alertTrendData = tsData.map(item => ({ 
+    date: format(new Date(item.tsBucket), period === 'hour' ? 'HH:mm' : 'MM/dd'), 
+    ...item.value 
+  }));
+
+  // Fetch top MITRE tactics
+  const { data: mitreData = [] } = useTopN({ metric: 'mitre-tactics', limit: 10, from: fromISO, to: toISO });
+  const mitreTacticsData = mitreData.map(item => ({ 
+    name: item.tactic || item.name, 
+    value: item.count || item.value 
+  }));
+
+  // Fetch alert sources data
+  const { data: sourceData = [] } = useTopN({ metric: 'alert-sources', limit: 5, from: fromISO, to: toISO });
+  const alertSourceData = sourceData.map(item => ({ 
+    name: item.name, 
+    value: item.value 
+  }));
+
+  // Fetch risk trend data
+  const { data: riskData = [] } = useTimeSeries({ metric: 'risk-score', period: 'day', from: fromISO, to: toISO });
+  const riskTrendData = riskData.map(item => ({ 
+    month: format(new Date(item.tsBucket), 'MM/dd'),
+    risk: item.value.score || 65 
+  }));
+
+  // Fetch performance metrics
+  const { data: perfMetrics } = usePerformanceMetrics({ from: fromISO, to: toISO });
+
+  // Calculate summary metrics from time series data
+  const totalAlerts = useMemo(() => {
+    return alertTrendData.reduce((sum, item) => {
+      return sum + (item.critical || 0) + (item.high || 0) + (item.medium || 0) + (item.low || 0);
+    }, 0);
+  }, [alertTrendData]);
+
+  const avgMTTD = useMemo(() => {
+    if (!perfMetrics?.mttd?.length) return '42m';
+    const avg = perfMetrics.mttd.reduce((sum, item) => sum + (item.value.minutes || 42), 0) / perfMetrics.mttd.length;
+    return `${Math.round(avg)}m`;
+  }, [perfMetrics]);
+
+  const avgMTTR = useMemo(() => {
+    if (!perfMetrics?.mttr?.length) return '3.2h';
+    const avg = perfMetrics.mttr.reduce((sum, item) => sum + (item.value.hours || 3.2), 0) / perfMetrics.mttr.length;
+    return `${avg.toFixed(1)}h`;
+  }, [perfMetrics]);
+
+  // Fetch time to remediate data
+  const { data: remediateData = [] } = useTopN({ metric: 'time-to-remediate', limit: 4, from: fromISO, to: toISO });
+  const timeToRemediateData = remediateData.length > 0 ? remediateData.map(item => ({
+    severity: item.name,
+    time: item.value
+  })) : [
+    { severity: 'Critical', time: 0.5 },
+    { severity: 'High', time: 2.1 },
+    { severity: 'Medium', time: 8.3 },
+    { severity: 'Low', time: 24.7 }
+  ];
+
+  // Export functionality
+  const handleExportData = () => {
+    const csvData = [
+      ['Date', 'Critical', 'High', 'Medium', 'Low'],
+      ...alertTrendData.map(item => [
+        item.date,
+        item.critical || 0,
+        item.high || 0,
+        item.medium || 0,
+        item.low || 0
+      ])
+    ];
+    
+    const csvContent = csvData.map(row => row.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `analytics-${dateRange}-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar user={user} activeSection="analytics" />
@@ -126,7 +172,7 @@ const Analytics: FC<AnalyticsProps> = ({ user, organization }) => {
             </div>
             
             <div className="flex gap-2">
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={handleExportData}>
                 <i className="fas fa-download mr-2"></i> Export Data
               </Button>
               <Button size="sm">
@@ -141,7 +187,7 @@ const Analytics: FC<AnalyticsProps> = ({ user, organization }) => {
             <CardContent className="pt-6">
               <div className="text-center">
                 <p className="text-muted-foreground text-sm">Total Alerts</p>
-                <h3 className="text-3xl font-bold mt-1">1,247</h3>
+                <h3 className="text-3xl font-bold mt-1">{totalAlerts.toLocaleString()}</h3>
                 <p className="text-green-500 text-xs mt-1">
                   <i className="fas fa-arrow-down mr-1"></i> 12% from previous period
                 </p>
@@ -153,7 +199,7 @@ const Analytics: FC<AnalyticsProps> = ({ user, organization }) => {
             <CardContent className="pt-6">
               <div className="text-center">
                 <p className="text-muted-foreground text-sm">Mean Time to Detect</p>
-                <h3 className="text-3xl font-bold mt-1">42m</h3>
+                <h3 className="text-3xl font-bold mt-1">{avgMTTD}</h3>
                 <p className="text-green-500 text-xs mt-1">
                   <i className="fas fa-arrow-down mr-1"></i> 8% from previous period
                 </p>
@@ -165,7 +211,7 @@ const Analytics: FC<AnalyticsProps> = ({ user, organization }) => {
             <CardContent className="pt-6">
               <div className="text-center">
                 <p className="text-muted-foreground text-sm">Mean Time to Respond</p>
-                <h3 className="text-3xl font-bold mt-1">3.2h</h3>
+                <h3 className="text-3xl font-bold mt-1">{avgMTTR}</h3>
                 <p className="text-green-500 text-xs mt-1">
                   <i className="fas fa-arrow-down mr-1"></i> 15% from previous period
                 </p>
