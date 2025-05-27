@@ -9,6 +9,8 @@ import {
   SeverityTypes,
   ConnectorStatusType
 } from "@shared/schema";
+import { AlertInsightResponseSchema } from "./integrations/ai-validation-schemas";
+import { IncidentCorrelationResponseSchema } from "./integrations/ai-validation-schemas";
 
 /**
  * Tipos de modelos de IA/ML que soporta el sistema
@@ -184,6 +186,8 @@ function selectModelForAnalysis(analysisType: AnalysisType, preferredModel?: AIM
 /**
  * Genera un análisis de alerta usando el modelo AI especificado
  */
+import { AlertInsightResponseSchema } from "./integrations/ai-validation-schemas";
+
 export async function generateAlertInsight(
   alert: Alert, 
   preferredModel: AIModelType = AIModelType.AUTO
@@ -260,32 +264,54 @@ export async function generateAlertInsight(
       jsonResponse = JSON.parse(response.content[0].text);
     }
     
-    // Validar respuesta
-    if (!jsonResponse || typeof jsonResponse !== 'object') {
-      throw new Error("Invalid response format from AI model");
+    // Enhanced validation using Zod schema
+    // Add type property if not present, as it's required by our schema
+    if (!jsonResponse.type) {
+      jsonResponse.type = "alert_analysis";
     }
     
-    // Validar severidad
-    let severity = jsonResponse.severity || "medium";
-    if (!SeverityTypes.safeParse(severity).success) {
-      severity = "medium";
+    // Validate with Zod schema
+    const validationResult = AlertInsightResponseSchema.safeParse(jsonResponse);
+    
+    if (!validationResult.success) {
+      console.warn(`AI response validation failed: ${validationResult.error.message}`);
+      
+      // Apply fallback values for invalid fields
+      const fallbackResponse = {
+        title: jsonResponse.title || "Security Alert Analysis",
+        type: "alert_analysis",
+        description: jsonResponse.description || "The AI was unable to provide a complete analysis.",
+        severity: SeverityTypes.safeParse(jsonResponse.severity || "medium").success 
+          ? jsonResponse.severity 
+          : "medium",
+        status: "new",
+        confidence: isNaN(Number(jsonResponse.confidence)) ? 0.5 : Math.min(Math.max(Number(jsonResponse.confidence), 0), 1),
+        relatedEntities: Array.isArray(jsonResponse.relatedEntities) ? jsonResponse.relatedEntities : []
+      };
+      
+      return fallbackResponse;
     }
+    
+    // If validation succeeded, use the validated data
+    const validatedResponse = validationResult.data;
     
     // Crear y devolver el insight
     return {
-      title: jsonResponse.title,
+      title: validatedResponse.title,
       type: "alert_analysis",
-      description: jsonResponse.description,
-      severity: severity,
+      description: validatedResponse.description,
+      severity: validatedResponse.severity,
       status: "new",
-      confidence: Number(jsonResponse.confidence || 0.7),
-      relatedEntities: jsonResponse.relatedEntities || []
+      confidence: validatedResponse.confidence,
+      relatedEntities: validatedResponse.relatedEntities
     };
   } catch (error) {
     console.error(`Error generating alert insight with ${preferredModel} model:`, error);
     return null;
   }
 }
+
+import { IncidentCorrelationResponseSchema } from "./integrations/ai-validation-schemas";
 
 /**
  * Correlaciona alertas para identificar incidentes potenciales
@@ -373,28 +399,61 @@ export async function correlateAlerts(
       return null;
     }
     
-    // Validar severidad
-    let severity = jsonResponse.severity || "medium";
-    if (!SeverityTypes.safeParse(severity).success) {
-      severity = "medium";
+    // Validate with Zod schema
+    const validationResult = IncidentCorrelationResponseSchema.safeParse(jsonResponse);
+    
+    if (!validationResult.success) {
+      console.warn(`AI correlation response validation failed: ${validationResult.error.message}`);
+      
+      // Apply fallbacks for invalid fields
+      // Ensure aiAnalysis has the correct structure
+      const aiAnalysis = typeof jsonResponse.aiAnalysis === 'object' ? jsonResponse.aiAnalysis : {};
+      
+      // Create validated incident with fallback values
+      return {
+        title: jsonResponse.title || "Correlated Security Incident",
+        description: jsonResponse.description || "Multiple related alerts detected.",
+        severity: SeverityTypes.safeParse(jsonResponse.severity || "medium").success 
+          ? jsonResponse.severity 
+          : "medium",
+        status: "new",
+        relatedAlerts: Array.isArray(jsonResponse.relatedAlerts) 
+          ? jsonResponse.relatedAlerts 
+          : alerts.map(a => a.id),
+        timeline: Array.isArray(jsonResponse.timeline) ? jsonResponse.timeline : [],
+        aiAnalysis: {
+          attackPattern: aiAnalysis.attackPattern || "Unknown attack pattern",
+          recommendations: Array.isArray(aiAnalysis.recommendations) 
+            ? aiAnalysis.recommendations 
+            : ["Investigate related alerts"],
+          riskAssessment: aiAnalysis.riskAssessment || "Unknown risk",
+          mitreTactics: Array.isArray(aiAnalysis.mitreTactics) ? aiAnalysis.mitreTactics : [],
+          confidence: typeof aiAnalysis.confidence === 'number' ? aiAnalysis.confidence : 0.5
+        },
+        mitreTactics: Array.isArray(aiAnalysis.mitreTactics) ? aiAnalysis.mitreTactics : []
+      };
     }
     
-    // Comprobar que aiAnalysis tiene la estructura correcta
-    const aiAnalysis = jsonResponse.aiAnalysis || {};
-    if (!aiAnalysis.mitreTactics) {
-      aiAnalysis.mitreTactics = [];
-    }
+    // If validation succeeded, use the validated data
+    const validatedResponse = validationResult.data;
+    const aiAnalysis = validatedResponse.aiAnalysis || {};
     
     // Crear y devolver el incidente
     return {
-      title: jsonResponse.title,
-      description: jsonResponse.description,
-      severity: severity, 
-      status: "new",
-      relatedAlerts: jsonResponse.relatedAlerts,
-      timeline: jsonResponse.timeline,
-      aiAnalysis: aiAnalysis,
-      mitreTactics: aiAnalysis.mitreTactics
+      title: validatedResponse.title,
+      description: validatedResponse.description,
+      severity: validatedResponse.severity, 
+      status: validatedResponse.status || "new",
+      relatedAlerts: validatedResponse.relatedAlerts || alerts.map(a => a.id),
+      timeline: validatedResponse.timeline || [],
+      aiAnalysis: {
+        attackPattern: aiAnalysis.attackPattern || "Unknown attack pattern",
+        recommendations: aiAnalysis.recommendations || ["Investigate related alerts"],
+        riskAssessment: aiAnalysis.riskAssessment || "Unknown risk",
+        mitreTactics: aiAnalysis.mitreTactics || [],
+        confidence: aiAnalysis.confidence || 0.5
+      },
+      mitreTactics: aiAnalysis.mitreTactics || []
     };
   } catch (error) {
     console.error(`Error correlating alerts with ${preferredModel} model:`, error);
