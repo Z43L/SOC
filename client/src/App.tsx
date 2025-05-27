@@ -19,15 +19,17 @@ import Agents from "@/pages/agents";
 import AuthPage from "@/pages/auth-page";
 import HomePage from "@/pages/home-page";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
+import { TenantProvider } from "@/contexts/TenantContext";
 import { ProtectedRoute } from "./lib/protected-route";
 import { useState, useMemo } from "react";
 import BillingPage from "./pages/billing";
+
 function Router() {
   const { user } = useAuth();
   
   const organization = useMemo(() => ({
-  name: user?.organizationId ? `Organization ${user.organizationId}` : "Organization",
-}), [user?.organizationId]);
+    name: user?.organizationId ? `Organization ${user.organizationId}` : "Organization",
+  }), [user?.organizationId]);
 
   // Extract user information for the sidebar
   const userInfo = user ? {
@@ -49,7 +51,7 @@ function Router() {
       <ProtectedRoute path="/incident/:id" component={({ id }) => <Incident id={id} user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/incidents" component={() => <Alerts user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/threat-intelligence" component={() => <ThreatIntelligence user={userInfo} organization={organization} />} />
-      <ProtectedRoute path="/soar" component={() => <Soar user={userInfo} organization={organization} />} />
+      <ProtectedRoute path="/playbooks" component={() => <Soar user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/analytics" component={() => <Analytics user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/reports" component={() => <Reports user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/users" component={() => <Users user={userInfo} organization={organization} />} />
@@ -69,8 +71,10 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <Router />
-        <Toaster />
+        <TenantProvider>
+          <Router />
+          <Toaster />
+        </TenantProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

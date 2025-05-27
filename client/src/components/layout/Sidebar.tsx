@@ -9,6 +9,7 @@ import {
   Bug,
   Cog,
   CreditCard,
+  FileText,
   Globe,
   Laptop,
   Lock,
@@ -19,6 +20,7 @@ import {
   Zap
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { useTenant } from "@/contexts/TenantContext";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
@@ -56,6 +58,7 @@ const NavItem: FC<NavItemProps> = ({ href, label, icon, active }) => {
 const Sidebar: FC<SidebarProps> = ({ user, activeSection }) => {
   const [location] = useLocation();
   const { logoutMutation } = useAuth();
+  const { userRole } = useTenant();
 
   const handleLogout = () => {
     logoutMutation.mutate();
@@ -93,7 +96,31 @@ const Sidebar: FC<SidebarProps> = ({ user, activeSection }) => {
               href="/incidents" 
               label="Incidentes" 
               icon={<Bug className="h-4 w-4" />} 
-              active={location === "/incidents"} 
+              active={location.startsWith("/incident")} 
+            />
+          </div>
+          
+          <div className="mb-2">
+            <h2 className="px-4 text-xs font-semibold text-muted-foreground tracking-tight mb-1">
+              Automatización
+            </h2>
+            <NavItem 
+              href="/playbooks" 
+              label="Playbooks" 
+              icon={<Zap className="h-4 w-4" />} 
+              active={location === "/playbooks"} 
+            />
+            <NavItem 
+              href="/connectors" 
+              label="Conectores" 
+              icon={<Laptop className="h-4 w-4" />} 
+              active={location === "/connectors"} 
+            />
+            <NavItem 
+              href="/agents" 
+              label="Agentes" 
+              icon={<Shield className="h-4 w-4" />} 
+              active={location === "/agents"} 
             />
           </div>
           
@@ -113,29 +140,11 @@ const Sidebar: FC<SidebarProps> = ({ user, activeSection }) => {
               icon={<BarChart3 className="h-4 w-4" />} 
               active={location === "/analytics"} 
             />
-          </div>
-          
-          <div className="mb-2">
-            <h2 className="px-4 text-xs font-semibold text-muted-foreground tracking-tight mb-1">
-              Operaciones
-            </h2>
             <NavItem 
-              href="/soar" 
-              label="SOAR" 
-              icon={<Zap className="h-4 w-4" />} 
-              active={location === "/soar"} 
-            />
-            <NavItem 
-              href="/connectors" 
-              label="Conectores" 
-              icon={<Laptop className="h-4 w-4" />} 
-              active={location === "/connectors"} 
-            />
-            <NavItem 
-              href="/agents" 
-              label="Agentes" 
-              icon={<Shield className="h-4 w-4" />} 
-              active={location === "/agents"} 
+              href="/reports" 
+              label="Informes" 
+              icon={<FileText className="h-4 w-4" />} 
+              active={location === "/reports"} 
             />
           </div>
           
@@ -148,12 +157,6 @@ const Sidebar: FC<SidebarProps> = ({ user, activeSection }) => {
               label="Usuarios" 
               icon={<Users className="h-4 w-4" />} 
               active={location === "/users"} 
-            />
-            <NavItem 
-              href="/reports" 
-              label="Informes" 
-              icon={<Bell className="h-4 w-4" />} 
-              active={location === "/reports"} 
             />
             <NavItem 
               href="/settings" 
