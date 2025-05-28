@@ -203,7 +203,74 @@ const IncidentPage: FC<IncidentPageProps> = ({ id, user, organization }) => {
   const [isNoteDialogOpen, setIsNoteDialogOpen] = useState(false);
   const [isPlaybookDialogOpen, setIsPlaybookDialogOpen] = useState(false);
   const [selectedPlaybook, setSelectedPlaybook] = useState<number | null>(null);
+  
+  // State for linking alerts
+  const [isLinkAlertsDialogOpen, setIsLinkAlertsDialogOpen] = useState(false);
+  const [selectedAlertsToLink, setSelectedAlertsToLink] = useState<number[]>([]);
+  const [alertSearchQuery, setAlertSearchQuery] = useState('');
+
+  // Query to fetch available alerts to link
+  const { 
+    data: availableAlerts = [], 
+    isLoading: isAvailableAlertsLoading
+  } = useQuery({
+    queryKey: [`/api/alerts`],
+    queryFn: async () => {
+      const response = await apiRequest('GET', `/api/alerts?status=new,acknowledged&limit=50`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch available alerts');
+      }
+      return response.json();
+    },
+    enabled: isLinkAlertsDialogOpen, // Only fetch when dialog is open
+  });
+
+  // Filter available alerts based on search query
+  const filteredAvailableAlerts = alertSearchQuery
+    ? availableAlerts.filter((alert: any) => 
+        alert.title.toLowerCase().includes(alertSearchQuery.toLowerCase()) ||
+        alert.description.toLowerCase().includes(alertSearchQuery.toLowerCase()) ||
+        alert.source.toLowerCase().includes(alertSearchQuery.toLowerCase())
+      )
+    : availableAlerts;
+
+  // Mutation to link alerts to incident
+  const linkAlertsMutation = useMutation({
+    mutationFn: async (alertIds: number[]) => {
+      const response = await apiRequest('POST', `/api/incidents/${id}/alerts`, {
+        alertIds
+      });
+      if (!response.ok) {
+        throw new Error('Failed to link alerts to incident');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      // Refresh related alerts
+      queryClient.invalidateQueries({ queryKey: [`/api/incidents/${id}/alerts`] });
+      toast({
+        title: "Alerts linked",
+        description: `Successfully linked ${selectedAlertsToLink.length} alert(s) to the incident.`,
+      });
+      setSelectedAlertsToLink([]);
+      setIsLinkAlertsDialogOpen(false);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to link alerts",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  });
   const [noteText, setNoteText] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [noteVisibility, setNoteVisibility] = useState<'public' | 'internal'>('public');
+  
+  // Handler for file attachment
+  const handleFileAttachment = (files: File[]) => {
+    setAttachments(prev => [...prev, ...files]);
+  };
   const [markdownContent, setMarkdownContent] = useState("");
   const [attachmentTitle, setAttachmentTitle] = useState("");
   const [attachmentDescription, setAttachmentDescription] = useState("");
@@ -255,13 +322,18 @@ const IncidentPage: FC<IncidentPageProps> = ({ id, user, organization }) => {
   
   // Add note to incident mutation
   const addNoteMutation = useMutation({
-    mutationFn: async (noteData: { content: string }) => {
-      const response = await apiRequest('POST', `/api/incidents/${id}/notes`, noteData);
+    mutationFn: async (noteData: FormData) => {
+      // For FormData, let the browser set the Content-Type header with proper boundary
+      const response = await apiRequest('POST', `/api/incidents/${id}/notes`, noteData, {
+        headers: {} // Override the default Content-Type: application/json
+      });
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/incidents/${id}`] });
       setNoteText("");
+      setAttachments([]);
+      setNoteVisibility('public');
       setIsNoteDialogOpen(false);
       toast({
         title: "Note added",
@@ -454,9 +526,19 @@ const IncidentPage: FC<IncidentPageProps> = ({ id, user, organization }) => {
   };
   
   // Handle adding a note
-  const handleAddNote = () => {
+  const handleAddNote = async () => {
     if (noteText.trim()) {
-      addNoteMutation.mutate({ content: noteText });
+      // Create FormData for file uploads
+      const formData = new FormData();
+      formData.append('content', noteText);
+      formData.append('visibility', noteVisibility);
+      
+      // Add attachments
+      attachments.forEach((file, index) => {
+        formData.append(`file${index}`, file);
+      });
+      
+      addNoteMutation.mutate(formData);
     }
   };
   
@@ -697,6 +779,132 @@ const IncidentPage: FC<IncidentPageProps> = ({ id, user, organization }) => {
               <DropdownMenuContent>
                 <DropdownMenuLabel>Incident Actions</DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                
+                {/* Link Alerts to Incident */}
+                <Dialog open={isLinkAlertsDialogOpen} onOpenChange={setIsLinkAlertsDialogOpen}>
+                  <DialogTrigger asChild>
+                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                      <i className="fas fa-link mr-2"></i> Link Alerts
+                    </DropdownMenuItem>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[700px]">
+                    <DialogHeader>
+                      <DialogTitle>Link Alerts to Incident</DialogTitle>
+                      <DialogDescription>
+                        Select alerts to link to this incident.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="max-h-[500px] overflow-y-auto py-4">
+                      {isAvailableAlertsLoading ? (
+                        <div className="flex items-center justify-center h-32">
+                          <i className="fas fa-spinner fa-spin mr-2"></i>
+                          <span>Loading alerts...</span>
+                        </div>
+                      ) : availableAlerts.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-32 text-muted-foreground">
+                          <i className="fas fa-exclamation-circle text-3xl mb-3"></i>
+                          <p>No alerts available to link</p>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="mb-4">
+                            <Input 
+                              placeholder="Search alerts..." 
+                              value={alertSearchQuery}
+                              onChange={(e) => setAlertSearchQuery(e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            {filteredAvailableAlerts.map(alert => {
+                              const alertSeverityColors = getSeverityColorClass(alert.severity);
+                              const isAlreadyLinked = relatedAlerts.some(a => a.id === alert.id);
+                              
+                              return (
+                                <div 
+                                  key={alert.id} 
+                                  className={`p-3 border rounded-md ${alertSeverityColors.border} ${alertSeverityColors.bg} ${
+                                    isAlreadyLinked ? 'opacity-50' : ''
+                                  }`}
+                                >
+                                  <div className="flex items-start">
+                                    <Checkbox 
+                                      id={`alert-${alert.id}`}
+                                      checked={selectedAlertsToLink.includes(alert.id) || isAlreadyLinked}
+                                      disabled={isAlreadyLinked}
+                                      onCheckedChange={(checked) => {
+                                        if (checked) {
+                                          setSelectedAlertsToLink([...selectedAlertsToLink, alert.id]);
+                                        } else {
+                                          setSelectedAlertsToLink(
+                                            selectedAlertsToLink.filter(id => id !== alert.id)
+                                          );
+                                        }
+                                      }}
+                                      className="mr-3 mt-1"
+                                    />
+                                    <div className="flex-1">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                          <Badge className={alertSeverityColors.badge}>
+                                            {alert.severity.toUpperCase()}
+                                          </Badge>
+                                          <span className="text-xs text-muted-foreground">
+                                            {format(new Date(alert.timestamp), 'MMM d, HH:mm')}
+                                          </span>
+                                        </div>
+                                        {isAlreadyLinked && (
+                                          <Badge variant="outline">Already Linked</Badge>
+                                        )}
+                                      </div>
+                                      <label 
+                                        htmlFor={`alert-${alert.id}`} 
+                                        className="font-medium block mt-1 cursor-pointer"
+                                      >
+                                        {alert.title}
+                                      </label>
+                                      <p className="text-sm text-muted-foreground mt-1">
+                                        {alert.description.substring(0, 100)}
+                                        {alert.description.length > 100 ? '...' : ''}
+                                      </p>
+                                      <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                                        <span>Source: {alert.source}</span>
+                                        {alert.sourceIp && (
+                                          <span>• IP: {alert.sourceIp}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <DialogFooter>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => setIsLinkAlertsDialogOpen(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        disabled={selectedAlertsToLink.length === 0 || linkAlertsMutation.isPending}
+                        onClick={handleLinkAlerts}
+                      >
+                        {linkAlertsMutation.isPending ? (
+                          <>
+                            <i className="fas fa-spinner fa-spin mr-2"></i>
+                            Linking...
+                          </>
+                        ) : (
+                          <>Link Selected Alerts ({selectedAlertsToLink.length})</>
+                        )}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+                
                 <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
                   <DialogTrigger asChild>
                     <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
@@ -791,7 +999,7 @@ const IncidentPage: FC<IncidentPageProps> = ({ id, user, organization }) => {
                       <i className="fas fa-comment mr-2"></i> Add Note
                     </DropdownMenuItem>
                   </DialogTrigger>
-                  <DialogContent>
+                  <DialogContent className="sm:max-w-[700px]">
                     <DialogHeader>
                       <DialogTitle>Add Investigation Note</DialogTitle>
                       <DialogDescription>
@@ -799,15 +1007,68 @@ const IncidentPage: FC<IncidentPageProps> = ({ id, user, organization }) => {
                       </DialogDescription>
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
-                      <Textarea 
-                        placeholder="Enter your investigation notes here..."
-                        value={noteText}
-                        onChange={(e) => setNoteText(e.target.value)}
-                        className="min-h-[150px]"
-                      />
+                      <Tabs defaultValue="text">
+                        <TabsList className="grid w-full grid-cols-2">
+                          <TabsTrigger value="text">Text Note</TabsTrigger>
+                          <TabsTrigger value="markdown">Rich Text</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="text" className="mt-4">
+                          <Textarea 
+                            placeholder="Enter your investigation notes here..."
+                            value={noteText}
+                            onChange={(e) => setNoteText(e.target.value)}
+                            className="min-h-[150px]"
+                          />
+                        </TabsContent>
+                        <TabsContent value="markdown" className="mt-4">
+                          <MarkdownEditor 
+                            initialValue={noteText}
+                            onChange={setNoteText}
+                            placeholder="Use markdown to format your notes..."
+                            minHeight="200px"
+                          />
+                        </TabsContent>
+                      </Tabs>
+                      
+                      <div className="border rounded-md border-gray-700 p-4">
+                        <h4 className="text-sm font-medium mb-2">Attachments</h4>
+                        <FileDropzone 
+                          onFilesAdded={handleFileAttachment}
+                          files={attachments}
+                          onFileRemoved={(index) => {
+                            const newAttachments = [...attachments];
+                            newAttachments.splice(index, 1);
+                            setAttachments(newAttachments);
+                          }}
+                          maxFiles={5}
+                          maxSize={10 * 1024 * 1024} // 10MB
+                        />
+                      </div>
+                      
+                      <div className="flex items-center space-x-2">
+                        <Checkbox 
+                          id="note-visibility" 
+                          checked={noteVisibility === 'internal'}
+                          onCheckedChange={(checked) => {
+                            setNoteVisibility(checked ? 'internal' : 'public');
+                          }}
+                        />
+                        <label 
+                          htmlFor="note-visibility" 
+                          className="text-sm text-muted-foreground cursor-pointer"
+                        >
+                          Internal note (only visible to team)
+                        </label>
+                      </div>
                     </div>
                     <DialogFooter>
-                      <Button variant="outline" onClick={() => setIsNoteDialogOpen(false)}>
+                      <Button variant="outline" onClick={() => {
+                        setIsNoteDialogOpen(false);
+                        // Reset note form
+                        setNoteText('');
+                        setAttachments([]);
+                        setNoteVisibility('public');
+                      }}>
                         Cancel
                       </Button>
                       <Button 
@@ -1621,10 +1882,21 @@ const IncidentPage: FC<IncidentPageProps> = ({ id, user, organization }) => {
           <TabsContent value="alerts">
             <Card>
               <CardHeader>
-                <CardTitle>Related Alerts</CardTitle>
-                <CardDescription>
-                  All alerts associated with this incident
-                </CardDescription>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <CardTitle>Related Alerts</CardTitle>
+                    <CardDescription>
+                      All alerts associated with this incident
+                    </CardDescription>
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setIsLinkAlertsDialogOpen(true)}
+                  >
+                    <i className="fas fa-link mr-2"></i> Link Alerts
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {isAlertsLoading ? (
