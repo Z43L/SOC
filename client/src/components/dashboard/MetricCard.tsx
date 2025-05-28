@@ -159,5 +159,3 @@ const MetricCard: FC<MetricCardProps> = ({
 };
 
 export default MetricCard;
-
-export default MetricCard;
