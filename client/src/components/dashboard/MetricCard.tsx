@@ -1,5 +1,13 @@
-import { FC } from "react";
-import { ArrowDown, ArrowUp, Minus } from "lucide-react";
+import { FC, useState } from "react";
+import { ArrowDown, ArrowUp, Minus, Info, Clock, AlertTriangle, Calendar } from "lucide-react";
+import { 
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
+import { formatDistanceToNow } from "date-fns";
 
 interface MetricCardProps {
   label: string;
@@ -9,6 +17,9 @@ interface MetricCardProps {
   changePercentage?: number;
   progressPercent: number;
   severity?: 'critical' | 'high' | 'medium' | 'low' | 'info';
+  description?: string;
+  lastUpdated?: Date;
+  onClick?: () => void;
 }
 
 const MetricCard: FC<MetricCardProps> = ({ 
@@ -18,8 +29,13 @@ const MetricCard: FC<MetricCardProps> = ({
   trend = 'stable', 
   changePercentage = 0, 
   progressPercent,
-  severity = 'info'
+  severity = 'info',
+  description,
+  lastUpdated,
+  onClick
 }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
   const getSeverityColor = (severity: string) => {
     switch (severity) {
       case 'critical': return 'bg-destructive text-destructive-foreground';
@@ -63,10 +79,61 @@ const MetricCard: FC<MetricCardProps> = ({
     }
   };
   
+  // Add a metric icon based on type
+  const getMetricIcon = (label: string) => {
+    if (label.includes('Alert')) return <AlertTriangle className="h-4 w-4 text-red-500" />;
+    if (label.includes('Risk')) return <AlertTriangle className="h-4 w-4 text-orange-500" />;
+    if (label.includes('MTTD') || label.includes('MTTR')) return <Clock className="h-4 w-4 text-blue-500" />;
+    if (label.includes('Compliance')) return <Calendar className="h-4 w-4 text-green-500" />;
+    return null;
+  };
+  
   return (
-    <div className="bg-card rounded-lg p-4 border border-border">
+    <div 
+      className={`bg-card rounded-lg p-4 border border-border hover:shadow-md transition-shadow duration-200 ${onClick ? 'cursor-pointer' : ''}`}
+      onClick={() => {
+        if (onClick) onClick();
+        setIsExpanded(!isExpanded);
+      }}
+    >
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-medium text-muted-foreground">{label}</h3>
+        <div className="flex items-center">
+          {getMetricIcon(label)}
+          <h3 className={`text-sm font-medium ${getMetricIcon(label) ? 'ml-2' : ''} ${severity === 'critical' ? 'text-destructive' : 'text-muted-foreground'}`}>
+            {label}
+          </h3>
+        </div>
+        {description && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-5 w-5 p-0" onClick={(e) => e.stopPropagation()}>
+                  <Info className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p className="max-w-xs text-xs">{description}</p>
+                {lastUpdated && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Updated {formatDistanceToNow(lastUpdated, { addSuffix: true })}
+                  </p>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+      </div>
+      <div className="flex items-baseline space-x-2">
+        <span className={`text-2xl font-semibold ${severity === 'critical' ? 'text-destructive' : ''}`}>
+          {value}
+        </span>
+        {subvalue && <span className="text-sm text-muted-foreground">({subvalue})</span>}
+      </div>
+      
+      <div className="mt-3 flex items-center justify-between mb-1">
+        <div className="text-xs text-muted-foreground">
+          {trend === 'stable' ? 'No change' : trend === 'up' ? 'Increasing' : 'Decreasing'}
+        </div>
         {trend && changePercentage !== undefined && (
           <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex items-center ${getTrendColor(trend, severity)}`}>
             {getTrendIcon(trend)}
@@ -74,18 +141,23 @@ const MetricCard: FC<MetricCardProps> = ({
           </span>
         )}
       </div>
-      <div className="flex items-baseline space-x-2">
-        <span className="text-2xl font-semibold">{value}</span>
-        {subvalue && <span className="text-sm text-muted-foreground">({subvalue})</span>}
-      </div>
-      <div className="mt-4 h-2 w-full bg-secondary rounded-full overflow-hidden">
+      
+      <div className="mt-2 h-2 w-full bg-secondary rounded-full overflow-hidden">
         <div 
-          className={`h-full ${getProgressGradient(severity)} rounded-full`} 
+          className={`h-full ${getProgressGradient(severity)} rounded-full transition-all duration-500`} 
           style={{ width: `${progressPercent}%` }}
         ></div>
       </div>
+      
+      {isExpanded && description && (
+        <div className="mt-3 text-xs text-muted-foreground border-t border-border pt-2">
+          {description}
+        </div>
+      )}
     </div>
   );
 };
+
+export default MetricCard;
 
 export default MetricCard;
