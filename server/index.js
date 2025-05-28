@@ -124,5 +124,13 @@ app.use((req, res, next) => {
         catch (err) {
             console.error('Failed to initialize AI Alert Listener', err);
         }
+        // Initialize PlaybookTriggerEngine for automatic SOAR
+        try {
+            const { playbookTriggerEngine } = await import('./src/services/PlaybookTriggerEngine');
+            log('PlaybookTriggerEngine initialized and listening for events');
+        }
+        catch (err) {
+            console.error('Failed to initialize PlaybookTriggerEngine', err);
+        }
     });
 })();
