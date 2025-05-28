@@ -8,9 +8,18 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
-import { AlertCircle, CheckCircle, Loader2 } from "lucide-react";
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { MoreVertical, AlertCircle, CheckCircle, Loader2, Play, ListFilter } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
+import LogsViewer from "@/components/logs/LogsViewer";
 import { 
   LineChart, 
   Line, 
@@ -53,9 +62,17 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
   const [isConfigureOpen, setIsConfigureOpen] = useState(false);
   const [isTestConnectorOpen, setIsTestConnectorOpen] = useState(false);
   const [isMetricsOpen, setIsMetricsOpen] = useState(false);
+  const [isEventsOpen, setIsEventsOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [selectedConnector, setSelectedConnector] = useState<ConnectorType | null>(null);
   const [testingStatus, setTestingStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [connectorLogs, setConnectorLogs] = useState<Array<{
+    id: string;
+    timestamp: string;
+    level: string;
+    message: string;
+    data?: any;
+  }>>([]);
   const [newConnector, setNewConnector] = useState({
     name: '',
     type: 'SIEM Integration',
@@ -177,10 +194,28 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
       { label: 'IP/Hostname', type: 'text', placeholder: '192.168.1.10', help: 'Dirección donde se recibirá el Syslog.' },
       { label: 'Puerto', type: 'number', placeholder: '514', help: 'Puerto UDP/TCP para Syslog.' },
       { label: 'Protocolo', type: 'text', placeholder: 'udp/tcp/tls', help: 'Protocolo de transporte.' },
+      { label: 'TLS Certificate', type: 'textarea', placeholder: '-----BEGIN CERTIFICATE-----', help: 'Certificado TLS para conexión segura (opcional).' },
     ],
     'Agent': [
       { label: 'Clave de Registro', type: 'text', placeholder: 'clave-secreta', help: 'Clave que deben usar los agentes para registrarse.' },
       { label: 'Intervalo de Heartbeat (segundos)', type: 'number', placeholder: '300', help: 'Frecuencia con la que los agentes reportan estado.' },
+    ],
+    'AWS CloudWatch': [
+      { label: 'AWS Region', type: 'text', placeholder: 'us-east-1', help: 'Región de AWS donde obtener datos.' },
+      { label: 'Access Key ID', type: 'text', placeholder: 'AKIAIOSFODNN7EXAMPLE', help: 'ID de clave de acceso AWS.' },
+      { label: 'Secret Access Key', type: 'password', placeholder: '••••••••••', help: 'Clave secreta de acceso AWS.' },
+      { label: 'Log Groups', type: 'text', placeholder: '/aws/lambda/function1,/aws/ec2/instance1', help: 'Grupos de logs a recolectar, separados por comas.' },
+      { label: 'Polling Interval (segundos)', type: 'number', placeholder: '300', help: 'Frecuencia de consulta a CloudWatch.' },
+    ],
+    'Google Workspace': [
+      { label: 'Client ID', type: 'text', placeholder: 'your-client-id.apps.googleusercontent.com', help: 'ID de cliente OAuth.' },
+      { label: 'Client Secret', type: 'password', placeholder: '••••••••••', help: 'Secreto de cliente OAuth.' },
+      { label: 'Admin Email', type: 'text', placeholder: 'admin@domain.com', help: 'Email del administrador de G Suite.' },
+      { label: 'Polling Interval (segundos)', type: 'number', placeholder: '300', help: 'Frecuencia de consulta al API de Google.' },
+    ],
+    'VirusTotal': [
+      { label: 'API Key', type: 'password', placeholder: '••••••••••', help: 'Clave API de VirusTotal.' },
+      { label: 'Quota per minute', type: 'number', placeholder: '4', help: 'Límite de consultas por minuto según su plan.' },
     ],
   };
 
@@ -261,7 +296,19 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
     }
   });
 
-  const runConnectorTest = () => {
+  const runConnectorTest = (connectorId?: number) => {
+    // If called from the kebab menu with an ID, first find the connector
+    if (connectorId) {
+      const connector = connectors.find(c => c.id === connectorId);
+      if (connector) {
+        setSelectedConnector(connector);
+        setTestingStatus('testing');
+        executeConnectorMutation.mutate(connectorId);
+      }
+      return;
+    }
+    
+    // Otherwise use the already selected connector
     if (!selectedConnector) return;
     
     setTestingStatus('testing');
@@ -272,6 +319,33 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
   const handleViewMetrics = (connector: ConnectorType) => {
     setSelectedConnector(connector);
     setIsMetricsOpen(true);
+  };
+
+  // Ver eventos del conector
+  const handleViewEvents = (connector: ConnectorType) => {
+    setSelectedConnector(connector);
+    // Simular carga de eventos recientes
+    const sampleLogs = Array(15).fill(null).map((_, i) => ({
+      id: `log-${Date.now()}-${i}`,
+      timestamp: new Date(Date.now() - i * 60000 * 5).toISOString(), // 5 minutos de diferencia entre eventos
+      level: ['info', 'info', 'info', 'warning', 'error'][Math.floor(Math.random() * 5)],
+      message: [
+        `Received data from ${connector.name}`,
+        `Processing ${Math.floor(Math.random() * 100)} events from ${connector.type}`,
+        `Authentication successful with ${connector.vendor}`,
+        `Rate limit warning for ${connector.name}`,
+        `Connection timeout for ${connector.vendor} API`
+      ][Math.floor(Math.random() * 5)],
+      data: i % 3 === 0 ? {
+        source: connector.name,
+        processingTime: `${Math.floor(Math.random() * 500)}ms`,
+        eventCount: Math.floor(Math.random() * 100),
+        details: `Sample event data for ${connector.type}`
+      } : undefined
+    }));
+    
+    setConnectorLogs(sampleLogs);
+    setIsEventsOpen(true);
   };
 
   // Activar/desactivar conector
@@ -299,15 +373,17 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'active':
-        return <Badge className="bg-green-900 bg-opacity-20 text-green-500">Active</Badge>;
+        return <Badge className="bg-green-900 bg-opacity-20 text-green-500 border border-green-600">Active</Badge>;
       case 'inactive':
-        return <Badge className="bg-red-700 bg-opacity-20 text-red-500">Inactive</Badge>;
+      case 'disabled':
+      case 'paused':
+        return <Badge className="bg-gray-700 bg-opacity-20 text-gray-400 border border-gray-600">Inactive</Badge>;
       case 'warning':
-        return <Badge className="bg-orange-700 bg-opacity-20 text-orange-500">Warning</Badge>;
+        return <Badge className="bg-yellow-700 bg-opacity-20 text-yellow-500 border border-yellow-600">Warning</Badge>;
       case 'configuring':
-        return <Badge className="bg-blue-900 bg-opacity-20 text-blue-500">Configuring</Badge>;
+        return <Badge className="bg-blue-900 bg-opacity-20 text-blue-500 border border-blue-700">Configuring</Badge>;
       case 'error':
-        return <Badge className="bg-red-700 bg-opacity-20 text-red-500">Error</Badge>;
+        return <Badge className="bg-red-700 bg-opacity-20 text-red-500 border border-red-600">Error</Badge>;
       default:
         return <Badge>{status}</Badge>;
     }
@@ -415,13 +491,16 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
                           value={newConnector.type}
                           onChange={(e) => setNewConnector({...newConnector, type: e.target.value})}
                         >
-                          <option>SIEM Integration</option>
-                          <option>Endpoint Protection</option>
-                          <option>Network IDS/IPS</option>
-                          <option>Firewall</option>
-                          <option>Cloud Security</option>
-                          <option>Vulnerability Scanner</option>
-                          <option>Threat Intelligence Feed</option>
+                          <option>AWS CloudWatch</option>
+                          <option>Google Workspace</option>
+                          <option>Microsoft 365</option>
+                          <option>Syslog</option>
+                          <option>VirusTotal</option>
+                          <option>Palo Alto Networks</option>
+                          <option>Cisco Firepower</option>
+                          <option>Crowdstrike</option>
+                          <option>Azure Sentinel</option>
+                          <option>Splunk</option>
                           <option>Custom Log Source</option>
                         </select>
                       </div>
@@ -470,6 +549,46 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
                         </select>
                       </div>
                       
+                      <div className="space-y-2 border-t border-gray-800 pt-4 mt-2">
+                        <div className="flex justify-between items-center">
+                          <label className="text-xs font-semibold text-muted-foreground">Test Connection</label>
+                          <div>
+                            {testingStatus === 'idle' && (
+                              <Button 
+                                type="button" 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={() => runConnectorTest()}
+                                disabled={!selectedConnector}
+                              >
+                                <i className="fas fa-vial mr-2"></i> Test
+                              </Button>
+                            )}
+                            {testingStatus === 'testing' && (
+                              <div className="flex items-center">
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                <span className="text-xs">Testing connection...</span>
+                              </div>
+                            )}
+                            {testingStatus === 'success' && (
+                              <Badge className="bg-green-900/20 text-green-500 border border-green-600">
+                                <CheckCircle className="h-3 w-3 mr-1" /> Connection successful
+                              </Badge>
+                            )}
+                            {testingStatus === 'error' && (
+                              <Badge className="bg-red-900/20 text-red-500 border border-red-600">
+                                <AlertCircle className="h-3 w-3 mr-1" /> Connection failed
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        {testingStatus === 'error' && executeConnectorMutation.error && (
+                          <div className="mt-2 text-xs text-red-500">
+                            {executeConnectorMutation.error.message}
+                          </div>
+                        )}
+                      </div>
+                      
                       {/* Campos dinámicos según el tipo de conector */}
                       {connectorTypeFields[newConnector.connectionMethod] && (
                         <div className="space-y-2 border-t border-gray-800 pt-4 mt-2">
@@ -494,6 +613,51 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
                           ))}
                         </div>
                       )}
+                      
+                      {/* Test Connection */}
+                      <div className="space-y-2 border-t border-gray-800 pt-4 mt-2">
+                        <div className="flex justify-between items-center">
+                          <label className="text-xs font-semibold text-muted-foreground">Connection Test</label>
+                          <div>
+                            {testingStatus === 'idle' && (
+                              <Button 
+                                type="button" 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={() => {
+                                  setTestingStatus('testing');
+                                  // Simulate test connection for new connector
+                                  setTimeout(() => {
+                                    if (Math.random() > 0.3) {
+                                      setTestingStatus('success');
+                                    } else {
+                                      setTestingStatus('error');
+                                    }
+                                  }, 1500);
+                                }}
+                              >
+                                <i className="fas fa-vial mr-2"></i> Test
+                              </Button>
+                            )}
+                            {testingStatus === 'testing' && (
+                              <div className="flex items-center">
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                <span className="text-xs">Testing connection...</span>
+                              </div>
+                            )}
+                            {testingStatus === 'success' && (
+                              <Badge className="bg-green-900/20 text-green-500 border border-green-600">
+                                <CheckCircle className="h-3 w-3 mr-1" /> Connection successful
+                              </Badge>
+                            )}
+                            {testingStatus === 'error' && (
+                              <Badge className="bg-red-900/20 text-red-500 border border-red-600">
+                                <AlertCircle className="h-3 w-3 mr-1" /> Connection failed
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                     <DialogFooter>
                       <Button variant="outline" onClick={() => setIsAddConnectorOpen(false)}>Cancel</Button>
@@ -511,7 +675,7 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
                         <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Type</th>
                         <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Data Volume</th>
                         <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Status</th>
-                        <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Last Data</th>
+                        <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Last Success</th>
                         <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Active</th>
                         <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Actions</th>
                       </tr>
@@ -534,10 +698,21 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
                           <td className="p-3 text-sm text-muted-foreground">{connector.dataVolume}</td>
                           <td className="p-3">
                             {getStatusBadge(connector.status)}
-                            {connector.status === 'error' && <span className="ml-2 text-xs text-red-500">¡Error!</span>}
-                            {connector.status === 'inactive' && <span className="ml-2 text-xs text-yellow-500">Inactivo</span>}
+                            {connector.status === 'error' && connector.errorMessage && (
+                              <div className="ml-2 text-xs text-red-500 mt-1 max-w-xs truncate" title={connector.errorMessage}>
+                                {connector.errorMessage}
+                              </div>
+                            )}
                           </td>
-                          <td className="p-3 text-sm text-muted-foreground">{connector.lastData}</td>
+                          <td className="p-3 text-sm">
+                            {connector.lastSuccessfulConnection ? (
+                              <div className="text-muted-foreground">
+                                {new Date(connector.lastSuccessfulConnection).toLocaleString()}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Never</span>
+                            )}
+                          </td>
                           <td className="p-3">
                             <Switch
                               checked={connector.isActive}
@@ -545,41 +720,45 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
                             />
                           </td>
                           <td className="p-3 text-sm">
-                            <div className="flex space-x-2">
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                onClick={() => handleConfigureConnector(connector)}
-                                title="Configure"
-                              >
-                                <i className="fas fa-cog"></i>
-                              </Button>
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                onClick={() => handleViewMetrics(connector)}
-                                title="View Metrics"
-                              >
-                                <i className="fas fa-chart-line"></i>
-                              </Button>
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                onClick={() => handleTestConnector(connector)}
-                                title="Test Connection"
-                              >
-                                <i className="fas fa-vial"></i>
-                              </Button>
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                onClick={() => handleDeleteConnector(connector)}
-                                title="Delete"
-                                className="hover:text-red-500"
-                              >
-                                <i className="fas fa-trash-alt"></i>
-                              </Button>
-                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-56">
+                                <DropdownMenuLabel>Connector Actions</DropdownMenuLabel>
+                                <DropdownMenuItem onClick={() => handleConfigureConnector(connector)}>
+                                  <i className="fas fa-cog mr-2"></i> Configure
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleViewMetrics(connector)}>
+                                  <i className="fas fa-chart-line mr-2"></i> View Metrics
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleViewEvents(connector)}>
+                                  <ListFilter className="h-4 w-4 mr-2" /> View Events
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleTestConnector(connector)}>
+                                  <i className="fas fa-vial mr-2"></i> Test Connection
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => runConnectorTest(connector.id)}>
+                                  <Play className="h-4 w-4 mr-2" /> Poll Now
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                {connector.isActive ? (
+                                  <DropdownMenuItem onClick={() => handleToggleConnector(connector, false)}>
+                                    <i className="fas fa-pause mr-2"></i> Disable
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem onClick={() => handleToggleConnector(connector, true)}>
+                                    <i className="fas fa-play mr-2"></i> Enable
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => handleDeleteConnector(connector)} className="text-red-500">
+                                  <i className="fas fa-trash-alt mr-2"></i> Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </td>
                         </tr>
                       ))}
@@ -976,6 +1155,29 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
                 </>
               ) : 'Delete Connector'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Dialog de Eventos del Conector */}
+      <Dialog open={isEventsOpen} onOpenChange={setIsEventsOpen}>
+        <DialogContent className="sm:max-w-[900px]">
+          <DialogHeader>
+            <DialogTitle>Recent Events: {selectedConnector?.name}</DialogTitle>
+            <DialogDescription>
+              Recent events collected from {selectedConnector?.vendor} {selectedConnector?.type}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <LogsViewer 
+              logs={connectorLogs} 
+              maxHeight="450px" 
+              title="Events Feed"
+              description={`Last 24 hours of events from ${selectedConnector?.name}`}
+            />
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setIsEventsOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
