@@ -426,17 +426,49 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'active':
-        return <Badge className="bg-green-900 bg-opacity-20 text-green-500 border border-green-600">Active</Badge>;
+        return (
+          <div className="flex items-center">
+            <div className="w-2 h-2 rounded-full bg-green-500 mr-1.5 animate-pulse"></div>
+            <Badge className="bg-green-900 bg-opacity-20 text-green-500 border border-green-600">Active</Badge>
+          </div>
+        );
       case 'inactive':
       case 'disabled':
       case 'paused':
-        return <Badge className="bg-gray-700 bg-opacity-20 text-gray-400 border border-gray-600">Inactive</Badge>;
+        return (
+          <div className="flex items-center">
+            <div className="w-2 h-2 rounded-full bg-gray-500 mr-1.5"></div>
+            <Badge className="bg-gray-700 bg-opacity-20 text-gray-400 border border-gray-600">Inactive</Badge>
+          </div>
+        );
       case 'warning':
-        return <Badge className="bg-yellow-700 bg-opacity-20 text-yellow-500 border border-yellow-600">Warning</Badge>;
+        return (
+          <div className="flex items-center">
+            <div className="w-2 h-2 rounded-full bg-yellow-500 mr-1.5"></div>
+            <Badge className="bg-yellow-700 bg-opacity-20 text-yellow-500 border border-yellow-600">Warning</Badge>
+          </div>
+        );
       case 'configuring':
-        return <Badge className="bg-blue-900 bg-opacity-20 text-blue-500 border border-blue-700">Configuring</Badge>;
+        return (
+          <div className="flex items-center">
+            <div className="w-2 h-2 rounded-full bg-blue-500 mr-1.5 animate-pulse"></div>
+            <Badge className="bg-blue-900 bg-opacity-20 text-blue-500 border border-blue-700">Configuring</Badge>
+          </div>
+        );
       case 'error':
-        return <Badge className="bg-red-700 bg-opacity-20 text-red-500 border border-red-600">Error</Badge>;
+        return (
+          <div className="flex items-center">
+            <div className="w-2 h-2 rounded-full bg-red-500 mr-1.5"></div>
+            <Badge className="bg-red-700 bg-opacity-20 text-red-500 border border-red-600">Error</Badge>
+          </div>
+        );
+      case 'polling':
+        return (
+          <div className="flex items-center">
+            <div className="w-2 h-2 rounded-full bg-purple-500 mr-1.5 animate-pulse"></div>
+            <Badge className="bg-purple-900 bg-opacity-20 text-purple-500 border border-purple-600">Polling</Badge>
+          </div>
+        );
       default:
         return <Badge>{status}</Badge>;
     }
@@ -523,13 +555,13 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
                   <CardTitle>All Data Connectors</CardTitle>
                   <CardDescription>Manage your security data sources</CardDescription>
                 </div>
-                <Dialog open={isAddConnectorOpen} onOpenChange={setIsAddConnectorOpen}>
+                                <Dialog open={isAddConnectorOpen} onOpenChange={setIsAddConnectorOpen}>
                   <DialogTrigger asChild>
                     <Button>
-                      <i className="fas fa-plus mr-2"></i> Add Connector
+                      <Plus className="h-4 w-4 mr-2" /> Add Connector
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="sm:max-w-[425px]">
+                  <DialogContent className="sm:max-w-[600px]">
                     <DialogHeader>
                       <DialogTitle>Add New Data Connector</DialogTitle>
                       <DialogDescription>
@@ -539,23 +571,61 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
                     <div className="space-y-4 py-4">
                       <div className="space-y-2">
                         <label className="text-sm font-medium">Connector Type</label>
-                        <select 
-                          className="w-full bg-background border border-gray-700 rounded px-3 py-2"
+                        <Select 
                           value={newConnector.type}
-                          onChange={(e) => setNewConnector({...newConnector, type: e.target.value})}
+                          onValueChange={(value) => setNewConnector({...newConnector, type: value})}
                         >
-                          <option>AWS CloudWatch</option>
-                          <option>Google Workspace</option>
-                          <option>Microsoft 365</option>
-                          <option>Syslog</option>
-                          <option>VirusTotal</option>
-                          <option>Palo Alto Networks</option>
-                          <option>Cisco Firepower</option>
-                          <option>Crowdstrike</option>
-                          <option>Azure Sentinel</option>
-                          <option>Splunk</option>
-                          <option>Custom Log Source</option>
-                        </select>
+                          <SelectTrigger className="w-full bg-background border border-gray-700 rounded px-3 py-2">
+                            <SelectValue placeholder="Select connector type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectLabel>Cloud Security</SelectLabel>
+                              <SelectItem value="AWS CloudWatch">AWS CloudWatch</SelectItem>
+                              <SelectItem value="Google Workspace">Google Workspace</SelectItem>
+                              <SelectItem value="Microsoft 365">Microsoft 365</SelectItem>
+                              <SelectItem value="Azure Sentinel">Azure Sentinel</SelectItem>
+                            </SelectGroup>
+                            
+                            <SelectGroup>
+                              <SelectLabel>Network Security</SelectLabel>
+                              <SelectItem value="Palo Alto Networks">Palo Alto Networks</SelectItem>
+                              <SelectItem value="Cisco Firepower">Cisco Firepower</SelectItem>
+                              <SelectItem value="Fortinet">Fortinet</SelectItem>
+                              <SelectItem value="Check Point">Check Point</SelectItem>
+                            </SelectGroup>
+                            
+                            <SelectGroup>
+                              <SelectLabel>Endpoint Security</SelectLabel>
+                              <SelectItem value="CrowdStrike">CrowdStrike</SelectItem>
+                              <SelectItem value="Microsoft Defender">Microsoft Defender</SelectItem>
+                              <SelectItem value="Carbon Black">Carbon Black</SelectItem>
+                              <SelectItem value="SentinelOne">SentinelOne</SelectItem>
+                            </SelectGroup>
+                            
+                            <SelectGroup>
+                              <SelectLabel>SIEM & Logs</SelectLabel>
+                              <SelectItem value="Syslog">Syslog</SelectItem>
+                              <SelectItem value="Splunk">Splunk</SelectItem>
+                              <SelectItem value="Elastic Security">Elastic Security</SelectItem>
+                              <SelectItem value="IBM QRadar">IBM QRadar</SelectItem>
+                            </SelectGroup>
+                            
+                            <SelectGroup>
+                              <SelectLabel>Threat Intelligence</SelectLabel>
+                              <SelectItem value="VirusTotal">VirusTotal</SelectItem>
+                              <SelectItem value="OTX AlienVault">OTX AlienVault</SelectItem>
+                              <SelectItem value="MISP">MISP</SelectItem>
+                              <SelectItem value="ThreatFox">ThreatFox</SelectItem>
+                            </SelectGroup>
+                            
+                            <SelectGroup>
+                              <SelectLabel>Other</SelectLabel>
+                              <SelectItem value="Custom Log Source">Custom Log Source</SelectItem>
+                              <SelectItem value="Agent">Agent Management</SelectItem>
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
                       </div>
                       
                       <div className="space-y-2">
@@ -571,97 +641,116 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
                       
                       <div className="space-y-2">
                         <label className="text-sm font-medium">Vendor</label>
-                        <select 
-                          className="w-full bg-background border border-gray-700 rounded px-3 py-2"
+                        <Select 
                           value={newConnector.vendor}
-                          onChange={(e) => setNewConnector({...newConnector, vendor: e.target.value})}
+                          onValueChange={(value) => setNewConnector({...newConnector, vendor: value})}
                         >
-                          <option>Palo Alto Networks</option>
-                          <option>Cisco</option>
-                          <option>Fortinet</option>
-                          <option>Check Point</option>
-                          <option>CrowdStrike</option>
-                          <option>Microsoft</option>
-                          <option>Splunk</option>
-                          <option>Other</option>
-                        </select>
+                          <SelectTrigger className="w-full bg-background border border-gray-700 rounded px-3 py-2">
+                            <SelectValue placeholder="Select vendor" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Palo Alto Networks">Palo Alto Networks</SelectItem>
+                            <SelectItem value="Cisco">Cisco</SelectItem>
+                            <SelectItem value="Fortinet">Fortinet</SelectItem>
+                            <SelectItem value="Check Point">Check Point</SelectItem>
+                            <SelectItem value="CrowdStrike">CrowdStrike</SelectItem>
+                            <SelectItem value="Microsoft">Microsoft</SelectItem>
+                            <SelectItem value="Amazon Web Services">Amazon Web Services</SelectItem>
+                            <SelectItem value="Google">Google</SelectItem>
+                            <SelectItem value="Splunk">Splunk</SelectItem>
+                            <SelectItem value="Elastic">Elastic</SelectItem>
+                            <SelectItem value="IBM">IBM</SelectItem>
+                            <SelectItem value="SentinelOne">SentinelOne</SelectItem>
+                            <SelectItem value="Carbon Black">Carbon Black</SelectItem>
+                            <SelectItem value="VirusTotal">VirusTotal</SelectItem>
+                            <SelectItem value="Custom">Custom</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                       
                       <div className="space-y-2">
                         <label className="text-sm font-medium">Connection Method</label>
-                        <select 
-                          className="w-full bg-background border border-gray-700 rounded px-3 py-2"
+                        <Select 
                           value={newConnector.connectionMethod}
-                          onChange={(e) => setNewConnector({...newConnector, connectionMethod: e.target.value})}
+                          onValueChange={(value) => setNewConnector({...newConnector, connectionMethod: value})}
                         >
-                          <option>API</option>
-                          <option>Log Collection</option>
-                          <option>Syslog</option>
-                          <option>Agent</option>
-                          <option>SFTP</option>
-                        </select>
+                          <SelectTrigger className="w-full bg-background border border-gray-700 rounded px-3 py-2">
+                            <SelectValue placeholder="Select connection method" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="API">REST API</SelectItem>
+                            <SelectItem value="Syslog">Syslog</SelectItem>
+                            <SelectItem value="SFTP">SFTP</SelectItem>
+                            <SelectItem value="Database">Database</SelectItem>
+                            <SelectItem value="Webhook">Webhook</SelectItem>
+                            <SelectItem value="TAXII">TAXII</SelectItem>
+                            <SelectItem value="Agent">Agent</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                       
-                      <div className="space-y-2 border-t border-gray-800 pt-4 mt-2">
-                        <div className="flex justify-between items-center">
-                          <label className="text-xs font-semibold text-muted-foreground">Test Connection</label>
-                          <div>
-                            {testingStatus === 'idle' && (
-                              <Button 
-                                type="button" 
-                                variant="outline" 
-                                size="sm" 
-                                onClick={() => runConnectorTest()}
-                                disabled={!selectedConnector}
-                              >
-                                <i className="fas fa-vial mr-2"></i> Test
-                              </Button>
-                            )}
-                            {testingStatus === 'testing' && (
-                              <div className="flex items-center">
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                <span className="text-xs">Testing connection...</span>
-                              </div>
-                            )}
-                            {testingStatus === 'success' && (
-                              <Badge className="bg-green-900/20 text-green-500 border border-green-600">
-                                <CheckCircle className="h-3 w-3 mr-1" /> Connection successful
-                              </Badge>
-                            )}
-                            {testingStatus === 'error' && (
-                              <Badge className="bg-red-900/20 text-red-500 border border-red-600">
-                                <AlertCircle className="h-3 w-3 mr-1" /> Connection failed
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                        {testingStatus === 'error' && executeConnectorMutation.error && (
-                          <div className="mt-2 text-xs text-red-500">
-                            {executeConnectorMutation.error.message}
-                          </div>
-                        )}
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Polling Frequency</label>
+                        <Select 
+                          defaultValue="3600"
+                          onValueChange={(value) => setNewConnector({...newConnector, pollingFrequency: value})}
+                        >
+                          <SelectTrigger className="w-full bg-background border border-gray-700 rounded px-3 py-2">
+                            <SelectValue placeholder="Select polling frequency" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="300">Every 5 minutes</SelectItem>
+                            <SelectItem value="600">Every 10 minutes</SelectItem>
+                            <SelectItem value="1800">Every 30 minutes</SelectItem>
+                            <SelectItem value="3600">Every hour</SelectItem>
+                            <SelectItem value="21600">Every 6 hours</SelectItem>
+                            <SelectItem value="43200">Every 12 hours</SelectItem>
+                            <SelectItem value="86400">Once a day</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                       
-                      {/* Campos dinámicos según el tipo de conector */}
-                      {connectorTypeFields[newConnector.connectionMethod] && (
-                        <div className="space-y-2 border-t border-gray-800 pt-4 mt-2">
-                          <label className="text-xs font-semibold text-muted-foreground">Configuración específica</label>
-                          {connectorTypeFields[newConnector.connectionMethod].map((field, idx) => (
-                            <div key={field.label} className="space-y-1">
-                              <div className="flex items-center justify-between">
-                                <label className="text-sm font-medium">{field.label}</label>
-                                {field.help && <span className="text-xs text-muted-foreground ml-2" title={field.help}>?</span>}
-                              </div>
-                              <input
-                                type={field.type}
-                                placeholder={field.placeholder}
-                                className="w-full bg-background border border-gray-700 rounded px-3 py-2"
-                                value={newConnector[field.label.replace(/\s.*/,'').toLowerCase()] || ''}
-                                onChange={e => setNewConnector({
-                                  ...newConnector,
-                                  [field.label.replace(/\s.*/,'').toLowerCase()]: e.target.value
-                                })}
-                              />
+                      {/* Dynamic Fields Based on Selected Type */}
+                      {connectorTypeFields[newConnector.type] && (
+                        <div className="border border-gray-700 rounded-md p-4 mt-4">
+                          <h3 className="text-sm font-medium mb-3">Connector-Specific Configuration</h3>
+                          
+                          {connectorTypeFields[newConnector.type].map((field, index) => (
+                            <div key={index} className="space-y-2 mb-4">
+                              <label className="text-sm font-medium">{field.label}</label>
+                              {field.type === 'text' || field.type === 'password' || field.type === 'number' ? (
+                                <input 
+                                  type={field.type} 
+                                  placeholder={field.placeholder}
+                                  className="w-full bg-background border border-gray-700 rounded px-3 py-2"
+                                  onChange={(e) => {
+                                    const configFields = newConnector.configFields || {};
+                                    setNewConnector({
+                                      ...newConnector, 
+                                      configFields: { 
+                                        ...configFields, 
+                                        [field.label]: e.target.value 
+                                      }
+                                    });
+                                  }}
+                                />
+                              ) : field.type === 'textarea' ? (
+                                <textarea 
+                                  placeholder={field.placeholder}
+                                  className="w-full bg-background border border-gray-700 rounded px-3 py-2 min-h-[80px]"
+                                  onChange={(e) => {
+                                    const configFields = newConnector.configFields || {};
+                                    setNewConnector({
+                                      ...newConnector, 
+                                      configFields: { 
+                                        ...configFields, 
+                                        [field.label]: e.target.value 
+                                      }
+                                    });
+                                  }}
+                                />
+                              ) : null}
+                              <p className="text-xs text-muted-foreground">{field.help}</p>
                             </div>
                           ))}
                         </div>
@@ -711,10 +800,34 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
                           </div>
                         </div>
                       </div>
+                      
+                      <div className="flex items-center space-x-2 mt-4">
+                        <Checkbox 
+                          id="activate-immediately" 
+                          checked={newConnector.isActive}
+                          onCheckedChange={(checked) => 
+                            setNewConnector({...newConnector, isActive: !!checked})
+                          }
+                        />
+                        <label htmlFor="activate-immediately" className="text-sm">
+                          Activate immediately after creation
+                        </label>
+                      </div>
                     </div>
                     <DialogFooter>
-                      <Button variant="outline" onClick={() => setIsAddConnectorOpen(false)}>Cancel</Button>
-                      <Button onClick={handleAddConnector}>Create & Configure</Button>
+                      <Button variant="outline" onClick={() => setIsAddConnectorOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button onClick={handleAddConnector} disabled={createConnectorMutation.isPending}>
+                        {createConnectorMutation.isPending ? 
+                          <div className="flex items-center">
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Creating...
+                          </div> 
+                          : 
+                          'Add Connector'
+                        }
+                      </Button>
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
@@ -748,7 +861,19 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
                             </div>
                           </td>
                           <td className="p-3 text-sm text-muted-foreground">{connector.type}</td>
-                          <td className="p-3 text-sm text-muted-foreground">{connector.dataVolume}</td>
+                          <td className="p-3 text-sm text-muted-foreground">
+                            <div className="flex flex-col">
+                              <span>{connector.dataVolume}</span>
+                              {connector.dataVolume !== '0 MB/day' && 
+                                <div className="w-full h-1 bg-gray-800 rounded-full mt-1 overflow-hidden">
+                                  <div 
+                                    className="h-full bg-blue-600 rounded-full" 
+                                    style={{ width: Math.min(parseInt(connector.dataVolume) || 0, 100) + '%' }}
+                                  ></div>
+                                </div>
+                              }
+                            </div>
+                          </td>
                           <td className="p-3">
                             {getStatusBadge(connector.status)}
                             {connector.status === 'error' && connector.errorMessage && (
@@ -767,51 +892,70 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
                             )}
                           </td>
                           <td className="p-3">
-                            <Switch
-                              checked={connector.isActive}
-                              onCheckedChange={(checked) => handleToggleConnector(connector, checked)}
-                            />
+                            <div className="flex items-center space-x-2">
+                              <Switch
+                                checked={connector.isActive}
+                                onCheckedChange={(checked) => handleToggleConnector(connector, checked)}
+                              />
+                              <span className="text-xs text-muted-foreground">
+                                {connector.isActive ? 'Enabled' : 'Disabled'}
+                              </span>
+                            </div>
                           </td>
                           <td className="p-3 text-sm">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm">
-                                  <MoreVertical className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-56">
-                                <DropdownMenuLabel>Connector Actions</DropdownMenuLabel>
-                                <DropdownMenuItem onClick={() => handleConfigureConnector(connector)}>
-                                  <i className="fas fa-cog mr-2"></i> Configure
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleViewMetrics(connector)}>
-                                  <i className="fas fa-chart-line mr-2"></i> View Metrics
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleViewEvents(connector)}>
-                                  <ListFilter className="h-4 w-4 mr-2" /> View Events
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleTestConnector(connector)}>
-                                  <i className="fas fa-vial mr-2"></i> Test Connection
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => runConnectorTest(connector.id)}>
-                                  <Play className="h-4 w-4 mr-2" /> Poll Now
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                {connector.isActive ? (
-                                  <DropdownMenuItem onClick={() => handleToggleConnector(connector, false)}>
-                                    <i className="fas fa-pause mr-2"></i> Disable
+                            <div className="flex items-center space-x-1">
+                              <Button 
+                                variant="ghost" 
+                                size="icon"
+                                onClick={() => runConnectorTest(connector.id)}
+                                title="Poll Now"
+                              >
+                                <Play className="h-4 w-4" />
+                              </Button>
+                              
+                              <Button 
+                                variant="ghost" 
+                                size="icon"
+                                onClick={() => handleConfigureConnector(connector)}
+                                title="Configure"
+                              >
+                                <i className="fas fa-cog text-sm"></i>
+                              </Button>
+                              
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon">
+                                    <MoreVertical className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-56">
+                                  <DropdownMenuLabel>Connector Actions</DropdownMenuLabel>
+                                  <DropdownMenuItem onClick={() => handleViewMetrics(connector)}>
+                                    <i className="fas fa-chart-line mr-2"></i> View Metrics
                                   </DropdownMenuItem>
-                                ) : (
-                                  <DropdownMenuItem onClick={() => handleToggleConnector(connector, true)}>
-                                    <i className="fas fa-play mr-2"></i> Enable
+                                  <DropdownMenuItem onClick={() => handleViewEvents(connector)}>
+                                    <ListFilter className="h-4 w-4 mr-2" /> View Events
                                   </DropdownMenuItem>
-                                )}
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => handleDeleteConnector(connector)} className="text-red-500">
-                                  <i className="fas fa-trash-alt mr-2"></i> Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                                  <DropdownMenuItem onClick={() => handleTestConnector(connector)}>
+                                    <i className="fas fa-vial mr-2"></i> Test Connection
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  {connector.isActive ? (
+                                    <DropdownMenuItem onClick={() => handleToggleConnector(connector, false)}>
+                                      <i className="fas fa-pause mr-2"></i> Disable
+                                    </DropdownMenuItem>
+                                  ) : (
+                                    <DropdownMenuItem onClick={() => handleToggleConnector(connector, true)}>
+                                      <i className="fas fa-play mr-2"></i> Enable
+                                    </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => handleDeleteConnector(connector)} className="text-red-500">
+                                    <i className="fas fa-trash-alt mr-2"></i> Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
                           </td>
                         </tr>
                       ))}
