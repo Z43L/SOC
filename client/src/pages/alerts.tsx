@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -36,7 +36,8 @@ import { AlertDetail } from "@/components/alerts/AlertDetail";
 import { GroupAlertsDialog } from "@/components/alerts/GroupAlertsDialog";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Filter, Users, Clock, ChevronDown, BellRing, AlertCircle } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { Filter, Users, Clock, ChevronDown, BellRing, AlertCircle, Plus } from "lucide-react";
 
 interface AlertsProps {
   user: {
@@ -100,14 +101,18 @@ const Alerts: FC<AlertsProps> = ({ user, organization }) => {
     queryKey: ['/api/users', organizationId],
   });
 
-  // Mock data for sources/connectors 
+  // Mock data for sources/connectors and agents
   const availableSources = [
-    { id: 'all', name: 'All Sources' },
-    { id: 'firewall', name: 'Firewall' },
-    { id: 'endpoint', name: 'EDR' },
-    { id: 'siem', name: 'SIEM' },
-    { id: 'manual', name: 'Manual Entry' },
-    { id: 'email', name: 'Email Security' },
+    { id: 'all', name: 'All Sources', type: 'all' },
+    { id: 'firewall', name: 'Firewall', type: 'connector' },
+    { id: 'endpoint', name: 'EDR', type: 'connector' },
+    { id: 'siem', name: 'SIEM', type: 'connector' },
+    { id: 'manual', name: 'Manual Entry', type: 'manual' },
+    { id: 'email', name: 'Email Security', type: 'connector' },
+    { id: 'windows-agent', name: 'Windows Agent', type: 'agent' },
+    { id: 'linux-agent', name: 'Linux Agent', type: 'agent' },
+    { id: 'cloud-agent', name: 'Cloud Workload Agent', type: 'agent' },
+    { id: 'network-sensor', name: 'Network Sensor', type: 'connector' }
   ];
   
   // Mutation for creating new alerts
@@ -388,7 +393,23 @@ const Alerts: FC<AlertsProps> = ({ user, organization }) => {
     if (statusFilter !== 'all' && alert.status !== statusFilter) return false;
     
     // Source filter
-    if (sourceFilter !== 'all' && alert.source !== sourceFilter) return false;
+    if (sourceFilter !== 'all') {
+      if (sourceFilter === 'connector') {
+        // Check if the source is any connector
+        const isConnector = availableSources.some(src => 
+          src.type === 'connector' && src.id === alert.source
+        );
+        if (!isConnector) return false;
+      } else if (sourceFilter === 'agent') {
+        // Check if the source is any agent
+        const isAgent = availableSources.some(src => 
+          src.type === 'agent' && src.id === alert.source
+        );
+        if (!isAgent) return false;
+      } else if (alert.source !== sourceFilter) {
+        return false;
+      }
+    }
     
     // Date range filter
     if (dateRange?.from) {
@@ -513,7 +534,7 @@ const Alerts: FC<AlertsProps> = ({ user, organization }) => {
           </TabsList>
         </Tabs>
         
-        {/* Filters */}
+        {/* Enhanced Filters */}
         <div className="bg-background-card rounded-lg border border-gray-800 p-4 mb-6">
           <div className="flex flex-wrap gap-4 items-center">
             <div className="flex-1">
@@ -525,24 +546,156 @@ const Alerts: FC<AlertsProps> = ({ user, organization }) => {
               />
             </div>
             
-            <div>
+            {/* Source Filter - Enhanced with connector/agent distinction */}
+            <div className="min-w-[180px]">
               <Select
                 value={sourceFilter}
                 onValueChange={setSourceFilter}
               >
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="All Sources" />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableSources.map(source => (
-                    <SelectItem key={source.id} value={source.id}>
-                      {source.name}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="all">All Sources</SelectItem>
+                  <SelectItem value="connector">All Connectors</SelectItem>
+                  <SelectItem value="agent">All Agents</SelectItem>
+                  <SelectGroup>
+                    <SelectLabel>Connectors</SelectLabel>
+                    {availableSources
+                      .filter(source => source.id !== 'all' && source.id !== 'manual' && source.type === 'connector')
+                      .map(source => (
+                        <SelectItem key={source.id} value={source.id}>
+                          {source.name}
+                        </SelectItem>
+                    ))}
+                  </SelectGroup>
+                  <SelectGroup>
+                    <SelectLabel>Agents</SelectLabel>
+                    {availableSources
+                      .filter(source => source.id !== 'all' && source.type === 'agent')
+                      .map(source => (
+                        <SelectItem key={source.id} value={source.id}>
+                          {source.name}
+                        </SelectItem>
+                    ))}
+                  </SelectGroup>
+                  <SelectGroup>
+                    <SelectLabel>Other</SelectLabel>
+                    <SelectItem value="manual">Manual Entry</SelectItem>
+                  </SelectGroup>
                 </SelectContent>
               </Select>
             </div>
             
+            {/* Status Filter */}
+            <div className="min-w-[180px]">
+              <Select
+                value={statusFilter}
+                onValueChange={setStatusFilter}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="All Statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="new">New</SelectItem>
+                  <SelectItem value="acknowledged">Acknowledged</SelectItem>
+                  <SelectItem value="in_progress">In Progress</SelectItem>
+                  <SelectItem value="resolved">Resolved</SelectItem>
+                  <SelectItem value="false_positive">False Positive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {/* Severity Filter - Made Visible */}
+            <div className="min-w-[180px]">
+              <Select
+                value={severityFilters.length === 0 ? "all" : 
+                       severityFilters.length === 1 ? severityFilters[0] : "multiple"}
+                onValueChange={(value) => {
+                  if (value === "all") {
+                    setSeverityFilters([]);
+                  } else if (value !== "multiple") {
+                    setSeverityFilters([value]);
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="All Severities">
+                    {severityFilters.length === 0 && "All Severities"}
+                    {severityFilters.length === 1 && severityFilters[0].charAt(0).toUpperCase() + severityFilters[0].slice(1)}
+                    {severityFilters.length > 1 && `${severityFilters.length} Severities`}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Severities</SelectItem>
+                  <SelectItem value="critical">
+                    <div className="flex items-center">
+                      <span className="w-2 h-2 rounded-full bg-destructive mr-1.5"></span>
+                      Critical
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="high">
+                    <div className="flex items-center">
+                      <span className="w-2 h-2 rounded-full bg-red-500 mr-1.5"></span>
+                      High
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="medium">
+                    <div className="flex items-center">
+                      <span className="w-2 h-2 rounded-full bg-orange-500 mr-1.5"></span>
+                      Medium
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="low">
+                    <div className="flex items-center">
+                      <span className="w-2 h-2 rounded-full bg-green-500 mr-1.5"></span>
+                      Low
+                    </div>
+                  </SelectItem>
+                  <Separator className="my-2" />
+                  <div className="p-2">
+                    <div className="mb-2 text-sm text-muted-foreground">Multiple selection:</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="filter-critical"
+                          checked={severityFilters.includes('critical')}
+                          onCheckedChange={(checked) => handleSeverityFilterChange('critical', checked as boolean)}
+                        />
+                        <Label htmlFor="filter-critical">Critical</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="filter-high"
+                          checked={severityFilters.includes('high')}
+                          onCheckedChange={(checked) => handleSeverityFilterChange('high', checked as boolean)}
+                        />
+                        <Label htmlFor="filter-high">High</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="filter-medium"
+                          checked={severityFilters.includes('medium')}
+                          onCheckedChange={(checked) => handleSeverityFilterChange('medium', checked as boolean)}
+                        />
+                        <Label htmlFor="filter-medium">Medium</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="filter-low"
+                          checked={severityFilters.includes('low')}
+                          onCheckedChange={(checked) => handleSeverityFilterChange('low', checked as boolean)}
+                        />
+                        <Label htmlFor="filter-low">Low</Label>
+                      </div>
+                    </div>
+                  </div>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {/* Date Range Picker */}
             <div>
               <DateRangePicker
                 dateRange={dateRange}
@@ -550,7 +703,8 @@ const Alerts: FC<AlertsProps> = ({ user, organization }) => {
               />
             </div>
             
-            <div className="space-x-2">
+            {/* Clear Filters Button */}
+            <div>
               <Button variant="outline" className="gap-2" onClick={() => {
                 // Clear all filters
                 setSeverityFilters([]);
@@ -562,64 +716,12 @@ const Alerts: FC<AlertsProps> = ({ user, organization }) => {
                 <Filter className="h-4 w-4" />
                 Clear Filters
               </Button>
-              
-              <Button variant="outline" className="gap-2" onClick={() => {
-                // Toggle checkbox dialog for severity filters
-                // For simplicity, we'll handle this inline for now
-                const dialog = document.getElementById('severity-filter-dialog');
-                if (dialog) {
-                  dialog.style.display = dialog.style.display === 'none' ? 'block' : 'none';
-                }
-              }}>
-                <Filter className="h-4 w-4" />
-                Severity
-                <ChevronDown className="h-4 w-4" />
-              </Button>
             </div>
             
             <div className="ml-auto">
               <Button onClick={() => setCreateAlertOpen(true)}>
-                <i className="fas fa-plus mr-1"></i> Create Alert
+                <Plus className="h-4 w-4 mr-1" /> Create Alert
               </Button>
-            </div>
-          </div>
-          
-          {/* Severity Filter Checkboxes (hidden by default) */}
-          <div id="severity-filter-dialog" className="mt-4 p-4 border border-gray-700 rounded-md shadow-md hidden">
-            <h4 className="text-sm font-medium mb-2">Filter by Severity</h4>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="filter-critical"
-                  checked={severityFilters.includes('critical')}
-                  onCheckedChange={(checked) => handleSeverityFilterChange('critical', checked as boolean)}
-                />
-                <Label htmlFor="filter-critical">Critical</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="filter-high"
-                  checked={severityFilters.includes('high')}
-                  onCheckedChange={(checked) => handleSeverityFilterChange('high', checked as boolean)}
-                />
-                <Label htmlFor="filter-high">High</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="filter-medium"
-                  checked={severityFilters.includes('medium')}
-                  onCheckedChange={(checked) => handleSeverityFilterChange('medium', checked as boolean)}
-                />
-                <Label htmlFor="filter-medium">Medium</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="filter-low"
-                  checked={severityFilters.includes('low')}
-                  onCheckedChange={(checked) => handleSeverityFilterChange('low', checked as boolean)}
-                />
-                <Label htmlFor="filter-low">Low</Label>
-              </div>
             </div>
           </div>
         </div>
