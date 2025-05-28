@@ -141,17 +141,18 @@ const ThreatMap: FC<ThreatMapProps> = ({
         });
 
         // Add new markers
-        filteredThreats.forEach(threat => {
+        filteredThreats.forEach((threat, index) => {
           const marker = leaflet.circleMarker([threat.lat, threat.lon], {
             radius: getMarkerSize(threat.threatCount),
             fillColor: getSeverityColor(threat.severity),
             color: '#ffffff',
             weight: 2,
             opacity: 0.8,
-            fillOpacity: 0.7
+            fillOpacity: 0.7,
+            className: threat.severity === 'critical' ? 'threat-marker-pulse' : 'threat-marker'
           });
 
-          // Create popup content
+          // Create popup content with enhanced styling
           const popupContent = `
             <div class="threat-popup">
               <h4 class="font-semibold">${threat.country}${threat.city ? `, ${threat.city}` : ''}</h4>
@@ -160,6 +161,12 @@ const ThreatMap: FC<ThreatMapProps> = ({
               <p><strong>Types:</strong> ${threat.threatTypes.join(', ')}</p>
               <p><strong>Last Seen:</strong> ${new Date(threat.lastSeen).toLocaleString()}</p>
               ${threat.ip ? `<p><strong>Source IP:</strong> ${threat.ip}</p>` : ''}
+              <div class="mt-2">
+                <button class="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700" 
+                        onclick="window.dispatchEvent(new CustomEvent('threat-drill-down', { detail: '${threat.id}' }))">
+                  View Details
+                </button>
+              </div>
             </div>
           `;
 
@@ -172,7 +179,10 @@ const ThreatMap: FC<ThreatMapProps> = ({
             }
           });
 
-          marker.addTo(mapRef.current);
+          // Add marker with slight delay for animation effect
+          setTimeout(() => {
+            marker.addTo(mapRef.current);
+          }, index * 50);
         });
 
       } catch (error) {
@@ -319,6 +329,12 @@ const ThreatMap: FC<ThreatMapProps> = ({
               </div>
               <div className="text-xs">
                 <span className="font-medium">Active Sources:</span> {threats.length}
+              </div>
+              <div className="text-xs">
+                <span className="font-medium">Critical:</span> 
+                <span className="ml-1 text-red-600 font-semibold">
+                  {threats.filter(t => t.severity === 'critical').length}
+                </span>
               </div>
             </div>
           </div>
