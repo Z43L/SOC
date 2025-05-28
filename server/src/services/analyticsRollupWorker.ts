@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { db } from '../db';
+import { db } from '../../db';
 import { metricsRollup, alerts } from '../../../shared/schema';
 import { sql } from 'drizzle-orm';
 

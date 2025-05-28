@@ -14,6 +14,7 @@ import SeverityDistribution from "@/components/dashboard/SeverityDistribution";
 import MttaMetrics from "@/components/dashboard/MttaMetrics";
 import PlaybookMetrics from "@/components/dashboard/PlaybookMetrics";
 import AgentMetrics from "@/components/dashboard/AgentMetrics";
+import ThreatMap from "@/components/dashboard/ThreatMap";
 import DashboardFilters from "@/components/dashboard/DashboardFilters";
 import { getQueryFn } from "@/lib/queryClient"; 
 import { useToast } from "@/hooks/use-toast";
@@ -317,9 +318,27 @@ const getMetric = (name: MetricName, defaultValue: number = 0, defaultSeverity: 
             <AIInsights insights={data?.aiInsights || []} isLoading={isLoading} />
           </div>
           
+          {/* Global Threat Map - 8 columns */}
+          <div className="col-span-12 lg:col-span-8">
+            <ThreatMap 
+              threats={data?.threatLocations || []}
+              isLoading={isLoading}
+              timeRange={timeRange}
+              onLocationClick={(threat) => {
+                toast({
+                  title: "Threat Location Details",
+                  description: `${threat.country}: ${threat.threatCount} threats detected`,
+                  variant: "default"
+                });
+              }}
+              onRefresh={refetch}
+            />
+          </div>
+          
           {/* MITRE ATT&CK Tactics Summary - 4 columns */}
           <div className="col-span-12 md:col-span-6 lg:col-span-4">
             <MitreTacticsSummary tactics={data?.mitreTactics || []} isLoading={isLoading} />
+          </div>
           </div>
           
           {/* Compliance Summary - 4 columns */}
