@@ -30,6 +30,8 @@ import { initializeConnectors, getActiveConnectors } from "./integrations/connec
 import { registerAgent, processAgentData, processAgentHeartbeat, generateAgentRegistrationKey, buildAgentPackage } from "./integrations/agents";
 // Import billing routes
 import billingRoutes from "./src/routes/billing";
+// Import SOAR routes
+import playbookBindingsRoutes from "./src/routes/playbookBindings";
 // Import settings routes
 import settingsRoutes from "./routes/settings";
 // Import connectors routes
@@ -58,7 +60,6 @@ export async function registerRoutes(app) {
     // Registrar las rutas de conectores
     apiRouter.use('/connectors', connectorsRoutes);
     // Registrar las rutas de playbook bindings para SOAR automático
-    import playbookBindingsRoutes from "./src/routes/playbookBindings";
     apiRouter.use('/soar', playbookBindingsRoutes);
     // --- AGENT PUBLIC ENDPOINTS (NO AUTH) ---
     // Agent heartbeat endpoint (no auth required, agent uses token)
