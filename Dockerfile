@@ -3,7 +3,8 @@
 # Usar una imagen base de Node.js
 FROM node:18-alpine
 
-RUN apk add --no-cache \
+# Actualizar índices de paquetes e instalar dependencias del sistema
+RUN apk update && apk add --no-cache \
     bash \
     curl \
     git \

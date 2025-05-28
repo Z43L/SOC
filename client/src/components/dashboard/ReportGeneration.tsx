@@ -32,7 +32,7 @@ import { DateRange } from 'react-day-picker';
 import { format, subDays } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import {
-  FilePdf,
+  FileText as FilePdf,
   FileSpreadsheet,
   FileText,
   Download,

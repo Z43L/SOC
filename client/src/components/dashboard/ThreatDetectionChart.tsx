@@ -10,7 +10,7 @@ import {
   ResponsiveContainer,
   TooltipProps
 } from 'recharts';
-import { MoreVertical, DownloadCloud, FileSpreadsheet, FilePdf, Image } from 'lucide-react';
+import { MoreVertical, DownloadCloud, FileSpreadsheet, FileText, Image } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
@@ -125,7 +125,7 @@ const ThreatDetectionChart: FC<ThreatDetectionChartProps> = ({ data }) => {
                 Export as CSV
               </DropdownMenuItem>
               <DropdownMenuItem disabled={isExporting} onClick={() => handleExport('pdf')}>
-                <FilePdf className="h-4 w-4 mr-2" />
+                <FileText className="h-4 w-4 mr-2" />
                 Export as PDF
               </DropdownMenuItem>
               <DropdownMenuItem disabled={isExporting} onClick={() => handleExport('png')}>
