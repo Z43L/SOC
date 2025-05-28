@@ -12,8 +12,8 @@ import {
   FileUploadService 
 } from '../services/settings-service';
 import { 
-  userSettingsUpdateSchema, 
-  orgSettingsUpdateSchema,
+  UserSettingsUpdateSchema, 
+  OrgSettingsUpdateSchema,
   type UserSettings,
   type OrgSettings
 } from '@shared/schema';
@@ -103,7 +103,7 @@ router.get('/user', isAuthenticated, async (req: Request, res: Response) => {
 });
 
 // Update user settings
-router.patch('/user', isAuthenticated, validateRequest(userSettingsUpdateSchema), async (req: Request, res: Response) => {
+router.patch('/user', isAuthenticated, validateRequest(UserSettingsUpdateSchema), async (req: Request, res: Response) => {
   try {
     const updates = req.body;
     const settings = await UserSettingsService.updateUserSettings(
@@ -305,7 +305,7 @@ router.get('/org', isAuthenticated, requireRole('admin'), async (req: Request, r
 });
 
 // Update organization settings
-router.patch('/org', isAuthenticated, requireRole('admin'), validateRequest(orgSettingsUpdateSchema), async (req: Request, res: Response) => {
+router.patch('/org', isAuthenticated, requireRole('admin'), validateRequest(OrgSettingsUpdateSchema), async (req: Request, res: Response) => {
   try {
     const updates = req.body;
     const settings = await OrgSettingsService.updateOrgSettings(

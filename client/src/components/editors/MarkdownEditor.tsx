@@ -1,19 +1,8 @@
-import React, { useState, useCallback } from 'react';
-import dynamic from 'next/dynamic';
+import React, { useState, useCallback, Suspense, lazy } from 'react';
 import { Loader2 } from 'lucide-react';
 
-// Import MDEditor dynamically to avoid SSR issues
-const MDEditor = dynamic(
-  () => import('@uiw/react-md-editor').then((mod) => mod.default),
-  { 
-    ssr: false,
-    loading: () => (
-      <div className="flex justify-center items-center h-[300px] border border-dashed border-gray-700 rounded-md">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    )
-  }
-);
+// Import MDEditor lazily for code splitting
+const MDEditor = lazy(() => import('@uiw/react-md-editor').then((mod) => ({ default: mod.default })));
 
 interface MarkdownEditorProps {
   value: string;
@@ -30,15 +19,21 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
 }) => {
   return (
     <div data-color-mode="dark">
-      <MDEditor
-        value={value}
-        onChange={onChange}
-        preview="edit"
-        height={height}
-        textareaProps={{
-          placeholder: placeholder
-        }}
-      />
+      <Suspense fallback={
+        <div className="flex justify-center items-center h-[300px] border border-dashed border-gray-700 rounded-md">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      }>
+        <MDEditor
+          value={value}
+          onChange={onChange}
+          preview="edit"
+          height={height}
+          textareaProps={{
+            placeholder: placeholder
+          }}
+        />
+      </Suspense>
     </div>
   );
 };

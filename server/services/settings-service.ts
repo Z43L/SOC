@@ -1,5 +1,5 @@
 import { eq, and } from 'drizzle-orm';
-import { db } from '../db/index.js';
+import { db } from '../db.js';
 import { 
   userSettings, 
   orgSettings, 
