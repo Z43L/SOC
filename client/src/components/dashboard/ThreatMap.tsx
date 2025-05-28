@@ -75,11 +75,11 @@ const ThreatMap: FC<ThreatMapProps> = ({
     const initializeMap = async () => {
       try {
         // Dynamic import to avoid SSR issues
-        const L = (await import('leaflet')).default;
-        
+        const L = await import('leaflet');
+        const leaflet = L.default || L;
         // Fix default markers
-        delete (L.Icon.Default.prototype as any)._getIconUrl;
-        L.Icon.Default.mergeOptions({
+        delete (leaflet.Icon.Default.prototype as any)._getIconUrl;
+        leaflet.Icon.Default.mergeOptions({
           iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
           iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
           shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
@@ -87,7 +87,7 @@ const ThreatMap: FC<ThreatMapProps> = ({
 
         if (!mapRef.current) {
           // Initialize map centered on world view
-          const map = L.map('threat-map', {
+          const map = leaflet.map('threat-map', {
             center: [20, 0],
             zoom: 2,
             zoomControl: true,
@@ -95,7 +95,7 @@ const ThreatMap: FC<ThreatMapProps> = ({
           });
 
           // Add tile layer (OpenStreetMap)
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          leaflet.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap contributors'
           }).addTo(map);
 
@@ -130,18 +130,19 @@ const ThreatMap: FC<ThreatMapProps> = ({
       if (!mapRef.current || !mapLoaded) return;
 
       try {
-        const L = (await import('leaflet')).default;
+        const L = await import('leaflet');
+        const leaflet = L.default || L;
         
         // Clear existing markers
         mapRef.current.eachLayer((layer: any) => {
-          if (layer instanceof L.Marker || layer instanceof L.CircleMarker) {
+          if (layer instanceof leaflet.Marker || layer instanceof leaflet.CircleMarker) {
             mapRef.current.removeLayer(layer);
           }
         });
 
         // Add new markers
         filteredThreats.forEach(threat => {
-          const marker = L.circleMarker([threat.lat, threat.lon], {
+          const marker = leaflet.circleMarker([threat.lat, threat.lon], {
             radius: getMarkerSize(threat.threatCount),
             fillColor: getSeverityColor(threat.severity),
             color: '#ffffff',
