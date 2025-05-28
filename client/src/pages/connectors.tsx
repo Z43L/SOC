@@ -96,7 +96,7 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
   useWebSocket(
     // In a real implementation, this would be a real WebSocket endpoint
     // For demonstration, we'll use a simulated one
-    `ws://${window.location.host}/api/ws/connectors`,
+    typeof window !== 'undefined' ? `ws://${window.location.host}/api/ws/connectors` : '',
     {
       onOpen: () => {
         toast({
