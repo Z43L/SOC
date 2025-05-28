@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { db } from '../db';
-import { playbookBindings, playbooks } from '../../shared/schema';
+import { db } from '../../db';
+import { playbookBindings, playbooks } from '../../../shared/schema';
 import { eq, and } from 'drizzle-orm';
-import { checkAuth } from '../auth';
+import { checkAuth } from '../../auth';
 const router = Router();
 // List all bindings for an organization
 router.get('/bindings', checkAuth, async (req, res) => {

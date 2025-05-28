@@ -5,7 +5,7 @@ import fs from 'fs/promises';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { UserSettingsService, OrgSettingsService, SettingsHistoryService, FileUploadService } from '../services/settings-service';
-import { userSettingsUpdateSchema, orgSettingsUpdateSchema } from '@shared/schema';
+import { UserSettingsUpdateSchema, OrgSettingsUpdateSchema } from '@shared/schema';
 import { isAuthenticated, requireRole } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 const router = Router();
@@ -76,7 +76,7 @@ router.get('/user', isAuthenticated, async (req, res) => {
     }
 });
 // Update user settings
-router.patch('/user', isAuthenticated, validateRequest(userSettingsUpdateSchema), async (req, res) => {
+router.patch('/user', isAuthenticated, validateRequest(UserSettingsUpdateSchema), async (req, res) => {
     try {
         const updates = req.body;
         const settings = await UserSettingsService.updateUserSettings(req.user.id, updates, req.user.id, req.user.organizationId, req.ip, req.get('user-agent'));
@@ -238,7 +238,7 @@ router.get('/org', isAuthenticated, requireRole('admin'), async (req, res) => {
     }
 });
 // Update organization settings
-router.patch('/org', isAuthenticated, requireRole('admin'), validateRequest(orgSettingsUpdateSchema), async (req, res) => {
+router.patch('/org', isAuthenticated, requireRole('admin'), validateRequest(OrgSettingsUpdateSchema), async (req, res) => {
     try {
         const updates = req.body;
         const settings = await OrgSettingsService.updateOrgSettings(req.user.organizationId, updates, req.user.id, req.ip, req.get('user-agent'));
