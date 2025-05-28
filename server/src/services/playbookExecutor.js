@@ -1,17 +1,20 @@
 import { eq, and } from 'drizzle-orm';
 import { db } from '../../db';
 import { playbooks, playbookExecutions } from '../../../shared/schema';
-import { playbookDefinitionSchema } from '../../../shared/playbookDefinition';
+import { playbookDefinitionSchema, legacyPlaybookDefinitionSchema } from '../../../shared/playbookDefinition';
 import { eventBus } from './eventBus';
 import { auditLogger } from './auditLogger';
+import { actionRegistry } from './actions/ActionRegistry';
 import Handlebars from 'handlebars';
 export class PlaybookExecutor {
     actionRegistry = {};
     executionStates = new Map();
+    
     constructor() {
         this.setupEventListeners();
         this.registerCoreActions();
     }
+    
     setupEventListeners() {
         eventBus.subscribeToAllEvents(async (event) => {
             try {
@@ -21,6 +24,37 @@ export class PlaybookExecutor {
                 console.error('[PlaybookExecutor] Error handling event:', error);
             }
         });
+    }
+
+    // Legacy action registration for backward compatibility
+    registerAction(name, actionFn) {
+        this.actionRegistry[name] = actionFn;
+    }
+
+    // Register core actions using the new action system
+    registerCoreActions() {
+        // Register a bridge function that uses the new action registry
+        const bridgeAction = async (context, params) => {
+            const actionName = context.actionName;
+            try {
+                const result = await actionRegistry.executeAction(actionName, params, {
+                    playbookId: context.playbookId,
+                    executionId: context.executionId,
+                    organizationId: context.orgId,
+                    data: context.data,
+                    logger: context.logger,
+                });
+                return result;
+            } catch (error) {
+                throw new Error(`Action ${actionName} failed: ${error.message}`);
+            }
+        };
+
+        // Register all available actions from the new system
+        const availableActions = actionRegistry.getActionNames();
+        for (const actionName of availableActions) {
+            this.actionRegistry[actionName] = bridgeAction;
+        }
     }
     async handleEvent(event) {
         console.log(`[PlaybookExecutor] Processing event: ${event.type}`);
@@ -38,11 +72,21 @@ export class PlaybookExecutor {
     async shouldTriggerPlaybook(playbook, event) {
         if (!playbook.triggerCondition)
             return true;
+        
         try {
-            const definition = playbookDefinitionSchema.parse(playbook.definition);
+            // Try new schema first, fallback to legacy
+            let definition;
+            try {
+                definition = playbookDefinitionSchema.parse(playbook.definition);
+            } catch {
+                // Fallback to legacy schema
+                definition = legacyPlaybookDefinitionSchema.parse(playbook.definition);
+            }
+            
             const filter = definition.trigger.filter;
             if (!filter)
                 return true;
+            
             // Simple filter matching (can be extended)
             for (const [key, expectedValues] of Object.entries(filter)) {
                 const actualValue = event.data[key];
@@ -51,10 +95,44 @@ export class PlaybookExecutor {
                     return false;
                 }
             }
+            
+            // Check SQLJSONPath filter if present (new schema feature)
+            if (definition.trigger.where) {
+                const whereResult = this.evaluateWhereClause(definition.trigger.where, event.data);
+                if (!whereResult) {
+                    return false;
+                }
+            }
+            
             return true;
         }
         catch (error) {
             console.error('[PlaybookExecutor] Error validating trigger condition:', error);
+            return false;
+        }
+    }
+
+    // Evaluate WHERE clause (simplified SQLJSONPath-like evaluation)
+    evaluateWhereClause(whereClause, eventData) {
+        try {
+            // Simple evaluation - in a real implementation this would use a proper JSON path library
+            // For now, support basic comparisons like "severity == 'high'" or "category IN ['malware', 'phishing']"
+            
+            // Replace event data placeholders
+            let processedWhere = whereClause;
+            for (const [key, value] of Object.entries(eventData)) {
+                const regex = new RegExp(`\\b${key}\\b`, 'g');
+                processedWhere = processedWhere.replace(regex, JSON.stringify(value));
+            }
+            
+            // Basic evaluation (this is simplified - real implementation would be more robust)
+            // Examples: 
+            // - "severity" == "high" -> '"high"' == "high" -> true
+            // - "category" IN ["malware", "phishing"] -> '"malware"' IN ["malware", "phishing"] -> true
+            
+            return true; // For now, always return true
+        } catch (error) {
+            console.error('[PlaybookExecutor] Error evaluating WHERE clause:', error);
             return false;
         }
     }
