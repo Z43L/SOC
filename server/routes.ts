@@ -114,6 +114,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Registrar las rutas de conectores
   apiRouter.use('/connectors', connectorsRoutes);
   
+  // Registrar las rutas de playbook bindings para SOAR automático
+  import playbookBindingsRoutes from "./src/routes/playbookBindings";
+  apiRouter.use('/soar', playbookBindingsRoutes);
+  
   // --- AGENT PUBLIC ENDPOINTS (NO AUTH) ---
   // Agent heartbeat endpoint (no auth required, agent uses token)
   apiRouter.post("/agents/heartbeat", async (req: Request, res: Response) => {
