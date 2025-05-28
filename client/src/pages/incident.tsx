@@ -32,6 +32,21 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import MarkdownEditor from "@/components/editors/MarkdownEditor";
+import FileDropzone from "@/components/editors/FileDropzone";
 
 interface IncidentPageProps {
   id: string;
@@ -135,6 +150,27 @@ const formatTimeAgo = (date: Date | null | string): string => {
   return `${years} year${years !== 1 ? 's' : ''} ago`;
 };
 
+// Calculate time difference between two dates in a readable format
+const calculateTimeDifference = (startDate: string, endDate: string) => {
+  const start = new Date(startDate).getTime();
+  const end = new Date(endDate).getTime();
+  const diff = end - start;
+  
+  const minutes = Math.floor(diff / (1000 * 60));
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  
+  if (days > 0) {
+    return `${days} day${days !== 1 ? 's' : ''}, ${hours % 24} hour${(hours % 24) !== 1 ? 's' : ''}`;
+  }
+  
+  if (hours > 0) {
+    return `${hours} hour${hours !== 1 ? 's' : ''}, ${minutes % 60} minute${(minutes % 60) !== 1 ? 's' : ''}`;
+  }
+  
+  return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+};
+
 // Mock MITRE ATT&CK Framework Tactics
 const mitreTactics = [
   { id: "TA0001", name: "Initial Access", description: "Techniques used to gain initial access to a network" },
@@ -168,6 +204,9 @@ const IncidentPage: FC<IncidentPageProps> = ({ id, user, organization }) => {
   const [isPlaybookDialogOpen, setIsPlaybookDialogOpen] = useState(false);
   const [selectedPlaybook, setSelectedPlaybook] = useState<number | null>(null);
   const [noteText, setNoteText] = useState("");
+  const [markdownContent, setMarkdownContent] = useState("");
+  const [attachmentTitle, setAttachmentTitle] = useState("");
+  const [attachmentDescription, setAttachmentDescription] = useState("");
   const [evidenceUploadName, setEvidenceUploadName] = useState("");
   const [evidenceDescription, setEvidenceDescription] = useState("");
   const [tacticsMapping, setTacticsMapping] = useState<Record<string, boolean>>({});
@@ -286,6 +325,73 @@ const IncidentPage: FC<IncidentPageProps> = ({ id, user, organization }) => {
     }
   });
   
+  // Upload file attachment mutation
+  const uploadAttachmentMutation = useMutation({
+    mutationFn: async (files: File[]) => {
+      // Create FormData to handle file uploads
+      const formData = new FormData();
+      files.forEach(file => {
+        formData.append('files', file);
+      });
+      
+      // Add metadata
+      formData.append('title', attachmentTitle);
+      formData.append('description', attachmentDescription);
+      
+      const response = await fetch(`/api/incidents/${id}/attachments`, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to upload attachments');
+      }
+      
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/incidents/${id}`] });
+      setAttachmentTitle('');
+      setAttachmentDescription('');
+      toast({
+        title: "Attachments uploaded",
+        description: "Files have been successfully attached to the incident.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Failed to upload attachments",
+        description: error.toString(),
+        variant: "destructive",
+      });
+    }
+  });
+  
+  // Save markdown note mutation
+  const saveMarkdownNoteMutation = useMutation({
+    mutationFn: async (noteData: { content: string }) => {
+      const response = await apiRequest('POST', `/api/incidents/${id}/notes`, {
+        content: noteData.content,
+        type: 'markdown'
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/incidents/${id}`] });
+      toast({
+        title: "Note saved",
+        description: "Your markdown note has been saved.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Failed to save note",
+        description: error.toString(),
+        variant: "destructive",
+      });
+    }
+  });
+  
   // Update MITRE ATT&CK tactics mapping
   const updateTacticsMutation = useMutation({
     mutationFn: async (tactics: string[]) => {
@@ -327,7 +433,18 @@ const IncidentPage: FC<IncidentPageProps> = ({ id, user, organization }) => {
   
   // Handle status update
   const handleUpdateStatus = (newStatus: string) => {
-    updateIncidentMutation.mutate({ status: newStatus });
+    const updateData: Record<string, any> = { status: newStatus };
+    
+    // Update SLA fields based on status changes
+    if (newStatus === 'in_progress' && !incident.firstResponseAt) {
+      updateData.firstResponseAt = new Date().toISOString();
+    }
+    
+    if (newStatus === 'closed' && !incident.resolvedAt) {
+      updateData.resolvedAt = new Date().toISOString();
+    }
+    
+    updateIncidentMutation.mutate(updateData);
   };
   
   // Handle assigning the incident
@@ -351,6 +468,29 @@ const IncidentPage: FC<IncidentPageProps> = ({ id, user, organization }) => {
         description: evidenceDescription 
       });
     }
+  };
+  
+  // Handler for saving markdown notes
+  const handleSaveMarkdownNote = () => {
+    if (markdownContent.trim()) {
+      saveMarkdownNoteMutation.mutate({ content: markdownContent });
+    }
+  };
+  
+  // Handler for file uploads
+  const handleFileUpload = async (files: File[]) => {
+    if (files.length === 0) return;
+    
+    if (!attachmentTitle.trim()) {
+      toast({
+        title: "Title required",
+        description: "Please provide a title for the attachments.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    uploadAttachmentMutation.mutate(files);
   };
   
   // Handle executing a playbook
@@ -571,47 +711,73 @@ const IncidentPage: FC<IncidentPageProps> = ({ id, user, organization }) => {
                       </DialogDescription>
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
-                      <div 
-                        className="p-3 border border-gray-700 rounded-md cursor-pointer hover:border-gray-500"
-                        onClick={() => handleAssignIncident(user.id || 1)}
-                      >
-                        <div className="flex items-center">
-                          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white">
-                            {user.initials}
-                          </div>
-                          <div className="ml-3">
-                            <p className="font-medium">{user.name}</p>
-                            <p className="text-sm text-muted-foreground">{user.role}</p>
-                          </div>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label htmlFor="assign-user" className="text-sm font-medium">
+                            Assign to
+                          </label>
+                          <Select onValueChange={(value) => handleAssignIncident(parseInt(value, 10))}>
+                            <SelectTrigger id="assign-user">
+                              <SelectValue placeholder="Select a user" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="1">{user.name} (You) - {user.role}</SelectItem>
+                              <SelectItem value="2">Jane Doe - Security Analyst</SelectItem>
+                              <SelectItem value="3">Alex Smith - Security Engineer</SelectItem>
+                              <SelectItem value="4">Mike Johnson - SOC Manager</SelectItem>
+                              <SelectItem value="5">Sarah Williams - Threat Hunter</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <label htmlFor="assignment-note" className="text-sm font-medium">
+                            Assignment note (optional)
+                          </label>
+                          <Textarea 
+                            id="assignment-note" 
+                            placeholder="Add a note about this assignment"
+                            rows={3}
+                          />
+                        </div>
+                        
+                        <div className="flex items-center space-x-2">
+                          <Checkbox id="notify-user" />
+                          <label htmlFor="notify-user" className="text-sm">
+                            Notify user about this assignment
+                          </label>
                         </div>
                       </div>
                       
-                      <div 
-                        className="p-3 border border-gray-700 rounded-md cursor-pointer hover:border-gray-500"
-                        onClick={() => handleAssignIncident(2)}
-                      >
-                        <div className="flex items-center">
-                          <div className="w-8 h-8 rounded-full bg-blue-700 flex items-center justify-center text-white">
-                            JD
-                          </div>
-                          <div className="ml-3">
-                            <p className="font-medium">Jane Doe</p>
-                            <p className="text-sm text-muted-foreground">Security Analyst</p>
+                      <div className="space-y-2">
+                        <h3 className="text-sm font-medium">Recently assigned</h3>
+                        <div 
+                          className="p-3 border border-gray-700 rounded-md cursor-pointer hover:border-gray-500"
+                          onClick={() => handleAssignIncident(2)}
+                        >
+                          <div className="flex items-center">
+                            <div className="w-8 h-8 rounded-full bg-blue-700 flex items-center justify-center text-white">
+                              JD
+                            </div>
+                            <div className="ml-3">
+                              <p className="font-medium">Jane Doe</p>
+                              <p className="text-sm text-muted-foreground">Security Analyst</p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      
-                      <div 
-                        className="p-3 border border-gray-700 rounded-md cursor-pointer hover:border-gray-500"
-                        onClick={() => handleAssignIncident(3)}
-                      >
-                        <div className="flex items-center">
-                          <div className="w-8 h-8 rounded-full bg-purple-700 flex items-center justify-center text-white">
-                            AS
-                          </div>
-                          <div className="ml-3">
-                            <p className="font-medium">Alex Smith</p>
-                            <p className="text-sm text-muted-foreground">Security Engineer</p>
+                        
+                        <div 
+                          className="p-3 border border-gray-700 rounded-md cursor-pointer hover:border-gray-500"
+                          onClick={() => handleAssignIncident(3)}
+                        >
+                          <div className="flex items-center">
+                            <div className="w-8 h-8 rounded-full bg-purple-700 flex items-center justify-center text-white">
+                              AS
+                            </div>
+                            <div className="ml-3">
+                              <p className="font-medium">Alex Smith</p>
+                              <p className="text-sm text-muted-foreground">Security Engineer</p>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -690,6 +856,7 @@ const IncidentPage: FC<IncidentPageProps> = ({ id, user, organization }) => {
           <TabsList className="mb-6">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="timeline">Timeline</TabsTrigger>
+            <TabsTrigger value="notes">Notes & Attachments</TabsTrigger>
             <TabsTrigger value="evidence">Evidence</TabsTrigger>
             <TabsTrigger value="alerts">Related Alerts</TabsTrigger>
             <TabsTrigger value="mitre">MITRE ATT&CK</TabsTrigger>
@@ -742,6 +909,50 @@ const IncidentPage: FC<IncidentPageProps> = ({ id, user, organization }) => {
                         <p className="text-text-primary">
                           {relatedAlerts.length || 0} alert(s)
                         </p>
+                      </div>
+                    </div>
+                    
+                    <Separator />
+                    
+                    <div>
+                      <h3 className="text-sm font-medium mb-2">SLA Metrics</h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <h4 className="text-xs font-medium text-muted-foreground mb-1">First Response Time</h4>
+                          <p className="text-text-primary">
+                            {incident.firstResponseAt 
+                              ? formatDate(incident.firstResponseAt)
+                              : (
+                                <Badge variant="outline" className="bg-amber-900 text-amber-200 border-amber-700">
+                                  Awaiting Response
+                                </Badge>
+                              )
+                            }
+                          </p>
+                          {incident.firstResponseAt && incident.createdAt && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {calculateTimeDifference(incident.createdAt, incident.firstResponseAt)}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-medium text-muted-foreground mb-1">Resolution Time</h4>
+                          <p className="text-text-primary">
+                            {incident.resolvedAt 
+                              ? formatDate(incident.resolvedAt)
+                              : (
+                                <Badge variant="outline" className="bg-blue-900 text-blue-200 border-blue-700">
+                                  In Progress
+                                </Badge>
+                              )
+                            }
+                          </p>
+                          {incident.resolvedAt && incident.createdAt && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {calculateTimeDifference(incident.createdAt, incident.resolvedAt)}
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1019,7 +1230,36 @@ const IncidentPage: FC<IncidentPageProps> = ({ id, user, organization }) => {
                         title={entry.title}
                         time={entry.timestamp}
                       >
-                        <p className="text-sm">{entry.content}</p>
+                        <Accordion type="single" collapsible className="w-full">
+                          <AccordionItem value={`entry-${index}`}>
+                            <AccordionTrigger className="text-sm py-2">
+                              {entry.summary || "View details"}
+                            </AccordionTrigger>
+                            <AccordionContent>
+                              <div className="text-sm space-y-2">
+                                <p>{entry.content}</p>
+                                {entry.changes && (
+                                  <div className="mt-2 pt-2 border-t border-gray-800">
+                                    <p className="text-xs font-medium text-muted-foreground mb-1">Changes:</p>
+                                    <ul className="text-xs space-y-1">
+                                      {Object.entries(entry.changes).map(([key, value], i) => (
+                                        <li key={i} className="flex items-start">
+                                          <span className="font-medium w-20">{key}:</span>
+                                          <span>{value}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                                {entry.user && (
+                                  <div className="flex items-center mt-2 text-xs text-muted-foreground">
+                                    <span>Updated by {entry.user}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </AccordionContent>
+                          </AccordionItem>
+                        </Accordion>
                       </TimelineItem>
                     ))
                   ) : (
@@ -1060,6 +1300,152 @@ const IncidentPage: FC<IncidentPageProps> = ({ id, user, organization }) => {
                 </Timeline>
               </CardContent>
             </Card>
+          </TabsContent>
+          
+          {/* Notes & Attachments Tab */}
+          <TabsContent value="notes">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="md:col-span-2">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle>Investigation Notes</CardTitle>
+                    <CardDescription>
+                      Document findings, observations, and next steps
+                    </CardDescription>
+                  </div>
+                  <Button onClick={handleSaveMarkdownNote} disabled={!markdownContent.trim() || saveMarkdownNoteMutation.isPending}>
+                    {saveMarkdownNoteMutation.isPending ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin mr-2"></i>
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-save mr-2"></i>
+                        Save Note
+                      </>
+                    )}
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <MarkdownEditor 
+                      value={markdownContent}
+                      onChange={(value) => setMarkdownContent(value || "")}
+                      placeholder="Write your investigation notes here. Supports markdown formatting."
+                      height={400}
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      <p>Markdown formatting supported:</p>
+                      <ul className="list-disc pl-4 mt-1 space-y-1">
+                        <li># Heading 1, ## Heading 2, etc.</li>
+                        <li>**bold text**, *italic text*</li>
+                        <li>- List items, 1. Numbered lists</li>
+                        <li>[Link text](https://example.com)</li>
+                        <li>```code blocks```</li>
+                      </ul>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <div className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Attachments</CardTitle>
+                    <CardDescription>
+                      Upload files related to this incident
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label htmlFor="attachment-title" className="text-sm font-medium">
+                          Title
+                        </label>
+                        <Input
+                          id="attachment-title"
+                          placeholder="Attachment title"
+                          value={attachmentTitle}
+                          onChange={(e) => setAttachmentTitle(e.target.value)}
+                        />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <label htmlFor="attachment-description" className="text-sm font-medium">
+                          Description
+                        </label>
+                        <Textarea
+                          id="attachment-description"
+                          placeholder="Brief description of these files"
+                          value={attachmentDescription}
+                          onChange={(e) => setAttachmentDescription(e.target.value)}
+                          rows={3}
+                        />
+                      </div>
+                      
+                      <FileDropzone
+                        onUpload={handleFileUpload}
+                        accept={{
+                          'application/pdf': ['.pdf'],
+                          'image/*': ['.png', '.jpg', '.jpeg', '.gif'],
+                          'text/*': ['.txt', '.log', '.csv'],
+                          'application/zip': ['.zip'],
+                          'application/x-7z-compressed': ['.7z'],
+                          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+                          'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+                        }}
+                        maxFiles={5}
+                        maxSize={10 * 1024 * 1024} // 10 MB
+                        disabled={uploadAttachmentMutation.isPending}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Attachment History</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {incident.attachments && incident.attachments.length > 0 ? (
+                      <div className="space-y-3">
+                        {incident.attachments.map((attachment, index) => (
+                          <div key={index} className="flex items-start border-b border-gray-800 pb-3 last:border-0 last:pb-0">
+                            <div className="w-10 h-10 rounded-md bg-gray-800 flex items-center justify-center">
+                              <i className={`fas fa-${attachment.type === 'pdf' ? 'file-pdf' : attachment.type === 'image' ? 'file-image' : 'file-alt'} text-blue-500`}></i>
+                            </div>
+                            <div className="ml-3 flex-1 min-w-0">
+                              <h4 className="text-sm font-medium">{attachment.title || attachment.filename}</h4>
+                              <p className="text-xs text-muted-foreground">{attachment.description}</p>
+                              <div className="flex items-center mt-1">
+                                <span className="text-xs text-muted-foreground">
+                                  {attachment.uploadedAt && format(new Date(attachment.uploadedAt), "MMM d, yyyy HH:mm")}
+                                </span>
+                                <span className="mx-2 text-muted-foreground">•</span>
+                                <span className="text-xs text-muted-foreground">
+                                  {attachment.size && `${(attachment.size / 1024).toFixed(1)} KB`}
+                                </span>
+                              </div>
+                            </div>
+                            <Button variant="ghost" size="icon" asChild className="ml-auto">
+                              <a href={attachment.url} target="_blank" rel="noopener noreferrer">
+                                <i className="fas fa-download"></i>
+                              </a>
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <i className="fas fa-folder-open text-3xl mb-2"></i>
+                        <p>No attachments yet</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
           </TabsContent>
           
           {/* Evidence Tab */}
