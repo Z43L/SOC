@@ -43,6 +43,8 @@ import cron from "node-cron";
 import { log } from "./vite";
 // Importar el módulo scheduler para actualizaciones automáticas
 import { updateAllData, updateSystemMetrics } from "./integrations/scheduler";
+// Importar real-time monitor para WebSocket updates
+import { RealtimeMonitor } from "./integrations/connectors/real-time-monitor";
 // Importar módulos del sistema para manejo de archivos
 import * as fs from 'fs';
 import * as path from 'path';
@@ -74,6 +76,9 @@ import {
 
 // Import billing routes
 import billingRoutes from "./src/routes/billing";
+
+// Import SOAR routes
+import playbookBindingsRoutes from "./src/routes/playbookBindings";
 
 // Import settings routes
 import settingsRoutes from "./routes/settings";
@@ -115,7 +120,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   apiRouter.use('/connectors', connectorsRoutes);
   
   // Registrar las rutas de playbook bindings para SOAR automático
-  import playbookBindingsRoutes from "./src/routes/playbookBindings";
   apiRouter.use('/soar', playbookBindingsRoutes);
   
   // --- AGENT PUBLIC ENDPOINTS (NO AUTH) ---
@@ -559,6 +563,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Procesar la alerta con enriquecimiento automático de Threat Intelligence
       const alert = await processNewAlertWithEnrichment(newAlert);
       
+      // Broadcast new alert via WebSocket for real-time dashboard updates
+      try {
+        const realtimeMonitor = RealtimeMonitor.getInstance();
+        realtimeMonitor.broadcastAlertUpdate(alert);
+        realtimeMonitor.broadcastDashboardUpdate({
+          type: 'new_alert',
+          alert,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        log(`Error broadcasting alert update: ${error instanceof Error ? error.message : 'unknown'}`, 'alerts');
+      }
+      
       // Si OpenAI está configurado, generar análisis automáticamente
       if (isOpenAIConfigured()) {
         // No esperamos - ejecutar en segundo plano
@@ -827,6 +844,20 @@ app.use("/downloads", express.static(path.join(process.cwd(), "public", "downloa
         ...(relatedAlerts ? { relatedAlerts: relatedAlerts as unknown } : {}),
         ...(aiAnalysis ? { aiAnalysis: aiAnalysis as any } : {})
       });
+      
+      // Broadcast new incident via WebSocket for real-time dashboard updates
+      try {
+        const realtimeMonitor = RealtimeMonitor.getInstance();
+        realtimeMonitor.broadcastIncidentUpdate(incident);
+        realtimeMonitor.broadcastDashboardUpdate({
+          type: 'new_incident',
+          incident,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        log(`Error broadcasting incident update: ${error instanceof Error ? error.message : 'unknown'}`, 'incidents');
+      }
+      
       res.status(201).json(incident);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
