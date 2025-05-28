@@ -1,12 +1,11 @@
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: soc-app-test:latest
     ports:
       - "5001:5000"
-    env_file:
-      - .env
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:password@db:5432/soc
     depends_on:
       - db
       - redis

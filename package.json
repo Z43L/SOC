@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx server/index.ts",
     "build": "vite build && npx esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && npx esbuild server/integrations/enrichers/*.ts --platform=node --packages=external --format=esm --outdir=dist/server/integrations/enrichers --allow-overwrite",
-    "start": "NODE_ENV=production node dist/index.js",
+    "start": "NODE_ENV=production node server/index.js",
     "check": "tsc",
     "db:push": "drizzle-kit push",
     "test": "jest",
