@@ -19,6 +19,7 @@ import Agents from "@/pages/agents";
 import AuthPage from "@/pages/auth-page";
 import HomePage from "@/pages/home-page";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
+import { TenantProvider } from "@/contexts/TenantContext";
 import { ProtectedRoute } from "./lib/protected-route";
 import { useState, useMemo } from "react";
 import BillingPage from "./pages/billing";
@@ -69,11 +70,19 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <Router />
-        <Toaster />
+        <TenantProvider 
+          initialOrganizationId={null}
+          initialUserRole={null}
+          initialLanguage="es"
+        >
+          <Router />
+          <Toaster />
+        </TenantProvider>
       </AuthProvider>
     </QueryClientProvider>
   );
 }
+
+export default App;
 
 export default App;
