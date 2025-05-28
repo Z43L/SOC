@@ -39,14 +39,17 @@ export const useWebSocket = (
     if (!url || wsRef.current?.readyState === WebSocket.OPEN) return;
 
     try {
+      console.log('Attempting WebSocket connection to:', url);
       wsRef.current = new WebSocket(url);
 
       wsRef.current.onopen = () => {
         reconnectAttemptsRef.current = 0;
+        console.log('WebSocket connection established');
         if (onOpen) onOpen();
       };
 
       wsRef.current.onclose = (event) => {
+        console.log('WebSocket connection closed:', event.code, event.reason);
         if (onClose) onClose(event);
 
         if (reconnectOnClose && reconnectAttemptsRef.current < maxReconnectAttempts) {
@@ -56,6 +59,7 @@ export const useWebSocket = (
           }
           
           reconnectIntervalRef.current = setTimeout(() => {
+            console.log(`Attempting WebSocket reconnection ${reconnectAttemptsRef.current}/${maxReconnectAttempts}`);
             connect();
           }, reconnectInterval);
           
@@ -65,6 +69,7 @@ export const useWebSocket = (
             variant: "default"
           });
         } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
+          console.error('WebSocket connection failed after maximum attempts');
           toast({
             title: "Connection Failed",
             description: "Unable to establish WebSocket connection after multiple attempts.",
@@ -74,6 +79,7 @@ export const useWebSocket = (
       };
 
       wsRef.current.onerror = (error) => {
+        console.error('WebSocket error:', error);
         if (onError) onError(error);
       };
 
@@ -87,6 +93,12 @@ export const useWebSocket = (
       };
     } catch (error) {
       console.error("WebSocket connection error:", error);
+      if (reconnectOnClose && reconnectAttemptsRef.current < maxReconnectAttempts) {
+        reconnectAttemptsRef.current += 1;
+        setTimeout(() => {
+          connect();
+        }, reconnectInterval);
+      }
     }
   }, [url, onOpen, onClose, onError, onMessage, reconnectOnClose, reconnectInterval, maxReconnectAttempts, toast]);
 
