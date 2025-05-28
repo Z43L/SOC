@@ -54,7 +54,7 @@ const Dashboard: FC<DashboardProps> = ({ user, organization }) => {
 
   // WebSocket for real-time updates
   useWebSocket(
-    data ? `ws://localhost:5000/ws/dashboard` : null,
+    data ? `ws://${typeof window !== 'undefined' ? window.location.host : 'localhost:5000'}/ws/dashboard` : null,
     {
       onMessage: (message) => {
         if (message.type === 'dashboard_update') {

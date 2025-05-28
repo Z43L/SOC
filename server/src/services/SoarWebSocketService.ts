@@ -20,17 +20,43 @@ export class SoarWebSocketService {
         credentials: true,
       },
       path: '/soar/live',
+      // Add connection timeout and heartbeat configuration
+      pingTimeout: 60000,
+      pingInterval: 25000,
+      upgradeTimeout: 10000,
+      // Allow multiple connection attempts
+      allowEIO3: true,
     });
 
     this.setupSocketHandlers();
     this.setupEventListeners();
+    this.setupConnectionMonitoring();
     
     console.log('[SoarWebSocket] WebSocket service initialized');
+  }
+
+  private setupConnectionMonitoring(): void {
+    this.io.engine.on('connection_error', (err) => {
+      console.error('[SoarWebSocket] Connection error:', err.req, err.code, err.message, err.context);
+    });
+
+    // Log connection statistics every 30 seconds
+    setInterval(() => {
+      const clientCount = this.connectedClients.size;
+      if (clientCount > 0) {
+        console.log(`[SoarWebSocket] Connected clients: ${clientCount}`);
+      }
+    }, 30000);
   }
 
   private setupSocketHandlers(): void {
     this.io.on('connection', (socket) => {
       console.log(`[SoarWebSocket] Client connected: ${socket.id}`);
+
+      // Handle connection errors
+      socket.on('connect_error', (error) => {
+        console.error(`[SoarWebSocket] Connection error for ${socket.id}:`, error);
+      });
 
       // Handle authentication
       socket.on('authenticate', (data) => {
