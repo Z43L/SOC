@@ -3,6 +3,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { SeverityTypes } from "@shared/schema";
 import { AlertInsightResponseSchema } from "./integrations/ai-validation-schemas";
 import { IncidentCorrelationResponseSchema } from "./integrations/ai-validation-schemas";
+import { orchestrator, ProviderType } from "./integrations/llm";
+import { parseOrRetry } from "./integrations/llm/llm-validation";
 /**
  * Tipos de modelos de IA/ML que soporta el sistema
  */
@@ -10,6 +12,7 @@ export var AIModelType;
 (function (AIModelType) {
     AIModelType["OPENAI"] = "openai";
     AIModelType["ANTHROPIC"] = "anthropic";
+    AIModelType["GOOGLE"] = "google";
     AIModelType["AUTO"] = "auto";
 })(AIModelType || (AIModelType = {}));
 /**
@@ -25,7 +28,7 @@ export var AnalysisType;
     AnalysisType["NETWORK_TRAFFIC_ANALYSIS"] = "network_traffic_analysis";
     AnalysisType["ANOMALY_DETECTION"] = "anomaly_detection";
 })(AnalysisType || (AnalysisType = {}));
-// Definición de modelos disponibles
+// Definición de modelos disponibles - Legacy models, we use the new LLMOrchestrator for most operations
 const AVAILABLE_MODELS = [
     {
         type: AIModelType.OPENAI,
@@ -42,10 +45,28 @@ const AVAILABLE_MODELS = [
         costPerToken: 0.01,
         maxContextSize: 128000,
         responseTime: 2000,
+        multimodal: true,
+    },
+    {
+        type: AIModelType.OPENAI,
+        name: 'gpt-4o-mini', // Smaller, faster and cheaper version of GPT-4o
+        capabilities: [
+            AnalysisType.ALERT_ANALYSIS,
+            AnalysisType.INCIDENT_CORRELATION,
+            AnalysisType.THREAT_INTEL_ANALYSIS,
+            AnalysisType.SECURITY_RECOMMENDATIONS,
+            AnalysisType.LOG_PATTERN_DETECTION,
+            AnalysisType.NETWORK_TRAFFIC_ANALYSIS,
+            AnalysisType.ANOMALY_DETECTION,
+        ],
+        costPerToken: 0.0015,
+        maxContextSize: 8000,
+        responseTime: 1000,
+        multimodal: true,
     },
     {
         type: AIModelType.ANTHROPIC,
-        name: 'claude-3-7-sonnet-20250219', // the newest Anthropic model is "claude-3-7-sonnet-20250219" which was released February 24, 2025
+        name: 'claude-3-sonnet-20240229', // the newest Anthropic model
         capabilities: [
             AnalysisType.ALERT_ANALYSIS,
             AnalysisType.INCIDENT_CORRELATION,
@@ -53,12 +74,60 @@ const AVAILABLE_MODELS = [
             AnalysisType.SECURITY_RECOMMENDATIONS,
             AnalysisType.LOG_PATTERN_DETECTION,
         ],
+        costPerToken: 0.003,
+        maxContextSize: 200000,
+        responseTime: 2000,
+        multimodal: true,
+    },
+    {
+        type: AIModelType.ANTHROPIC,
+        name: 'claude-3-haiku-20240307', // Fast and efficient Claude model
+        capabilities: [
+            AnalysisType.ALERT_ANALYSIS,
+            AnalysisType.THREAT_INTEL_ANALYSIS,
+            AnalysisType.LOG_PATTERN_DETECTION,
+        ],
+        costPerToken: 0.00025,
+        maxContextSize: 200000,
+        responseTime: 1000,
+        multimodal: true,
+    },
+    {
+        type: AIModelType.ANTHROPIC,
+        name: 'claude-3-opus-20240229', // Most powerful Claude model
+        capabilities: [
+            AnalysisType.ALERT_ANALYSIS,
+            AnalysisType.INCIDENT_CORRELATION,
+            AnalysisType.THREAT_INTEL_ANALYSIS,
+            AnalysisType.SECURITY_RECOMMENDATIONS,
+            AnalysisType.LOG_PATTERN_DETECTION,
+            AnalysisType.NETWORK_TRAFFIC_ANALYSIS,
+            AnalysisType.ANOMALY_DETECTION,
+        ],
         costPerToken: 0.015,
         maxContextSize: 200000,
+        responseTime: 3000,
+        multimodal: true,
+    },
+    {
+        type: AIModelType.GOOGLE,
+        name: 'gemini-1.5-pro', // Google's advanced model with long context
+        capabilities: [
+            AnalysisType.ALERT_ANALYSIS,
+            AnalysisType.INCIDENT_CORRELATION,
+            AnalysisType.THREAT_INTEL_ANALYSIS,
+            AnalysisType.SECURITY_RECOMMENDATIONS,
+            AnalysisType.LOG_PATTERN_DETECTION,
+            AnalysisType.NETWORK_TRAFFIC_ANALYSIS,
+            AnalysisType.ANOMALY_DETECTION,
+        ],
+        costPerToken: 0.0025,
+        maxContextSize: 2000000, // 2 million tokens
         responseTime: 2500,
+        multimodal: true,
     },
 ];
-// Clientes de IA inicializados
+// Clientes de IA inicializados - Legacy clients, will be replaced by orchestrator
 let openAiClient = null;
 let anthropicClient = null;
 /**
@@ -68,6 +137,8 @@ export function initializeOpenAI(apiKey) {
     try {
         openAiClient = new OpenAI({ apiKey });
         console.log("OpenAI client initialized successfully");
+        // Also initialize the orchestrator
+        orchestrator.initializeProvider(ProviderType.OPENAI, { apiKey });
         return true;
     }
     catch (error) {
@@ -82,6 +153,8 @@ export function initializeAnthropic(apiKey) {
     try {
         anthropicClient = new Anthropic({ apiKey });
         console.log("Anthropic client initialized successfully");
+        // Also initialize the orchestrator
+        orchestrator.initializeProvider(ProviderType.ANTHROPIC, { apiKey });
         return true;
     }
     catch (error) {
@@ -90,16 +163,37 @@ export function initializeAnthropic(apiKey) {
     }
 }
 /**
+ * Inicializa el cliente de Google
+ */
+export function initializeGoogle(apiKey) {
+    try {
+        console.log("Google client initialization requested");
+        // Initialize the orchestrator
+        orchestrator.initializeProvider(ProviderType.GOOGLE, { apiKey });
+        return true;
+    }
+    catch (error) {
+        console.error("Failed to initialize Google client:", error);
+        return false;
+    }
+}
+/**
  * Comprueba si el cliente de OpenAI está configurado
  */
 export function isOpenAIConfigured() {
-    return openAiClient !== null;
+    return openAiClient !== null || orchestrator.isProviderInitialized(ProviderType.OPENAI);
 }
 /**
  * Comprueba si el cliente de Anthropic está configurado
  */
 export function isAnthropicConfigured() {
-    return anthropicClient !== null;
+    return anthropicClient !== null || orchestrator.isProviderInitialized(ProviderType.ANTHROPIC);
+}
+/**
+ * Comprueba si el cliente de Google está configurado
+ */
+export function isGoogleConfigured() {
+    return orchestrator.isProviderInitialized(ProviderType.GOOGLE);
 }
 /**
  * Helper para asegurar que el cliente de OpenAI está inicializado
@@ -122,7 +216,43 @@ function ensureAnthropicClient() {
 /**
  * Selecciona el modelo más apropiado para un tipo de análisis dado
  */
-function selectModelForAnalysis(analysisType, preferredModel) {
+function selectModelForAnalysis(analysisType, preferredModel, estimatedTokens = 4000, requireLowLatency = false, xPreferredModel) {
+    // Try to use the orchestrator first for modern selection logic
+    try {
+        // Convert AIModelType to ProviderType
+        let providerType = ProviderType.AUTO;
+        if (preferredModel === AIModelType.OPENAI)
+            providerType = ProviderType.OPENAI;
+        else if (preferredModel === AIModelType.ANTHROPIC)
+            providerType = ProviderType.ANTHROPIC;
+        else if (preferredModel === AIModelType.GOOGLE)
+            providerType = ProviderType.GOOGLE;
+        // Check if we need low latency based on analysis type
+        if (analysisType === AnalysisType.ALERT_ANALYSIS) {
+            requireLowLatency = true;
+        }
+        // Use the orchestrator to select the model
+        const { provider, modelId } = orchestrator.selectModelForAnalysis(analysisType, providerType, estimatedTokens, requireLowLatency, xPreferredModel);
+        // Find the equivalent legacy model to return
+        const selectedModel = AVAILABLE_MODELS.find(model => (provider === ProviderType.OPENAI && model.type === AIModelType.OPENAI && model.name === modelId) ||
+            (provider === ProviderType.ANTHROPIC && model.type === AIModelType.ANTHROPIC && model.name === modelId) ||
+            (provider === ProviderType.GOOGLE && model.type === AIModelType.GOOGLE && model.name === modelId));
+        if (selectedModel) {
+            return selectedModel;
+        }
+        // If no exact match, find a model of the same provider type
+        const providerModel = AVAILABLE_MODELS.find(model => (provider === ProviderType.OPENAI && model.type === AIModelType.OPENAI) ||
+            (provider === ProviderType.ANTHROPIC && model.type === AIModelType.ANTHROPIC) ||
+            (provider === ProviderType.GOOGLE && model.type === AIModelType.GOOGLE));
+        if (providerModel) {
+            return providerModel;
+        }
+    }
+    catch (error) {
+        console.warn("Error using LLM orchestrator for model selection, falling back to legacy selection:", error.message);
+        // Continue with legacy selection logic
+    }
+    // Legacy selection logic
     // Si se solicita un modelo específico (y está disponible), usarlo
     if (preferredModel === AIModelType.OPENAI && isOpenAIConfigured()) {
         return AVAILABLE_MODELS.find(m => m.type === AIModelType.OPENAI);
@@ -145,10 +275,16 @@ function selectModelForAnalysis(analysisType, preferredModel) {
     // Para este ejemplo, elegiremos el modelo con menor tiempo de respuesta entre los capaces
     return capableModels.sort((a, b) => a.responseTime - b.responseTime)[0];
 }
-export async function generateAlertInsight(alert, preferredModel = AIModelType.AUTO) {
+/**
+ * Genera un análisis de alerta usando el modelo AI especificado
+ */
+export async function generateAlertInsight(alert, preferredModel = AIModelType.AUTO, xPreferredModel) {
     try {
-        const selectedModel = selectModelForAnalysis(AnalysisType.ALERT_ANALYSIS, preferredModel);
-        // Preparar el prompt
+        // Estimate the number of tokens in the alert
+        const estimatedTokens = (alert.title?.length || 0) +
+            (alert.description?.length || 0) +
+            1000; // Extra buffer
+        // Prepare the prompt
         const prompt = `
     Analyze this security alert and provide insights:
     
@@ -175,6 +311,54 @@ export async function generateAlertInsight(alert, preferredModel = AIModelType.A
       "relatedEntities": ["IPs", "domains", "threat actors", "techniques"]
     }
     `;
+        // First, try using the orchestrator with Zod validation
+        try {
+            // Convert AIModelType to ProviderType
+            let providerType = ProviderType.AUTO;
+            if (preferredModel === AIModelType.OPENAI)
+                providerType = ProviderType.OPENAI;
+            else if (preferredModel === AIModelType.ANTHROPIC)
+                providerType = ProviderType.ANTHROPIC;
+            else if (preferredModel === AIModelType.GOOGLE)
+                providerType = ProviderType.GOOGLE;
+            // Define the completion options
+            const completionOptions = {
+                provider: providerType,
+                estimatedTokens,
+                requireLowLatency: true, // Alerts usually need fast response
+                xPreferredModel,
+                systemMessage: "You are a cybersecurity expert specializing in threat analysis. Provide insightful, accurate, and actionable security intelligence.",
+                userMessage: prompt,
+                responseFormat: 'json_object'
+            };
+            // Use parseOrRetry to ensure we get a valid response
+            const { data, metrics } = await parseOrRetry((options) => orchestrator.generateCompletion(options), completionOptions, AlertInsightResponseSchema);
+            // Log metrics for monitoring
+            console.log("AI Alert Insight Metrics:", {
+                model: metrics.model,
+                provider: metrics.provider,
+                inputTokens: metrics.inputTokens,
+                outputTokens: metrics.outputTokens,
+                cost: metrics.cost,
+                latencyMs: metrics.latencyMs
+            });
+            // Create and return the insight with validated data
+            return {
+                title: data.title,
+                type: "alert_analysis",
+                description: data.description,
+                severity: data.severity,
+                status: "new",
+                confidence: data.confidence,
+                relatedEntities: data.relatedEntities
+            };
+        }
+        catch (orchestratorError) {
+            console.warn("Error using LLM orchestrator for alert insight, falling back to legacy method:", orchestratorError.message);
+            // Fall back to legacy method
+        }
+        // Legacy method
+        const selectedModel = selectModelForAnalysis(AnalysisType.ALERT_ANALYSIS, preferredModel, estimatedTokens, true, xPreferredModel);
         let jsonResponse;
         // Llamar al modelo apropiado
         if (selectedModel.type === AIModelType.OPENAI) {
