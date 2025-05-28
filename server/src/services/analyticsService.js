@@ -1,5 +1,5 @@
 import Redis from 'redis';
-import { db } from '../db';
+import { db } from '../../db';
 import { metricsRollup } from '../../../shared/schema';
 import { sql } from 'drizzle-orm';
 import { incidents } from '../../../shared/schema';
