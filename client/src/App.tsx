@@ -7,6 +7,7 @@ import Dashboard from "@/pages/dashboard";
 import Alerts from "@/pages/alerts";
 import Incident from "@/pages/incident";
 import IncidentNew from "@/pages/incident-new";
+import Incidents from "@/pages/incidents";
 import ThreatIntelligence from "@/pages/threat-intelligence";
 import Analytics from "@/pages/analytics";
 import Reports from "@/pages/reports";
@@ -48,7 +49,7 @@ function Router() {
       <ProtectedRoute path="/alerts" component={() => <Alerts user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/incident/new" component={() => <IncidentNew id="new" user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/incident/:id" component={({ id }) => <Incident id={id} user={userInfo} organization={organization} />} />
-      <ProtectedRoute path="/incidents" component={() => <Alerts user={userInfo} organization={organization} />} />
+      <ProtectedRoute path="/incidents" component={() => <Incidents user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/threat-intelligence" component={() => <ThreatIntelligence user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/soar" component={() => <Soar user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/analytics" component={() => <Analytics user={userInfo} organization={organization} />} />
@@ -82,7 +83,5 @@ function App() {
     </QueryClientProvider>
   );
 }
-
-export default App;
 
 export default App;

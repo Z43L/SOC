@@ -63,6 +63,7 @@ const Alerts: FC<AlertsProps> = ({ user, organization }) => {
   
   // State for alert creation and detail view
   const [createAlertOpen, setCreateAlertOpen] = useState(false);
+  const [createIncidentOpen, setCreateIncidentOpen] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const [isDetailSheetOpen, setIsDetailSheetOpen] = useState(false);
   
@@ -78,6 +79,13 @@ const Alerts: FC<AlertsProps> = ({ user, organization }) => {
     source: 'Manual Entry',
     sourceIp: '',
     destinationIp: ''
+  });
+  
+  // State for the new incident form
+  const [newIncident, setNewIncident] = useState({
+    title: '',
+    description: '',
+    priority: 'medium'
   });
   
   const { toast } = useToast();
@@ -290,6 +298,52 @@ const Alerts: FC<AlertsProps> = ({ user, organization }) => {
     setNewAlert(prev => ({ ...prev, [name]: value }));
   };
   
+  // Handler for input changes in the new incident form
+  const handleIncidentInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setNewIncident(prev => ({ ...prev, [name]: value }));
+  };
+  
+  // Handler for select changes in the new incident form
+  const handleIncidentSelectChange = (name: string, value: string) => {
+    setNewIncident(prev => ({ ...prev, [name]: value }));
+  };
+  
+  // Handler for creating an incident from alerts
+  const handleCreateIncident = async () => {
+    const alertIds = selectedAlerts.map(alert => alert.id as number);
+    
+    try {
+      const response = await apiRequest('POST', '/api/incidents', {
+        ...newIncident,
+        alertIds,
+        status: 'new'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        toast({
+          title: "Incident Created",
+          description: `Incident "${newIncident.title}" has been created successfully.`,
+        });
+        
+        // Redirect to the new incident
+        window.location.href = `/incident/${data.id}`;
+      } else {
+        throw new Error('Failed to create incident');
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to create incident. Please try again.",
+        variant: "destructive",
+      });
+    }
+    
+    setCreateIncidentOpen(false);
+    setSelectedAlerts([]);
+  };
+  
   // Handler for select changes in the new alert form
   const handleSelectChange = (name: string, value: string) => {
     setNewAlert(prev => ({ ...prev, [name]: value }));
@@ -433,6 +487,10 @@ const Alerts: FC<AlertsProps> = ({ user, organization }) => {
     {
       label: "Group Similar",
       onClick: () => setIsGroupDialogOpen(true),
+    },
+    {
+      label: "Create Incident",
+      onClick: () => setCreateIncidentOpen(true),
     }
   ];
   
@@ -690,6 +748,84 @@ const Alerts: FC<AlertsProps> = ({ user, organization }) => {
               ) : (
                 'Create Alert'
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Create Incident Dialog */}
+      <Dialog open={createIncidentOpen} onOpenChange={setCreateIncidentOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Create Incident from Alerts</DialogTitle>
+            <DialogDescription>
+              Create a new incident from {selectedAlerts.length} selected alert(s).
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="incident-title">Incident Title</Label>
+              <Input
+                id="incident-title"
+                name="title"
+                placeholder="Enter incident title"
+                value={newIncident.title}
+                onChange={handleIncidentInputChange}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="incident-description">Description</Label>
+              <Textarea
+                id="incident-description"
+                name="description"
+                placeholder="Describe the security incident"
+                value={newIncident.description}
+                onChange={handleIncidentInputChange}
+                className="min-h-[100px]"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="incident-priority">Priority</Label>
+              <Select 
+                value={newIncident.priority} 
+                onValueChange={(value) => handleIncidentSelectChange('priority', value)}
+              >
+                <SelectTrigger id="incident-priority">
+                  <SelectValue placeholder="Select priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="critical">Critical</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="space-y-2 border border-border rounded-md p-3">
+              <h4 className="text-sm font-medium">Selected Alerts ({selectedAlerts.length})</h4>
+              <div className="max-h-[150px] overflow-y-auto space-y-2">
+                {selectedAlerts.map(alert => (
+                  <div key={alert.id} className="text-sm flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full bg-${alert.severity === 'critical' ? 'destructive' : alert.severity === 'high' ? 'red-500' : alert.severity === 'medium' ? 'orange-500' : 'green-500'}`}></span>
+                    <span>{alert.title}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateIncidentOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateIncident}
+            >
+              Create Incident
             </Button>
           </DialogFooter>
         </DialogContent>
