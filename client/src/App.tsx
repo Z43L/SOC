@@ -8,6 +8,7 @@ import Alerts from "@/pages/alerts";
 import Incident from "@/pages/incident";
 import IncidentNew from "@/pages/incident-new";
 import Incidents from "@/pages/incidents";
+import Playbooks from "@/pages/playbooks";
 import ThreatIntelligence from "@/pages/threat-intelligence";
 import Analytics from "@/pages/analytics";
 import Reports from "@/pages/reports";
@@ -52,6 +53,7 @@ function Router() {
       <ProtectedRoute path="/incidents" component={() => <Incidents user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/threat-intelligence" component={() => <ThreatIntelligence user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/soar" component={() => <Soar user={userInfo} organization={organization} />} />
+      <ProtectedRoute path="/playbooks" component={() => <Playbooks user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/analytics" component={() => <Analytics user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/reports" component={() => <Reports user={userInfo} organization={organization} />} />
       <ProtectedRoute path="/users" component={() => <Users user={userInfo} organization={organization} />} />
