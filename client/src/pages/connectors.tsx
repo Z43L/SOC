@@ -33,6 +33,7 @@ import {
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Connector as ConnectorType } from "@shared/schema";
+import useWebSocket from "@/hooks/use-websocket";
 
 interface ConnectorsProps {
   user: {
@@ -90,6 +91,58 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
     queryKey: ['/api/connectors'],
     staleTime: 30000, // 30 segundos
   });
+  
+  // WebSocket subscription for real-time updates
+  useWebSocket(
+    // In a real implementation, this would be a real WebSocket endpoint
+    // For demonstration, we'll use a simulated one
+    `ws://${window.location.host}/api/ws/connectors`,
+    {
+      onOpen: () => {
+        toast({
+          title: "Real-time Updates",
+          description: "Connected to real-time connector status updates",
+        });
+      },
+      onMessage: (event) => {
+        if (event.type === 'connector-status-update') {
+          // Instead of refreshing the entire list, we can update the specific connector
+          queryClient.setQueryData<ConnectorType[]>(['/api/connectors'], (oldData) => {
+            if (!oldData) return oldData;
+            
+            return oldData.map(connector => {
+              if (connector.id === event.data.id) {
+                return { ...connector, ...event.data };
+              }
+              return connector;
+            });
+          });
+          
+          // Show a notification for important status changes
+          if (event.data.status === 'error') {
+            toast({
+              title: "Connector Error",
+              description: `${event.data.name}: ${event.data.errorMessage || 'An error occurred'}`,
+              variant: "destructive"
+            });
+          } else if (event.data.status === 'active' && event.data.previousStatus === 'error') {
+            toast({
+              title: "Connector Recovered",
+              description: `${event.data.name} is now working correctly`,
+              variant: "default"
+            });
+          }
+        }
+      },
+      onError: () => {
+        toast({
+          title: "Connection Error",
+          description: "Unable to connect to real-time updates. Status changes may be delayed.",
+          variant: "destructive"
+        });
+      }
+    }
+  );
   
   // Mutación para crear un nuevo conector
   const createConnectorMutation = useMutation({
