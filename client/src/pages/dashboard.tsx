@@ -1,4 +1,4 @@
-import { FC } from "react";
+import { FC, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Sidebar from "@/components/layout/Sidebar";
 import { MainContent } from "@/components/layout/MainContent";
@@ -10,8 +10,14 @@ import ThreatIntelligence from "@/components/dashboard/ThreatIntelligence";
 import MitreTacticsSummary from "@/components/dashboard/MitreTacticsSummary";
 import ComplianceSummary from "@/components/dashboard/ComplianceSummary";
 import ReportGeneration from "@/components/dashboard/ReportGeneration";
+import SeverityDistribution from "@/components/dashboard/SeverityDistribution";
+import MttaMetrics from "@/components/dashboard/MttaMetrics";
+import PlaybookMetrics from "@/components/dashboard/PlaybookMetrics";
+import AgentMetrics from "@/components/dashboard/AgentMetrics";
+import DashboardFilters from "@/components/dashboard/DashboardFilters";
 import { getQueryFn } from "@/lib/queryClient"; 
 import { useToast } from "@/hooks/use-toast";
+import useWebSocket from "@/hooks/use-websocket";
 
 interface DashboardProps {
   user: {
@@ -25,14 +31,16 @@ interface DashboardProps {
 }
 
 const Dashboard: FC<DashboardProps> = ({ user, organization }) => {
-  // Inicializar el hook de toast
   const { toast } = useToast();
+  const [timeRange, setTimeRange] = useState<string>('24h');
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['/api/dashboard'],
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ['/api/dashboard', timeRange],
     queryFn: getQueryFn({ on401: 'returnNull' }),
     retry: 3,
     retryDelay: 1000,
+    refetchInterval: 30000, // Auto-refresh every 30 seconds
     onError: (error) => {
       console.error("Error fetching dashboard data:", error);
       toast({
@@ -42,6 +50,26 @@ const Dashboard: FC<DashboardProps> = ({ user, organization }) => {
       });
     }
   });
+
+  // WebSocket for real-time updates
+  useWebSocket(
+    data ? `ws://localhost:5000/ws/dashboard` : null,
+    {
+      onMessage: (message) => {
+        if (message.type === 'dashboard_update') {
+          toast({
+            title: "Dashboard Updated",
+            description: "Real-time data has been refreshed.",
+            variant: "default"
+          });
+          refetch();
+        }
+      },
+      onError: (error) => {
+        console.warn("WebSocket connection error:", error);
+      }
+    }
+  );
   
   // Extract metrics or use defaults if not loaded yet
   const metrics = data?.metrics || [];
@@ -81,13 +109,62 @@ const getMetric = (name: MetricName, defaultValue: number = 0, defaultSeverity: 
   const complianceScore = getMetric('Compliance Score', 0, 'low');
   const connectorHealth = getMetric('Connector Health', 0, 'info');
   const globalRiskScore = getMetric('Global Risk Score', 0, 'high');
+
+  const handleTimeRangeChange = (range: string) => {
+    setTimeRange(range);
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refetch();
+      toast({
+        title: "Dashboard Refreshed",
+        description: "All data has been updated successfully.",
+        variant: "default"
+      });
+    } catch (error) {
+      toast({
+        title: "Refresh Failed",
+        description: "Could not refresh dashboard data. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleDrillDown = (section: string) => {
+    switch (section) {
+      case 'alerts':
+        window.location.href = '/alerts';
+        break;
+      case 'incidents':
+        window.location.href = '/incidents';
+        break;
+      case 'connectors':
+        window.location.href = '/connectors';
+        break;
+      default:
+        break;
+    }
+  };
   
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar user={user} activeSection="dashboard" />
       
       <MainContent pageTitle="Security Dashboard" organization={organization}>
-        {/* Main KPI Metrics */}
+        {/* Dashboard Filters */}
+        <DashboardFilters
+          timeRange={timeRange}
+          onTimeRangeChange={handleTimeRangeChange}
+          onRefresh={handleRefresh}
+          isRefreshing={isRefreshing}
+          lastUpdated={data?.lastUpdated}
+        />
+
+        {/* Main KPI Metrics - Top Row */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <MetricCard 
             label="Active Alerts" 
@@ -99,7 +176,7 @@ const getMetric = (name: MetricName, defaultValue: number = 0, defaultSeverity: 
             severity="critical" 
             description="Number of unresolved security alerts currently requiring attention. High number indicates increased security activity."
             lastUpdated={new Date()}
-            onClick={() => window.location.href = '/alerts'}
+            onClick={() => handleDrillDown('alerts')}
           />
           
           <MetricCard 
@@ -112,7 +189,7 @@ const getMetric = (name: MetricName, defaultValue: number = 0, defaultSeverity: 
             severity="medium" 
             description="Number of security incidents currently under investigation or remediation. Measures current incident response workload."
             lastUpdated={new Date()}
-            onClick={() => window.location.href = '/incidents'}
+            onClick={() => handleDrillDown('incidents')}
           />
           
           <MetricCard 
@@ -140,7 +217,7 @@ const getMetric = (name: MetricName, defaultValue: number = 0, defaultSeverity: 
           />
         </div>
         
-        {/* Secondary Metrics */}
+        {/* Secondary Metrics - Second Row */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <MetricCard 
             label="MTTD" 
@@ -188,44 +265,80 @@ const getMetric = (name: MetricName, defaultValue: number = 0, defaultSeverity: 
             severity="info" 
             description="Percentage of data connectors operating normally. Monitors the health of security data collection infrastructure."
             lastUpdated={new Date()}
-            onClick={() => window.location.href = '/connectors'}
+            onClick={() => handleDrillDown('connectors')}
           />
         </div>
         
-        {/* Dashboard Grid */}
+        {/* Main Dashboard Grid */}
         <div className="grid grid-cols-12 gap-6">
-          {/* Threat Detection Summary */}
+          {/* Threat Detection Summary - 8 columns */}
           <div className="col-span-12 lg:col-span-8">
             <ThreatDetectionChart data={data?.alertsByDay || []} />
           </div>
           
-          {/* AI Insights */}
+          {/* Severity Distribution - 4 columns */}
+          <div className="col-span-12 lg:col-span-4">
+            <SeverityDistribution data={data?.severityDistribution || { critical: 0, high: 0, medium: 0, low: 0 }} />
+          </div>
+          
+          {/* MTTA/MTTR Metrics - 6 columns */}
+          <div className="col-span-12 md:col-span-6">
+            <MttaMetrics 
+              data={data?.mttaData || []}
+              currentMtta={mttd.value}
+              currentMttr={mttr.value}
+            />
+          </div>
+          
+          {/* Playbook Execution - 6 columns */}
+          <div className="col-span-12 md:col-span-6">
+            <PlaybookMetrics 
+              data={data?.playbookData || []}
+              todayStats={data?.playbookStats || { totalRuns: 0, successfulRuns: 0, failedRuns: 0, successRate: 0 }}
+            />
+          </div>
+          
+          {/* Agent Health - 8 columns */}
+          <div className="col-span-12 lg:col-span-8">
+            <AgentMetrics 
+              data={data?.agentHealthData || []}
+              currentStats={data?.agentStats || { 
+                onlineAgents: 0, 
+                totalAgents: 0, 
+                healthPercentage: 0, 
+                avgLatency: 0, 
+                topAgents: [] 
+              }}
+            />
+          </div>
+          
+          {/* AI Insights - 4 columns */}
           <div className="col-span-12 lg:col-span-4">
             <AIInsights insights={data?.aiInsights || []} isLoading={isLoading} />
           </div>
           
-          {/* MITRE ATT&CK Tactics Summary */}
+          {/* MITRE ATT&CK Tactics Summary - 4 columns */}
           <div className="col-span-12 md:col-span-6 lg:col-span-4">
             <MitreTacticsSummary tactics={data?.mitreTactics || []} isLoading={isLoading} />
           </div>
           
-          {/* Compliance Summary */}
+          {/* Compliance Summary - 4 columns */}
           <div className="col-span-12 md:col-span-6 lg:col-span-4">
             <ComplianceSummary items={data?.compliance || []} isLoading={isLoading} />
           </div>
           
-          {/* Recent Alerts */}
+          {/* Recent Alerts - 4 columns */}
           <div className="col-span-12 lg:col-span-4">
             <RecentAlerts alerts={data?.recentAlerts || []} isLoading={isLoading} />
           </div>
           
-          {/* Threat Intel Feed */}
+          {/* Threat Intel Feed - 4 columns */}
           <div className="col-span-12 md:col-span-6 lg:col-span-4">
             <ThreatIntelligence items={data?.threatIntel || []} isLoading={isLoading} />
           </div>
           
-          {/* Report Generation Component */}
-          <div className="col-span-12 md:col-span-6 lg:col-span-2">
+          {/* Report Generation Component - 8 columns */}
+          <div className="col-span-12 md:col-span-6 lg:col-span-8">
             <ReportGeneration recentReports={data?.recentReports || []} />
           </div>
         </div>

@@ -268,7 +268,7 @@ export class APIConnector extends BaseConnector {
             }
           };
           
-          // Incluir API key en header personalizado si está configurado
+          // Incluir API key en header personalizado si esta configurado
           if (this.config.apiKey && this.config.apiKeyHeader) {
             options.headers[this.config.apiKeyHeader] = this.config.apiKey;
           }
