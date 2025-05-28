@@ -89,6 +89,7 @@ import connectorsRoutes from "./routes/connectors";
 
 // Import analytics service
 import { getTimeSeries, getTopN } from './src/services/analyticsService';
+import { isAuthenticated, requireRole } from './middleware/auth';
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Set up authentication
