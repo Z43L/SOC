@@ -24,6 +24,9 @@ export class PlaybookExecutor {
                 console.error('[PlaybookExecutor] Error handling event:', error);
             }
         });
+        
+        // Log initialization
+        console.log('[PlaybookExecutor] Event listeners set up and ready to process events');
     }
 
     // Legacy action registration for backward compatibility

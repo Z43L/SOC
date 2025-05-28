@@ -15,6 +15,10 @@ export class EventBus extends EventEmitter {
         this.emit(event.type, event);
         this.emit('*', event); // wildcard listener
     }
+    // Alias for publishEvent to maintain compatibility
+    publish(event) {
+        return this.publishEvent(event);
+    }
     subscribeToEvent(eventType, handler) {
         this.on(eventType, handler);
     }

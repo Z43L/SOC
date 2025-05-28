@@ -391,6 +391,30 @@ export const insertPlaybookExecutionSchema = createInsertSchema(playbookExecutio
 export type InsertPlaybookExecution = z.infer<typeof insertPlaybookExecutionSchema>;
 export type PlaybookExecution = typeof playbookExecutions.$inferSelect;
 
+// Playbook Bindings for SOAR automatic triggering
+export const playbookBindings = pgTable("playbook_bindings", {
+  id: serial("id").primaryKey(),
+  eventType: text("event_type").notNull(), // Type of event that triggers the playbook
+  predicate: text("predicate"), // JSONata/JQ expression for filtering events
+  playbookId: integer("playbook_id").references(() => playbooks.id).notNull(),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  isActive: boolean("is_active").notNull().default(true),
+  description: text("description"),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  priority: integer("priority").default(0), // Higher values mean higher priority
+});
+
+export const insertPlaybookBindingSchema = createInsertSchema(playbookBindings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPlaybookBinding = z.infer<typeof insertPlaybookBindingSchema>;
+export type PlaybookBinding = typeof playbookBindings.$inferSelect;
+
 // Agent Status Types
 export const AgentStatusTypes = z.enum(['active', 'inactive', 'warning', 'error']);
 export type AgentStatusType = z.infer<typeof AgentStatusTypes>;

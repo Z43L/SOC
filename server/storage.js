@@ -99,7 +99,7 @@ export class DatabaseStorage {
         // Publish SOAR event for alert creation
         try {
             const { eventBus } = await import('./src/services/eventBus');
-            eventBus.publish({
+            const event = {
                 type: 'alert.created',
                 entityId: alert.id,
                 entityType: 'alert',
@@ -113,7 +113,16 @@ export class DatabaseStorage {
                     hostId: alert.metadata?.hostId,
                     hostname: alert.metadata?.hostname,
                 }
-            });
+            };
+            eventBus.publish(event);
+            
+            // Also publish to Redis Stream if PlaybookTriggerEngine is available
+            try {
+                const { playbookTriggerEngine } = await import('./src/services/PlaybookTriggerEngine');
+                await playbookTriggerEngine.publishEventToStream(event);
+            } catch (streamError) {
+                console.error('[Storage] Error publishing to Redis Stream:', streamError);
+            }
         }
         catch (error) {
             console.error('[Storage] Error publishing alert.created event:', error);
