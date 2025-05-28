@@ -302,6 +302,25 @@ export const insertPlaybookExecutionSchema = createInsertSchema(playbookExecutio
     completedAt: true,
     executionTime: true,
 });
+// Playbook Bindings for SOAR automatic triggering
+export const playbookBindings = pgTable("playbook_bindings", {
+    id: serial("id").primaryKey(),
+    eventType: text("event_type").notNull(), // Type of event that triggers the playbook
+    predicate: text("predicate"), // JSONata/JQ expression for filtering events
+    playbookId: integer("playbook_id").references(() => playbooks.id).notNull(),
+    createdBy: integer("created_by").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+    isActive: boolean("is_active").notNull().default(true),
+    description: text("description"),
+    organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+    priority: integer("priority").default(0), // Higher values mean higher priority
+});
+export const insertPlaybookBindingSchema = createInsertSchema(playbookBindings).omit({
+    id: true,
+    createdAt: true,
+    updatedAt: true,
+});
 // Agent Status Types
 export const AgentStatusTypes = z.enum(['active', 'inactive', 'warning', 'error']);
 // Agent schema - para gestionar los agentes instalados en sistemas cliente
