@@ -3,7 +3,7 @@ set -e
 
 # Wait for database to be ready
 echo "Waiting for database to be ready..."
-until nc -z db 5432; do
+until nc.openbsd -z db 5432; do
   echo "Database is not ready yet. Waiting..."
   sleep 2
 done

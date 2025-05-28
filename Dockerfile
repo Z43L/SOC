@@ -1,30 +1,28 @@
 # Dockerfile para el agente SOC-Inteligente para Linux
 
-# Usar una imagen base de Node.js
-FROM node:18-alpine
+# Build stage
+FROM node:18-slim AS builder
 
-RUN apk add --no-cache \
+# Update repositories and install build dependencies
+RUN apt-get update && apt-get install -y \
     bash \
     curl \
     git \
-    openssh \
-    python3 \
-    py3-pip \
-    zip \
-    netcat-openbsd \
     make \
     g++ \
-    sqlite
+    python3 \
+    sqlite3 \
+    netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
+
 # Establecer el directorio de trabajo dentro del contenedor
 WORKDIR /usr/src/app
 
 # Copiar los archivos necesarios al contenedor
 COPY package*.json ./
 
-# Instalar las dependencias
+# Instalar todas las dependencias (incluyendo devDependencies)
 RUN npm install
-RUN npm install express zod node-cron sqlite3 && npm install --save-dev @types/node @types/express @types/node-cron
-RUN npm rebuild sqlite3
 
 # Copiar el resto de los archivos
 COPY . .
@@ -36,8 +34,29 @@ RUN npm run build
 RUN mkdir -p dist/server/integrations/enrichers
 RUN cp server/enrichers.yaml dist/server/ 2>/dev/null || echo "enrichers.yaml not found, skipping"
 
-# Skip tests for now (can be re-enabled when jest is properly configured)
-# RUN npm test
+# Production stage
+FROM node:18-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    bash \
+    curl \
+    netcat-openbsd \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Establecer el directorio de trabajo dentro del contenedor
+WORKDIR /usr/src/app
+
+# Copiar los archivos necesarios al contenedor
+COPY package*.json ./
+
+# Instalar solo dependencias de producción
+RUN npm install --production && npm cache clean --force
+
+# Copiar la aplicación construida desde el build stage
+COPY --from=builder /usr/src/app/dist ./dist
+COPY --from=builder /usr/src/app/client/dist ./client/dist
 
 # Exponer el puerto necesario para la aplicación
 EXPOSE 5000
