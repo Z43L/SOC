@@ -17,6 +17,8 @@ import cron from "node-cron";
 import { log } from "./vite";
 // Importar el módulo scheduler para actualizaciones automáticas
 import { updateAllData, updateSystemMetrics } from "./integrations/scheduler";
+// Importar real-time monitor para WebSocket updates
+import { RealtimeMonitor } from "./integrations/connectors/real-time-monitor";
 import * as path from 'path';
 // Importar servicios avanzados de IA
 import { aiQueue } from "./integrations/ai-processing-queue";
@@ -463,6 +465,19 @@ export async function registerRoutes(app) {
             };
             // Procesar la alerta con enriquecimiento automático de Threat Intelligence
             const alert = await processNewAlertWithEnrichment(newAlert);
+            // Broadcast new alert via WebSocket for real-time dashboard updates
+            try {
+                const realtimeMonitor = RealtimeMonitor.getInstance();
+                realtimeMonitor.broadcastAlertUpdate(alert);
+                realtimeMonitor.broadcastDashboardUpdate({
+                    type: 'new_alert',
+                    alert,
+                    timestamp: new Date().toISOString()
+                });
+            }
+            catch (error) {
+                log(`Error broadcasting alert update: ${error instanceof Error ? error.message : 'unknown'}`, 'alerts');
+            }
             // Si OpenAI está configurado, generar análisis automáticamente
             if (isOpenAIConfigured()) {
                 // No esperamos - ejecutar en segundo plano
@@ -704,6 +719,19 @@ export async function registerRoutes(app) {
                 ...(relatedAlerts ? { relatedAlerts: relatedAlerts } : {}),
                 ...(aiAnalysis ? { aiAnalysis: aiAnalysis } : {})
             });
+            // Broadcast new incident via WebSocket for real-time dashboard updates
+            try {
+                const realtimeMonitor = RealtimeMonitor.getInstance();
+                realtimeMonitor.broadcastIncidentUpdate(incident);
+                realtimeMonitor.broadcastDashboardUpdate({
+                    type: 'new_incident',
+                    incident,
+                    timestamp: new Date().toISOString()
+                });
+            }
+            catch (error) {
+                log(`Error broadcasting incident update: ${error instanceof Error ? error.message : 'unknown'}`, 'incidents');
+            }
             res.status(201).json(incident);
         }
         catch (error) {

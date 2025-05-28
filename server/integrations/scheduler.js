@@ -7,6 +7,7 @@ import { log } from "../vite";
 import { storage } from "../storage";
 import { importAllFeeds } from "./threatFeeds";
 import { importAllAlerts } from "./alerts";
+import { RealtimeMonitor } from "./connectors/real-time-monitor";
 /**
  * Actualiza todos los datos del sistema (amenazas y alertas)
  * @param organizationId El ID de la organización para la cual actualizar datos
@@ -221,6 +222,18 @@ export async function updateSystemMetrics(organizationId) {
             organizationId // Añadir organizationId
         });
         log(`Métricas actualizadas: ${updatedMetricNames.join(', ')}`, 'scheduler');
+        // Broadcast dashboard update via WebSocket
+        try {
+            const realtimeMonitor = RealtimeMonitor.getInstance();
+            realtimeMonitor.broadcastDashboardUpdate({
+                type: 'metrics_updated',
+                metrics: updatedMetricNames,
+                timestamp: new Date().toISOString()
+            });
+        }
+        catch (error) {
+            log(`Error broadcasting dashboard update: ${error instanceof Error ? error.message : 'unknown'}`, 'scheduler');
+        }
         return {
             success: true,
             message: `${updatedMetricNames.length} métricas actualizadas correctamente.`,

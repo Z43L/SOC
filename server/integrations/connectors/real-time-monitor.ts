@@ -25,7 +25,7 @@ interface ConnectorMetrics {
 }
 
 interface RealtimeUpdate {
-  type: 'connector_status' | 'connector_metrics' | 'new_event' | 'error' | 'health_check';
+  type: 'connector_status' | 'connector_metrics' | 'new_event' | 'error' | 'health_check' | 'dashboard_update' | 'alert_update' | 'incident_update';
   connectorId?: string;
   data: any;
   timestamp: Date;
@@ -281,6 +281,39 @@ export class RealtimeMonitor extends EventEmitter {
           this.connectedClients.delete(ws);
         }
       }
+    });
+  }
+
+  /**
+   * Envía actualizaciones del dashboard a todos los clientes conectados
+   */
+  public broadcastDashboardUpdate(data: any): void {
+    this.broadcastUpdate({
+      type: 'dashboard_update',
+      data,
+      timestamp: new Date()
+    });
+  }
+
+  /**
+   * Envía actualizaciones de alertas a todos los clientes conectados
+   */
+  public broadcastAlertUpdate(alert: any): void {
+    this.broadcastUpdate({
+      type: 'alert_update',
+      data: alert,
+      timestamp: new Date()
+    });
+  }
+
+  /**
+   * Envía actualizaciones de incidentes a todos los clientes conectados
+   */
+  public broadcastIncidentUpdate(incident: any): void {
+    this.broadcastUpdate({
+      type: 'incident_update',
+      data: incident,
+      timestamp: new Date()
     });
   }
 

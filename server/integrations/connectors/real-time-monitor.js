@@ -228,6 +228,36 @@ export class RealtimeMonitor extends EventEmitter {
         });
     }
     /**
+     * Envía actualizaciones del dashboard a todos los clientes conectados
+     */
+    broadcastDashboardUpdate(data) {
+        this.broadcastUpdate({
+            type: 'dashboard_update',
+            data,
+            timestamp: new Date()
+        });
+    }
+    /**
+     * Envía actualizaciones de alertas a todos los clientes conectados
+     */
+    broadcastAlertUpdate(alert) {
+        this.broadcastUpdate({
+            type: 'alert_update',
+            data: alert,
+            timestamp: new Date()
+        });
+    }
+    /**
+     * Envía actualizaciones de incidentes a todos los clientes conectados
+     */
+    broadcastIncidentUpdate(incident) {
+        this.broadcastUpdate({
+            type: 'incident_update',
+            data: incident,
+            timestamp: new Date()
+        });
+    }
+    /**
      * Envía una actualización específica a un cliente
      */
     sendUpdateToClient(ws, update) {

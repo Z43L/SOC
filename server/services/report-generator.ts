@@ -632,7 +632,7 @@ export class ReportGeneratorService {
         totalThreats: threatIntel.length,
         bySeverity: this.groupBy(threatIntel, 'severity'),
         byType: this.groupBy(threatIntel, 'type'),
-        activeFee ds: threatFeeds.filter(f => f.isActive).length,
+        activeFeeds: threatFeeds.filter(f => f.isActive).length,
         recentThreats: threatIntel
           .filter(t => new Date(t.createdAt) >= periodFrom)
           .slice(0, 10)
