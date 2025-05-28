@@ -92,40 +92,40 @@ export class SoarWebSocketService {
 
   private setupEventListeners(): void {
     // Listen for playbook execution events
-    eventBus.subscribe('playbook.execution.started', (event) => {
+    eventBus.subscribeToEvent('playbook.execution.started', (event) => {
       this.broadcastExecutionUpdate(event.data.organizationId, 'execution:started', event.data);
     });
 
-    eventBus.subscribe('playbook.execution.completed', (event) => {
+    eventBus.subscribeToEvent('playbook.execution.completed', (event) => {
       this.broadcastExecutionUpdate(event.data.organizationId, 'execution:completed', event.data);
     });
 
-    eventBus.subscribe('playbook.execution.failed', (event) => {
+    eventBus.subscribeToEvent('playbook.execution.failed', (event) => {
       this.broadcastExecutionUpdate(event.data.organizationId, 'execution:failed', event.data);
     });
 
-    eventBus.subscribe('playbook.step.started', (event) => {
+    eventBus.subscribeToEvent('playbook.step.started', (event) => {
       this.broadcastExecutionUpdate(event.data.organizationId, 'step:started', event.data);
     });
 
-    eventBus.subscribe('playbook.step.completed', (event) => {
+    eventBus.subscribeToEvent('playbook.step.completed', (event) => {
       this.broadcastExecutionUpdate(event.data.organizationId, 'step:completed', event.data);
     });
 
-    eventBus.subscribe('playbook.step.failed', (event) => {
+    eventBus.subscribeToEvent('playbook.step.failed', (event) => {
       this.broadcastExecutionUpdate(event.data.organizationId, 'step:failed', event.data);
     });
 
     // Listen for playbook management events
-    eventBus.subscribe('playbook.created', (event) => {
+    eventBus.subscribeToEvent('playbook.created', (event) => {
       this.broadcastPlaybookUpdate(event.data.organizationId, 'playbook:created', event.data);
     });
 
-    eventBus.subscribe('playbook.updated', (event) => {
+    eventBus.subscribeToEvent('playbook.updated', (event) => {
       this.broadcastPlaybookUpdate(event.data.organizationId, 'playbook:updated', event.data);
     });
 
-    eventBus.subscribe('playbook.deleted', (event) => {
+    eventBus.subscribeToEvent('playbook.deleted', (event) => {
       this.broadcastPlaybookUpdate(event.data.organizationId, 'playbook:deleted', event.data);
     });
   }
@@ -244,11 +244,17 @@ export class SoarWebSocketService {
     const { playbookId, sampleData } = data;
     
     // Emit test trigger event
-    eventBus.emit('playbook.test.trigger', {
-      playbookId,
-      sampleData,
-      userId: user.id,
+    eventBus.publishEvent({
+      type: 'playbook.test.trigger',
+      entityId: playbookId,
+      entityType: 'playbook',
       organizationId: user.organizationId,
+      timestamp: new Date(),
+      data: {
+        playbookId,
+        sampleData,
+        userId: user.id,
+      }
     });
 
     socket.emit('test:trigger:started', { playbookId });
