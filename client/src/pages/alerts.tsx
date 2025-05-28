@@ -1,5 +1,6 @@
-import { FC, useState } from "react";
+import { FC, useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { DateRange } from "react-day-picker";
 import Sidebar from "@/components/layout/Sidebar";
 import { MainContent } from "@/components/layout/MainContent";
 import { Alert, SeverityTypes } from "@shared/schema";
@@ -18,8 +19,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { DataTable, Column } from "@/components/ui/data-table/data-table";
+import { 
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription
+} from "@/components/ui/sheet";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import { useTenant } from "@/contexts/TenantContext";
+import { AlertDetail } from "@/components/alerts/AlertDetail";
+import { GroupAlertsDialog } from "@/components/alerts/GroupAlertsDialog";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Filter, Users, Clock, ChevronDown, BellRing, AlertCircle } from "lucide-react";
 
 interface AlertsProps {
   user: {
@@ -33,9 +50,27 @@ interface AlertsProps {
 }
 
 const Alerts: FC<AlertsProps> = ({ user, organization }) => {
-  const [filterSeverity, setFilterSeverity] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
+  // Use the TenantContext for organization-specific data
+  const { organizationId, userRole } = useTenant();
+
+  // State for filters
+  const [severityFilters, setSeverityFilters] = useState<string[]>([]);
+  const [sourceFilter, setSourceFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<string>('all');
+  
+  // State for alert creation and detail view
   const [createAlertOpen, setCreateAlertOpen] = useState(false);
+  const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
+  const [isDetailSheetOpen, setIsDetailSheetOpen] = useState(false);
+  
+  // State for bulk actions
+  const [selectedAlerts, setSelectedAlerts] = useState<Alert[]>([]);
+  const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false);
+  
+  // State for the new alert form
   const [newAlert, setNewAlert] = useState({
     title: '',
     description: '',
@@ -44,12 +79,30 @@ const Alerts: FC<AlertsProps> = ({ user, organization }) => {
     sourceIp: '',
     destinationIp: ''
   });
+  
   const { toast } = useToast();
   
+  // Fetch alerts data
   const { data: alerts = [], isLoading } = useQuery<Alert[]>({
-    queryKey: ['/api/alerts'],
+    queryKey: ['/api/alerts', organizationId],
   });
   
+  // Fetch users for assignment
+  const { data: users = [] } = useQuery<{id: number, name: string, role: string}[]>({
+    queryKey: ['/api/users', organizationId],
+  });
+
+  // Mock data for sources/connectors 
+  const availableSources = [
+    { id: 'all', name: 'All Sources' },
+    { id: 'firewall', name: 'Firewall' },
+    { id: 'endpoint', name: 'EDR' },
+    { id: 'siem', name: 'SIEM' },
+    { id: 'manual', name: 'Manual Entry' },
+    { id: 'email', name: 'Email Security' },
+  ];
+  
+  // Mutation for creating new alerts
   const createAlertMutation = useMutation({
     mutationFn: async (alertData: typeof newAlert) => {
       const response = await apiRequest('POST', '/api/alerts', alertData);
@@ -73,6 +126,105 @@ const Alerts: FC<AlertsProps> = ({ user, organization }) => {
     }
   });
   
+  // Mutation for updating alert status
+  const updateAlertStatusMutation = useMutation({
+    mutationFn: async ({ alertId, status }: { alertId: number, status: string }) => {
+      const response = await apiRequest('PUT', `/api/alerts/${alertId}`, { status });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/alerts'] });
+      toast({
+        title: "Alert Updated",
+        description: "The alert status has been updated successfully.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error Updating Alert",
+        description: error.toString(),
+        variant: "destructive",
+      });
+    }
+  });
+  
+  // Mutation for assigning alerts
+  const assignAlertMutation = useMutation({
+    mutationFn: async ({ alertId, userId }: { alertId: number, userId: number | null }) => {
+      const response = await apiRequest('PUT', `/api/alerts/${alertId}/assign`, { 
+        assignedTo: userId 
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/alerts'] });
+      toast({
+        title: "Alert Assigned",
+        description: "The alert has been assigned successfully.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error Assigning Alert",
+        description: error.toString(),
+        variant: "destructive",
+      });
+    }
+  });
+  
+  // Mutation for bulk actions
+  const bulkUpdateAlertsMutation = useMutation({
+    mutationFn: async ({ alertIds, status }: { alertIds: number[], status: string }) => {
+      const response = await apiRequest('PUT', `/api/alerts/bulk`, { 
+        alertIds, 
+        status 
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/alerts'] });
+      setSelectedAlerts([]);
+      toast({
+        title: "Alerts Updated",
+        description: "The selected alerts have been updated successfully.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error Updating Alerts",
+        description: error.toString(),
+        variant: "destructive",
+      });
+    }
+  });
+  
+  // Mutation for bulk assignments
+  const bulkAssignAlertsMutation = useMutation({
+    mutationFn: async ({ alertIds, userId }: { alertIds: number[], userId: number | null }) => {
+      const response = await apiRequest('PUT', `/api/alerts/bulk/assign`, { 
+        alertIds, 
+        assignedTo: userId
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/alerts'] });
+      setSelectedAlerts([]);
+      toast({
+        title: "Alerts Assigned",
+        description: "The selected alerts have been assigned successfully.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error Assigning Alerts",
+        description: error.toString(),
+        variant: "destructive",
+      });
+    }
+  });
+  
+  // Reset form for new alerts
   const resetNewAlertForm = () => {
     setNewAlert({
       title: '',
@@ -84,6 +236,7 @@ const Alerts: FC<AlertsProps> = ({ user, organization }) => {
     });
   };
   
+  // Handler for creating a new alert
   const handleCreateAlert = () => {
     if (!newAlert.title || !newAlert.description) {
       toast({
@@ -97,57 +250,273 @@ const Alerts: FC<AlertsProps> = ({ user, organization }) => {
     createAlertMutation.mutate(newAlert);
   };
   
+  // Handler for changing alert status in detail view
+  const handleStatusChange = (alertId: number, newStatus: string) => {
+    updateAlertStatusMutation.mutate({ alertId, status: newStatus });
+  };
+  
+  // Handler for assigning alerts in detail view
+  const handleAssigneeChange = (alertId: number, assigneeId: number | null) => {
+    assignAlertMutation.mutate({ alertId, userId: assigneeId });
+  };
+  
+  // Handler for bulk acknowledging alerts
+  const handleBulkAcknowledge = () => {
+    const alertIds = selectedAlerts.map(alert => alert.id as number);
+    bulkUpdateAlertsMutation.mutate({ alertIds, status: 'acknowledged' });
+  };
+  
+  // Handler for bulk dismissing alerts
+  const handleBulkDismiss = () => {
+    const alertIds = selectedAlerts.map(alert => alert.id as number);
+    bulkUpdateAlertsMutation.mutate({ alertIds, status: 'resolved' });
+  };
+  
+  // Handler for bulk assigning alerts
+  const handleBulkAssign = (userId: number | null) => {
+    const alertIds = selectedAlerts.map(alert => alert.id as number);
+    bulkAssignAlertsMutation.mutate({ alertIds, userId });
+  };
+  
+  // Handler for opening an alert detail view
+  const handleAlertClick = (alert: Alert) => {
+    setSelectedAlert(alert);
+    setIsDetailSheetOpen(true);
+  };
+  
+  // Handler for input changes in the new alert form
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setNewAlert(prev => ({ ...prev, [name]: value }));
   };
   
+  // Handler for select changes in the new alert form
   const handleSelectChange = (name: string, value: string) => {
     setNewAlert(prev => ({ ...prev, [name]: value }));
   };
   
+  // Handler for grouping alerts
+  const handleGroupAlerts = (keyField: string) => {
+    // In a real implementation, this would group alerts by the specified field
+    // For now, let's show a notification about what would happen
+    toast({
+      title: "Alerts Grouped",
+      description: `${selectedAlerts.length} alerts have been grouped by ${keyField}.`,
+    });
+    setSelectedAlerts([]);
+  };
+  
+  // Handler for toggling severity filters
+  const handleSeverityFilterChange = (severity: string, checked: boolean) => {
+    setSeverityFilters(prev => {
+      if (checked) {
+        return [...prev, severity];
+      } else {
+        return prev.filter(s => s !== severity);
+      }
+    });
+  };
+
+  // Count of unreviewed and critical alerts for tabs
+  const unreviewedCount = alerts.filter(a => a.status === 'new').length;
+  const criticalCount = alerts.filter(a => a.severity === 'critical').length;
+  
+  // Apply all filters to the alerts
   const filteredAlerts = alerts.filter(alert => {
-    const matchesSeverity = filterSeverity === 'all' || alert.severity === filterSeverity;
-    const matchesStatus = filterStatus === 'all' || alert.status === filterStatus;
-    return matchesSeverity && matchesStatus;
+    // Tab filters
+    if (activeTab === 'unreviewed' && alert.status !== 'new') return false;
+    if (activeTab === 'critical' && alert.severity !== 'critical') return false;
+    
+    // Severity filters
+    if (severityFilters.length > 0 && !severityFilters.includes(alert.severity)) return false;
+    
+    // Status filter
+    if (statusFilter !== 'all' && alert.status !== statusFilter) return false;
+    
+    // Source filter
+    if (sourceFilter !== 'all' && alert.source !== sourceFilter) return false;
+    
+    // Date range filter
+    if (dateRange?.from) {
+      const alertDate = new Date(alert.timestamp);
+      if (alertDate < dateRange.from) return false;
+      if (dateRange.to && alertDate > dateRange.to) return false;
+    }
+    
+    // Search query filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      return (
+        alert.title.toLowerCase().includes(query) ||
+        alert.description.toLowerCase().includes(query) ||
+        alert.source.toLowerCase().includes(query) ||
+        (alert.sourceIp && alert.sourceIp.toLowerCase().includes(query))
+      );
+    }
+    
+    return true;
   });
+
+  // Define columns for DataTable
+  const columns: Column<Alert>[] = [
+    {
+      id: "severity",
+      accessorKey: "severity",
+      header: "Severity",
+      cell: ({ row }) => (
+        <span className={getSeverityBadge(row.severity)}>
+          <span className={`w-2 h-2 rounded-full bg-${row.severity === 'critical' ? 'destructive' : row.severity === 'high' ? 'red-500' : row.severity === 'medium' ? 'orange-500' : 'green-500'} mr-1.5`}></span>
+          {row.severity.charAt(0).toUpperCase() + row.severity.slice(1)}
+        </span>
+      ),
+      enableSorting: true,
+    },
+    {
+      id: "title",
+      accessorKey: "title",
+      header: "Alert",
+      cell: ({ row }) => (
+        <div>
+          <p className="text-sm font-medium text-text-primary">{row.title}</p>
+          <p className="text-xs text-muted-foreground">{row.description}</p>
+        </div>
+      ),
+      enableSorting: true,
+    },
+    {
+      id: "source",
+      accessorKey: "source",
+      header: "Source",
+      cell: ({ row }) => <span className="text-sm text-muted-foreground">{row.source}</span>,
+      enableSorting: true,
+    },
+    {
+      id: "timestamp",
+      accessorKey: "timestamp",
+      header: "Time",
+      cell: ({ row }) => <span className="text-sm text-muted-foreground">{formatTimeAgo(row.timestamp)}</span>,
+      enableSorting: true,
+    },
+    {
+      id: "status",
+      accessorKey: "status",
+      header: "Status",
+      cell: ({ row }) => (
+        <span className={getStatusBadge(row.status)}>
+          {row.status.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
+        </span>
+      ),
+      enableSorting: true,
+    },
+    {
+      id: "assignedTo",
+      accessorKey: "assignedTo",
+      header: "Assigned To",
+      cell: ({ row }) => {
+        const assignee = users.find(u => u.id === row.assignedTo);
+        return <span className="text-sm text-muted-foreground">{assignee?.name || 'Unassigned'}</span>;
+      },
+      enableSorting: true,
+    }
+  ];
+  
+  // Bulk action buttons for DataTable
+  const bulkActions = [
+    {
+      label: "Acknowledge",
+      onClick: handleBulkAcknowledge,
+    },
+    {
+      label: "Dismiss",
+      onClick: handleBulkDismiss,
+    },
+    {
+      label: "Group Similar",
+      onClick: () => setIsGroupDialogOpen(true),
+    }
+  ];
   
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar user={user} activeSection="alerts" />
       
       <MainContent pageTitle="Security Alerts" organization={organization}>
+        <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab} className="mb-6">
+          <TabsList>
+            <TabsTrigger value="all">All Alerts</TabsTrigger>
+            <TabsTrigger value="unreviewed" className="flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              Unreviewed <Badge variant="outline" className="ml-1">{unreviewedCount}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="critical" className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4" />
+              Critical <Badge variant="outline" className="ml-1">{criticalCount}</Badge>
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        
         {/* Filters */}
         <div className="bg-background-card rounded-lg border border-gray-800 p-4 mb-6">
           <div className="flex flex-wrap gap-4 items-center">
-            <div>
-              <label className="text-xs text-muted-foreground mr-2">Severity</label>
-              <select 
-                className="bg-background border border-gray-700 rounded px-2 py-1 text-sm"
-                value={filterSeverity}
-                onChange={(e) => setFilterSeverity(e.target.value)}
-              >
-                <option value="all">All Severities</option>
-                <option value="critical">Critical</option>
-                <option value="high">High</option>
-                <option value="medium">Medium</option>
-                <option value="low">Low</option>
-              </select>
+            <div className="flex-1">
+              <Input
+                placeholder="Search alerts..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full"
+              />
             </div>
             
             <div>
-              <label className="text-xs text-muted-foreground mr-2">Status</label>
-              <select 
-                className="bg-background border border-gray-700 rounded px-2 py-1 text-sm"
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
+              <Select
+                value={sourceFilter}
+                onValueChange={setSourceFilter}
               >
-                <option value="all">All Statuses</option>
-                <option value="new">New</option>
-                <option value="in_progress">In Progress</option>
-                <option value="acknowledged">Acknowledged</option>
-                <option value="resolved">Resolved</option>
-              </select>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="All Sources" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableSources.map(source => (
+                    <SelectItem key={source.id} value={source.id}>
+                      {source.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
+              <DateRangePicker
+                dateRange={dateRange}
+                onDateRangeChange={setDateRange}
+              />
+            </div>
+            
+            <div className="space-x-2">
+              <Button variant="outline" className="gap-2" onClick={() => {
+                // Clear all filters
+                setSeverityFilters([]);
+                setSourceFilter('all');
+                setStatusFilter('all');
+                setDateRange(undefined);
+                setSearchQuery('');
+              }}>
+                <Filter className="h-4 w-4" />
+                Clear Filters
+              </Button>
+              
+              <Button variant="outline" className="gap-2" onClick={() => {
+                // Toggle checkbox dialog for severity filters
+                // For simplicity, we'll handle this inline for now
+                const dialog = document.getElementById('severity-filter-dialog');
+                if (dialog) {
+                  dialog.style.display = dialog.style.display === 'none' ? 'block' : 'none';
+                }
+              }}>
+                <Filter className="h-4 w-4" />
+                Severity
+                <ChevronDown className="h-4 w-4" />
+              </Button>
             </div>
             
             <div className="ml-auto">
@@ -156,97 +525,58 @@ const Alerts: FC<AlertsProps> = ({ user, organization }) => {
               </Button>
             </div>
           </div>
+          
+          {/* Severity Filter Checkboxes (hidden by default) */}
+          <div id="severity-filter-dialog" className="mt-4 p-4 border border-gray-700 rounded-md shadow-md hidden">
+            <h4 className="text-sm font-medium mb-2">Filter by Severity</h4>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="filter-critical"
+                  checked={severityFilters.includes('critical')}
+                  onCheckedChange={(checked) => handleSeverityFilterChange('critical', checked as boolean)}
+                />
+                <Label htmlFor="filter-critical">Critical</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="filter-high"
+                  checked={severityFilters.includes('high')}
+                  onCheckedChange={(checked) => handleSeverityFilterChange('high', checked as boolean)}
+                />
+                <Label htmlFor="filter-high">High</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="filter-medium"
+                  checked={severityFilters.includes('medium')}
+                  onCheckedChange={(checked) => handleSeverityFilterChange('medium', checked as boolean)}
+                />
+                <Label htmlFor="filter-medium">Medium</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="filter-low"
+                  checked={severityFilters.includes('low')}
+                  onCheckedChange={(checked) => handleSeverityFilterChange('low', checked as boolean)}
+                />
+                <Label htmlFor="filter-low">Low</Label>
+              </div>
+            </div>
+          </div>
         </div>
         
-        {/* Alerts Table */}
+        {/* Alerts DataTable */}
         <div className="bg-background-card rounded-lg border border-gray-800">
-          <div className="p-4 border-b border-gray-800 flex items-center justify-between">
-            <h3 className="font-medium text-text-primary">All Alerts</h3>
-            <span className="text-xs text-muted-foreground">
-              {filteredAlerts.length} {filteredAlerts.length === 1 ? 'alert' : 'alerts'}
-            </span>
-          </div>
-          <div className="overflow-x-auto">
-            {isLoading ? (
-              <div className="flex items-center justify-center h-64">
-                <i className="fas fa-spinner fa-spin mr-2"></i>
-                <span>Loading alerts...</span>
-              </div>
-            ) : filteredAlerts.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
-                <i className="fas fa-bell-slash text-3xl mb-3"></i>
-                <p>No alerts match the selected filters</p>
-                {(filterSeverity !== 'all' || filterStatus !== 'all') && (
-                  <button 
-                    className="mt-3 text-primary hover:underline"
-                    onClick={() => {
-                      setFilterSeverity('all');
-                      setFilterStatus('all');
-                    }}
-                  >
-                    Clear filters
-                  </button>
-                )}
-              </div>
-            ) : (
-              <table className="min-w-full">
-                <thead>
-                  <tr className="text-left bg-background-lighter">
-                    <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Severity</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Alert</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Source</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Source IP</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Time</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Status</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-800">
-                  {filteredAlerts.map((alert) => (
-                    <tr key={alert.id} className="hover:bg-background-lighter">
-                      <td className="p-3">
-                        <span className={getSeverityBadge(alert.severity)}>
-                          <span className={`w-2 h-2 rounded-full bg-${alert.severity === 'critical' ? 'destructive' : alert.severity === 'high' ? 'red-500' : alert.severity === 'medium' ? 'orange-500' : 'green-500'} mr-1.5`}></span>
-                          {alert.severity.charAt(0).toUpperCase() + alert.severity.slice(1)}
-                        </span>
-                      </td>
-                      <td className="p-3">
-                        <div>
-                          <p className="text-sm font-medium text-text-primary">{alert.title}</p>
-                          <p className="text-xs text-muted-foreground">{alert.description}</p>
-                        </div>
-                      </td>
-                      <td className="p-3 text-sm text-muted-foreground">{alert.source}</td>
-                      <td className="p-3 text-sm text-muted-foreground">{alert.sourceIp || 'N/A'}</td>
-                      <td className="p-3 text-sm text-muted-foreground">{formatTimeAgo(alert.timestamp)}</td>
-                      <td className="p-3">
-                        <span className={getStatusBadge(alert.status)}>
-                          {alert.status.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
-                        </span>
-                      </td>
-                      <td className="p-3">
-                        <div className="flex space-x-2">
-                          <Link href={`/incident/${alert.id}`}>
-                            <a className="text-primary hover:text-opacity-80" title="Investigate">
-                              <i className="fas fa-search"></i>
-                            </a>
-                          </Link>
-                          {alert.severity === 'critical' && alert.status !== 'resolved' && (
-                            <button className="text-destructive hover:text-opacity-80" title="Isolate Host">
-                              <i className="fas fa-shield-alt"></i>
-                            </button>
-                          )}
-                          <button className="text-muted-foreground hover:text-primary" title="More Actions">
-                            <i className="fas fa-ellipsis-v"></i>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
+          <DataTable
+            data={filteredAlerts}
+            columns={columns}
+            onRowClick={handleAlertClick}
+            isLoading={isLoading}
+            selectable={true}
+            onSelectionChange={setSelectedAlerts}
+            actions={bulkActions}
+          />
         </div>
       </MainContent>
       
@@ -364,6 +694,35 @@ const Alerts: FC<AlertsProps> = ({ user, organization }) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      
+      {/* Alert Detail Sheet */}
+      <Sheet open={isDetailSheetOpen} onOpenChange={setIsDetailSheetOpen}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Alert Details</SheetTitle>
+            <SheetDescription>
+              View and manage alert information
+            </SheetDescription>
+          </SheetHeader>
+          
+          {selectedAlert && (
+            <AlertDetail
+              alert={selectedAlert}
+              onStatusChange={handleStatusChange}
+              onAssigneeChange={handleAssigneeChange}
+              availableUsers={users}
+            />
+          )}
+        </SheetContent>
+      </Sheet>
+      
+      {/* Group Alerts Dialog */}
+      <GroupAlertsDialog
+        isOpen={isGroupDialogOpen}
+        onClose={() => setIsGroupDialogOpen(false)}
+        selectedAlerts={selectedAlerts}
+        onGroupAlerts={handleGroupAlerts}
+      />
     </div>
   );
 };
