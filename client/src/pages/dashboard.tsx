@@ -9,6 +9,7 @@ import RecentAlerts from "@/components/dashboard/RecentAlerts";
 import ThreatIntelligence from "@/components/dashboard/ThreatIntelligence";
 import MitreTacticsSummary from "@/components/dashboard/MitreTacticsSummary";
 import ComplianceSummary from "@/components/dashboard/ComplianceSummary";
+import ReportGeneration from "@/components/dashboard/ReportGeneration";
 import { getQueryFn } from "@/lib/queryClient"; 
 import { useToast } from "@/hooks/use-toast";
 
@@ -96,6 +97,9 @@ const getMetric = (name: MetricName, defaultValue: number = 0, defaultSeverity: 
             changePercentage={activeAlerts.changePercentage} 
             progressPercent={activeAlerts.progressPercent} 
             severity="critical" 
+            description="Number of unresolved security alerts currently requiring attention. High number indicates increased security activity."
+            lastUpdated={new Date()}
+            onClick={() => window.location.href = '/alerts'}
           />
           
           <MetricCard 
@@ -106,6 +110,9 @@ const getMetric = (name: MetricName, defaultValue: number = 0, defaultSeverity: 
             changePercentage={openIncidents.changePercentage} 
             progressPercent={openIncidents.progressPercent} 
             severity="medium" 
+            description="Number of security incidents currently under investigation or remediation. Measures current incident response workload."
+            lastUpdated={new Date()}
+            onClick={() => window.location.href = '/incidents'}
           />
           
           <MetricCard 
@@ -116,6 +123,8 @@ const getMetric = (name: MetricName, defaultValue: number = 0, defaultSeverity: 
             changePercentage={globalRiskScore.changePercentage} 
             progressPercent={globalRiskScore.progressPercent} 
             severity="high" 
+            description="Overall security risk assessment on a scale of 0-100. Calculated based on active threats, vulnerabilities, and organizational exposure."
+            lastUpdated={new Date()}
           />
           
           <MetricCard 
@@ -126,6 +135,8 @@ const getMetric = (name: MetricName, defaultValue: number = 0, defaultSeverity: 
             changePercentage={assetsAtRisk.changePercentage} 
             progressPercent={assetsAtRisk.progressPercent} 
             severity="high" 
+            description="Number of IT assets (servers, endpoints, applications) with critical or high severity vulnerabilities or active threats."
+            lastUpdated={new Date()}
           />
         </div>
         
@@ -139,6 +150,8 @@ const getMetric = (name: MetricName, defaultValue: number = 0, defaultSeverity: 
             changePercentage={mttd.changePercentage} 
             progressPercent={mttd.progressPercent} 
             severity="info" 
+            description="Mean Time to Detect - Average time (in hours) between a security incident occurring and its detection. Lower is better."
+            lastUpdated={new Date()}
           />
           
           <MetricCard 
@@ -149,6 +162,8 @@ const getMetric = (name: MetricName, defaultValue: number = 0, defaultSeverity: 
             changePercentage={mttr.changePercentage} 
             progressPercent={mttr.progressPercent} 
             severity="medium" 
+            description="Mean Time to Respond/Remediate - Average time (in hours) to resolve a security incident after detection. Lower is better."
+            lastUpdated={new Date()}
           />
           
           <MetricCard 
@@ -159,6 +174,8 @@ const getMetric = (name: MetricName, defaultValue: number = 0, defaultSeverity: 
             changePercentage={complianceScore.changePercentage} 
             progressPercent={complianceScore.progressPercent} 
             severity="low" 
+            description="Security compliance status score (0-100) measuring adherence to regulatory frameworks and security policies."
+            lastUpdated={new Date()}
           />
           
           <MetricCard 
@@ -169,6 +186,9 @@ const getMetric = (name: MetricName, defaultValue: number = 0, defaultSeverity: 
             changePercentage={connectorHealth.changePercentage} 
             progressPercent={connectorHealth.progressPercent} 
             severity="info" 
+            description="Percentage of data connectors operating normally. Monitors the health of security data collection infrastructure."
+            lastUpdated={new Date()}
+            onClick={() => window.location.href = '/connectors'}
           />
         </div>
         
@@ -200,8 +220,13 @@ const getMetric = (name: MetricName, defaultValue: number = 0, defaultSeverity: 
           </div>
           
           {/* Threat Intel Feed */}
-          <div className="col-span-12 md:col-span-6 lg:col-span-6">
+          <div className="col-span-12 md:col-span-6 lg:col-span-4">
             <ThreatIntelligence items={data?.threatIntel || []} isLoading={isLoading} />
+          </div>
+          
+          {/* Report Generation Component */}
+          <div className="col-span-12 md:col-span-6 lg:col-span-2">
+            <ReportGeneration recentReports={data?.recentReports || []} />
           </div>
         </div>
       </MainContent>
