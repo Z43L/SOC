@@ -53,13 +53,13 @@ app.use((req, res, next) => {
     await registerRoutes(app);
     // Initialize WebSocket on HTTP server
     initWebSocket(httpServer);
-    
     // Initialize SOAR WebSocket service
     try {
-        const { initializeWebSocket } = await import('./src/services/SoarWebSocketService.js');
+        const { initializeWebSocket } = await import('./src/services/SoarWebSocketService');
         const soarWebSocket = initializeWebSocket(httpServer);
         console.log('[Server] SOAR WebSocket service initialized successfully');
-    } catch (error) {
+    }
+    catch (error) {
         console.error('[Server] Failed to initialize SOAR WebSocket service:', error);
     }
     app.use((err, _req, res, _next) => {
