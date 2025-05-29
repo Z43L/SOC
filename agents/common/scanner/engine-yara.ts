@@ -1,21 +1,25 @@
 import { ScanEngine, ScanResult, ScanTarget } from './types';
-import { spawn } from 'child_process';
-import fs from 'fs';
-import crypto from 'crypto';
+import { spawn, ChildProcess } from 'child_process';
+import * as fs from 'fs';
+import * as crypto from 'crypto';
 
 export default class YaraEngine implements ScanEngine {
   name = 'YARA';
   rulesDir = process.env.YARA_RULES_DIR || '/etc/agent/yara-rules';
 
+  async init(): Promise<void> {
+    // Optional: verify rules directory exists or create default rules
+  }
+
   async scan(target: ScanTarget): Promise<ScanResult[]> {
     if (!target.path) return [];
     return new Promise((resolve, reject) => {
-      const args = ['-r', this.rulesDir, target.path];
-      const proc = spawn('yara', args);
+      const args = ['-r', this.rulesDir, target.path].filter((arg): arg is string => arg !== undefined);
+      const proc: ChildProcess = spawn('yara', args);
       let stdout = '';
-      proc.stdout.on('data', data => { stdout += data.toString(); });
-      proc.stderr.on('data', data => { console.error(data.toString()); });
-      proc.on('error', err => reject(err));
+      proc.stdout?.on('data', (data: Buffer) => { stdout += data.toString(); });
+      proc.stderr?.on('data', (data: Buffer) => { console.error(data.toString()); });
+      proc.on('error', (err: Error) => reject(err));
       proc.on('close', async () => {
         const results: ScanResult[] = [];
         const lines = stdout.split(/\r?\n/);

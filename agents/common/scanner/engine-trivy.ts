@@ -1,23 +1,27 @@
 import { ScanEngine, ScanResult, ScanTarget } from './types';
-import { spawn } from 'child_process';
-import crypto from 'crypto';
-import fs from 'fs';
+import { spawn, ChildProcess } from 'child_process';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
 
 export default class TrivyEngine implements ScanEngine {
   name = 'Trivy';
 
+  async init(): Promise<void> {
+    // Optional: update vulnerability database
+  }
+
   async scan(target: ScanTarget): Promise<ScanResult[]> {
     if (!target.path) return [];
     return new Promise((resolve, reject) => {
-      const args = ['fs', '--quiet', '--format', 'json', target.path];
-      const proc = spawn('trivy', args, { maxBuffer: 10 * 1024 * 1024 });
+      const args = ['fs', '--quiet', '--format', 'json', target.path].filter((arg): arg is string => arg !== undefined);
+      const proc: ChildProcess = spawn('trivy', args, { stdio: ['pipe', 'pipe', 'pipe'] } as any);
       let stdout = '';
-      proc.stdout.on('data', data => { stdout += data.toString(); });
-      proc.stderr.on('data', data => {
+      proc.stdout?.on('data', (data: Buffer) => { stdout += data.toString(); });
+      proc.stderr?.on('data', (data: Buffer) => {
         const msg = data.toString();
         if (!msg.includes('No vulnerabilities found')) console.error(msg);
       });
-      proc.on('error', err => reject(err));
+      proc.on('error', (err: Error) => reject(err));
       proc.on('close', () => {
         try {
           const json = JSON.parse(stdout);

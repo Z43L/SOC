@@ -1,7 +1,7 @@
 import { ScanEngine, ScanResult, ScanTarget } from './types';
-import { spawn } from 'child_process';
-import crypto from 'crypto';
-import fs from 'fs';
+import { spawn, ChildProcess } from 'child_process';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
 
 export default class ClamAVEngine implements ScanEngine {
   name = 'ClamAV';
@@ -14,12 +14,12 @@ export default class ClamAVEngine implements ScanEngine {
   async scan(target: ScanTarget): Promise<ScanResult[]> {
     if (!target.path) return [];
     return new Promise((resolve, reject) => {
-      const args = ['--no-summary', target.path];
-      const proc = spawn('clamscan', args);
+      const args = ['--no-summary', target.path].filter((arg): arg is string => arg !== undefined);
+      const proc: ChildProcess = spawn('clamscan', args);
       let stdout = '';
-      proc.stdout.on('data', data => { stdout += data.toString(); });
-      proc.stderr.on('data', data => { console.error(data.toString()); });
-      proc.on('error', err => reject(err));
+      proc.stdout?.on('data', (data: Buffer) => { stdout += data.toString(); });
+      proc.stderr?.on('data', (data: Buffer) => { console.error(data.toString()); });
+      proc.on('error', (err: Error) => reject(err));
       proc.on('close', async () => {
         const results: ScanResult[] = [];
         const lines = stdout.split(/\r?\n/);
