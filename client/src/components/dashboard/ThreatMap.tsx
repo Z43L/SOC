@@ -72,14 +72,22 @@ const ThreatMap: FC<ThreatMapProps> = ({
 
   // Initialize map
   useEffect(() => {
+    let retryCount = 0;
+    const maxRetries = 10;
+    
     const initializeMap = async () => {
       try {
         // Check if DOM element exists before initializing
         const mapElement = document.getElementById('threat-map');
         if (!mapElement) {
-          console.warn('Map container element not found, retrying...');
-          setTimeout(initializeMap, 100);
-          return;
+          if (retryCount < maxRetries) {
+            retryCount++;
+            console.warn(`Map container element not found, retrying... (${retryCount}/${maxRetries})`);
+            setTimeout(initializeMap, 100);
+            return;
+          } else {
+            throw new Error('Map container element not found after multiple retries');
+          }
         }
 
         // Dynamic import to avoid SSR issues
@@ -98,9 +106,14 @@ const ThreatMap: FC<ThreatMapProps> = ({
           // Check if container has dimensions
           const containerRect = mapElement.getBoundingClientRect();
           if (containerRect.width === 0 || containerRect.height === 0) {
-            console.warn('Map container has zero dimensions, retrying...');
-            setTimeout(initializeMap, 200);
-            return;
+            if (retryCount < maxRetries) {
+              retryCount++;
+              console.warn(`Map container has zero dimensions, retrying... (${retryCount}/${maxRetries})`);
+              setTimeout(initializeMap, 200);
+              return;
+            } else {
+              throw new Error('Map container has zero dimensions after multiple retries');
+            }
           }
 
           // Initialize map centered on world view
