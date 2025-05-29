@@ -20,6 +20,10 @@ export interface UpdaterOptions {
   restartCommand?: string;
   platform?: string;
   arch?: string;
+  // Security options for signature verification
+  enableSignatureVerification?: boolean;
+  publicKeyPath?: string;
+  trustedCertificate?: string;
 }
 
 /**
@@ -78,7 +82,7 @@ export class Updater {
   /**
    * Descarga y verifica una nueva versión
    */
-  async downloadUpdate(downloadUrl: string, checksum: string): Promise<string> {
+  async downloadUpdate(downloadUrl: string, checksum: string, signatureUrl?: string): Promise<string> {
     // Crear directorio temporal
     const tmpDir = path.join(os.tmpdir(), `agent-update-${Date.now()}`);
     await fs.mkdir(tmpDir, { recursive: true });
@@ -87,11 +91,26 @@ export class Updater {
     const downloadPath = path.join(tmpDir, 'agent-new');
     await this.downloadFile(downloadUrl, downloadPath);
     
+    // Descargar firma si está disponible
+    let signaturePath: string | undefined;
+    if (signatureUrl && this.options.enableSignatureVerification) {
+      signaturePath = path.join(tmpDir, 'agent-new.sig');
+      await this.downloadFile(signatureUrl, signaturePath);
+    }
+    
     // Verificar checksum
     const fileChecksum = await this.calculateChecksum(downloadPath, this.options.checksumType!);
     
     if (fileChecksum !== checksum) {
       throw new Error(`Checksum verification failed. Expected: ${checksum}, Got: ${fileChecksum}`);
+    }
+    
+    // Verificar firma si está habilitada
+    if (signaturePath && this.options.enableSignatureVerification) {
+      const isSignatureValid = await this.verifySignature(downloadPath, signaturePath);
+      if (!isSignatureValid) {
+        throw new Error('Signature verification failed');
+      }
     }
     
     // Establecer permisos de ejecución
@@ -244,6 +263,38 @@ export class Updater {
         return 'arm';
       default:
         return arch;
+    }
+  }
+  
+  /**
+   * Verifica la firma digital del archivo descargado
+   */
+  private async verifySignature(filePath: string, signaturePath: string): Promise<boolean> {
+    if (!this.options.enableSignatureVerification || !this.options.publicKeyPath) {
+      return true; // Skip verification if not enabled
+    }
+    
+    try {
+      // Read the public key
+      const publicKey = await fs.readFile(this.options.publicKeyPath, 'utf8');
+      
+      // Read the signature
+      const signature = await fs.readFile(signaturePath);
+      
+      // Create a verify instance
+      const verify = crypto.createVerify('SHA256');
+      
+      // Read and update the verify with file content
+      const fileContent = await fs.readFile(filePath);
+      verify.update(fileContent);
+      
+      // Verify the signature
+      const isValid = verify.verify(publicKey, signature);
+      
+      return isValid;
+    } catch (error) {
+      console.error('Signature verification failed:', error);
+      return false;
     }
   }
   

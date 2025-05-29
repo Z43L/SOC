@@ -1,0 +1,25 @@
+[Unit]
+Description=SOC Intelligent Agent
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/opt/soc-agent/soc-agent
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=soc-agent
+
+# Security settings
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/etc/soc-agent /opt/soc-agent /var/log
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

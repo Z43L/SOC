@@ -2,6 +2,9 @@
  * Gestor de heartbeats
  */
 
+import * as os from 'os';
+import * as fs from 'fs/promises';
+import * as crypto from 'crypto';
 import { Transport } from './transport';
 import { MetricsCollector } from './metrics';
 import { SystemMetrics } from '../collectors/types';
@@ -17,6 +20,13 @@ export interface HeartbeatData {
   timestamp: string;
   metrics: SystemMetrics;
   lastError?: string;
+  // Enhanced telemetry data
+  version: string;
+  platform: string;
+  arch: string;
+  installationMethod?: string;
+  binaryChecksum?: string;
+  uptime: number;
 }
 
 /**
@@ -29,15 +39,21 @@ export class HeartbeatManager {
   private timer: NodeJS.Timeout | null = null;
   private lastError: string | null = null;
   private lastMetrics: SystemMetrics | null = null;
+  private startTime: number = Date.now();
+  private version: string;
+  private binaryChecksum: string | null = null;
 
   constructor(
     options: HeartbeatOptions,
     transport: Transport,
-    metricsCollector: MetricsCollector
+    metricsCollector: MetricsCollector,
+    version: string = '1.0.0'
   ) {
     this.options = options;
     this.transport = transport;
     this.metricsCollector = metricsCollector;
+    this.version = version;
+    this.calculateBinaryChecksum();
   }
 
   /**
@@ -69,6 +85,21 @@ export class HeartbeatManager {
   }
 
   /**
+   * Calcula el checksum del binario actual del agente
+   */
+  private async calculateBinaryChecksum(): Promise<void> {
+    try {
+      const binaryPath = process.execPath;
+      const fileContent = await fs.readFile(binaryPath);
+      const hash = crypto.createHash('sha256');
+      hash.update(fileContent);
+      this.binaryChecksum = hash.digest('hex');
+    } catch (error) {
+      console.warn('Could not calculate binary checksum:', error);
+    }
+  }
+
+  /**
    * Establece las métricas del sistema actuales
    */
   setSystemMetrics(metrics: SystemMetrics): void {
@@ -92,10 +123,19 @@ export class HeartbeatManager {
       return false;
     }
 
+    const uptime = Date.now() - this.startTime;
+    
     const heartbeatData: HeartbeatData = {
       agentId: this.options.agentId,
       timestamp: new Date().toISOString(),
-      metrics: this.lastMetrics
+      metrics: this.lastMetrics,
+      // Enhanced telemetry
+      version: this.version,
+      platform: os.platform(),
+      arch: os.arch(),
+      uptime,
+      binaryChecksum: this.binaryChecksum || undefined,
+      installationMethod: process.env.SOC_AGENT_INSTALL_METHOD || 'manual'
     };
 
     if (this.lastError) {
