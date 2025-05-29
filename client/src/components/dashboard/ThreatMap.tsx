@@ -74,9 +74,18 @@ const ThreatMap: FC<ThreatMapProps> = ({
   useEffect(() => {
     const initializeMap = async () => {
       try {
+        // Check if DOM element exists before initializing
+        const mapElement = document.getElementById('threat-map');
+        if (!mapElement) {
+          console.warn('Map container element not found, retrying...');
+          setTimeout(initializeMap, 100);
+          return;
+        }
+
         // Dynamic import to avoid SSR issues
         const L = await import('leaflet');
         const leaflet = L.default || L;
+        
         // Fix default markers
         delete (leaflet.Icon.Default.prototype as any)._getIconUrl;
         leaflet.Icon.Default.mergeOptions({
@@ -86,6 +95,14 @@ const ThreatMap: FC<ThreatMapProps> = ({
         });
 
         if (!mapRef.current) {
+          // Check if container has dimensions
+          const containerRect = mapElement.getBoundingClientRect();
+          if (containerRect.width === 0 || containerRect.height === 0) {
+            console.warn('Map container has zero dimensions, retrying...');
+            setTimeout(initializeMap, 200);
+            return;
+          }
+
           // Initialize map centered on world view
           const map = leaflet.map('threat-map', {
             center: [20, 0],
@@ -94,10 +111,18 @@ const ThreatMap: FC<ThreatMapProps> = ({
             attributionControl: false
           });
 
-          // Add tile layer (OpenStreetMap)
-          leaflet.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors'
-          }).addTo(map);
+          // Add tile layer (OpenStreetMap) with error handling
+          const tileLayer = leaflet.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 18,
+            errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+          });
+
+          tileLayer.on('tileerror', (e: any) => {
+            console.warn('Tile loading error:', e);
+          });
+
+          tileLayer.addTo(map);
 
           mapRef.current = map;
           setMapLoaded(true);
@@ -112,10 +137,12 @@ const ThreatMap: FC<ThreatMapProps> = ({
       }
     };
 
-    initializeMap();
+    // Add a small delay to ensure DOM is ready
+    const timeoutId = setTimeout(initializeMap, 50);
 
     // Cleanup
     return () => {
+      clearTimeout(timeoutId);
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -132,6 +159,12 @@ const ThreatMap: FC<ThreatMapProps> = ({
       try {
         const L = await import('leaflet');
         const leaflet = L.default || L;
+        
+        // Verify map is still valid
+        if (!mapRef.current || !mapRef.current.getContainer) {
+          console.warn('Map reference invalid during marker update');
+          return;
+        }
         
         // Clear existing markers
         mapRef.current.eachLayer((layer: any) => {
@@ -181,7 +214,9 @@ const ThreatMap: FC<ThreatMapProps> = ({
 
           // Add marker with slight delay for animation effect
           setTimeout(() => {
-            marker.addTo(mapRef.current);
+            if (mapRef.current) {
+              marker.addTo(mapRef.current);
+            }
           }, index * 50);
         });
 
