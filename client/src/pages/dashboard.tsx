@@ -52,12 +52,15 @@ const Dashboard: FC<DashboardProps> = ({ user, organization }) => {
     }
   });
 
-  // WebSocket para actualizaciones en tiempo real, pero no bloquea la UI si falla
+  // WebSocket para actualizaciones en tiempo real con control manual
   const {
-    connectionStatus
+    connectionStatus,
+    toggleConnection,
+    isManuallyDisabled
   } = useWebSocket(
     data ? `ws://${typeof window !== 'undefined' ? window.location.host : 'localhost:5000'}/ws/dashboard` : null,
     {
+      manualMode: true, // Enable manual mode
       onMessage: (message) => {
         if (message.type === 'dashboard_update') {
           toast({
@@ -157,9 +160,20 @@ const getMetric = (name: MetricName, defaultValue: number = 0, defaultSeverity: 
     <div className="flex h-screen overflow-hidden">
       <Sidebar user={user} activeSection="dashboard" />
       <MainContent pageTitle="Security Dashboard" organization={organization}>
-        {/* Indicador de estado de WebSocket, pero no bloquea la UI */}
-        <div className="mb-2 text-xs text-right text-gray-400">
-          WebSocket: {connectionStatus === 'connected' ? '🟢 Conectado' : connectionStatus === 'reconnecting' ? '🟠 Reconectando' : connectionStatus === 'failed' ? '🔴 Sin conexión' : '⚪ Desconectado'}
+        {/* WebSocket Status and Control */}
+        <div className="mb-2 flex items-center justify-between text-xs">
+          <div className="flex items-center space-x-2 text-gray-400">
+            <span>
+              WebSocket: {connectionStatus === 'connected' ? '🟢 Conectado' : connectionStatus === 'reconnecting' ? '🟠 Reconectando' : connectionStatus === 'failed' ? '🔴 Falló' : '⚪ Desconectado'}
+            </span>
+            <button
+              onClick={toggleConnection}
+              className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              disabled={connectionStatus === 'connecting' || connectionStatus === 'reconnecting'}
+            >
+              {isManuallyDisabled || connectionStatus === 'disconnected' || connectionStatus === 'failed' ? 'Conectar' : 'Desconectar'}
+            </button>
+          </div>
         </div>
         {/* Dashboard Filters */}
         <DashboardFilters
@@ -326,7 +340,7 @@ const getMetric = (name: MetricName, defaultValue: number = 0, defaultSeverity: 
           {/* Global Threat Map - 8 columns */}
           <div className="col-span-12 lg:col-span-8">
             <ThreatMap 
-              threats={data?.threatLocations || []}
+              threats={data?.threatLocations && data.threatLocations.length > 0 ? data.threatLocations : []}
               isLoading={isLoading}
               timeRange={timeRange}
               onLocationClick={(threat) => {

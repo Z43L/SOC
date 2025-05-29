@@ -141,7 +141,7 @@ router.get('/', isAuthenticated, async (req, res) => {
  * POST /api/connectors
  * Crea un nuevo conector
  */
-router.post('/', isAuthenticated, requireRole('ADMIN'), async (req, res) => {
+router.post('/', isAuthenticated, requireRole('admin'), async (req, res) => {
     try {
         const { credentials, ...configData } = req.body;
         // Validar configuración según tipo
@@ -242,7 +242,7 @@ router.get('/:id', isAuthenticated, requireOrgAccess, async (req, res) => {
  * PATCH /api/connectors/:id
  * Actualiza la configuración de un conector
  */
-router.patch('/:id', isAuthenticated, requireRole('ADMIN'), requireOrgAccess, async (req, res) => {
+router.patch('/:id', isAuthenticated, requireRole('admin'), requireOrgAccess, async (req, res) => {
     try {
         const { credentials, status, ...configUpdates } = req.body;
         // Si se incluye status, manejar pausa/activación
@@ -275,7 +275,7 @@ router.patch('/:id', isAuthenticated, requireRole('ADMIN'), requireOrgAccess, as
  * DELETE /api/connectors/:id
  * Elimina un conector
  */
-router.delete('/:id', isAuthenticated, requireRole('ADMIN'), requireOrgAccess, async (req, res) => {
+router.delete('/:id', isAuthenticated, requireRole('admin'), requireOrgAccess, async (req, res) => {
     try {
         await connectorManager.deleteConnector(req.params.id);
         res.json({ message: 'Conector eliminado exitosamente' });

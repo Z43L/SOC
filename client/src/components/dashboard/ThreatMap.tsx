@@ -332,60 +332,74 @@ const ThreatMap: FC<ThreatMapProps> = ({
             </div>
           )}
           
+          {!isLoading && threats.length === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center z-10">
+              <div className="text-center">
+                <Globe className="h-12 w-12 mx-auto text-gray-400 mb-2" />
+                <h3 className="text-lg font-medium text-gray-900 mb-1">No threat data available</h3>
+                <p className="text-sm text-gray-500">No threats detected in the selected time range.</p>
+              </div>
+            </div>
+          )}
+          
           <div 
             id="threat-map" 
             className="w-full h-full rounded-b-lg"
             style={{ minHeight: '400px' }}
           />
           
-          {/* Legend */}
-          <div className="absolute bottom-4 left-4 bg-card border rounded-md p-3 shadow-lg z-[1000]">
-            <h4 className="text-xs font-semibold mb-2">Threat Severity</h4>
-            <div className="space-y-1">
-              {[
-                { severity: 'critical', label: 'Critical', color: '#dc2626' },
-                { severity: 'high', label: 'High', color: '#ea580c' },
-                { severity: 'medium', label: 'Medium', color: '#ca8a04' },
-                { severity: 'low', label: 'Low', color: '#16a34a' }
-              ].map(item => (
-                <div key={item.severity} className="flex items-center space-x-2">
-                  <div 
-                    className="w-3 h-3 rounded-full border border-white"
-                    style={{ backgroundColor: item.color }}
-                  />
-                  <span className="text-xs">{item.label}</span>
+          {/* Legend - Only show when there are threats */}
+          {threats.length > 0 && (
+            <div className="absolute bottom-4 left-4 bg-card border rounded-md p-3 shadow-lg z-[1000]">
+              <h4 className="text-xs font-semibold mb-2">Threat Severity</h4>
+              <div className="space-y-1">
+                {[
+                  { severity: 'critical', label: 'Critical', color: '#dc2626' },
+                  { severity: 'high', label: 'High', color: '#ea580c' },
+                  { severity: 'medium', label: 'Medium', color: '#ca8a04' },
+                  { severity: 'low', label: 'Low', color: '#16a34a' }
+                ].map(item => (
+                  <div key={item.severity} className="flex items-center space-x-2">
+                    <div 
+                      className="w-3 h-3 rounded-full border border-white"
+                      style={{ backgroundColor: item.color }}
+                    />
+                    <span className="text-xs">{item.label}</span>
+                  </div>
+                ))}
+              </div>
+              
+              <div className="mt-3 pt-2 border-t">
+                <h5 className="text-xs font-medium mb-1">Size = Threat Count</h5>
+                <div className="text-xs text-muted-foreground">
+                  {filteredThreats.length} locations ({timeRange})
                 </div>
-              ))}
-            </div>
-            
-            <div className="mt-3 pt-2 border-t">
-              <h5 className="text-xs font-medium mb-1">Size = Threat Count</h5>
-              <div className="text-xs text-muted-foreground">
-                {filteredThreats.length} locations ({timeRange})
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Stats Overlay */}
-          <div className="absolute top-4 right-4 bg-card border rounded-md p-3 shadow-lg z-[1000]">
-            <div className="space-y-1">
-              <div className="text-xs">
-                <span className="font-medium">Total Threats:</span> {threats.reduce((sum, t) => sum + t.threatCount, 0)}
-              </div>
-              <div className="text-xs">
-                <span className="font-medium">Countries:</span> {new Set(threats.map(t => t.country)).size}
-              </div>
-              <div className="text-xs">
-                <span className="font-medium">Active Sources:</span> {threats.length}
-              </div>
-              <div className="text-xs">
-                <span className="font-medium">Critical:</span> 
-                <span className="ml-1 text-red-600 font-semibold">
-                  {threats.filter(t => t.severity === 'critical').length}
-                </span>
+          {/* Stats Overlay - Only show when there are threats */}
+          {threats.length > 0 && (
+            <div className="absolute top-4 right-4 bg-card border rounded-md p-3 shadow-lg z-[1000]">
+              <div className="space-y-1">
+                <div className="text-xs">
+                  <span className="font-medium">Total Threats:</span> {threats.reduce((sum, t) => sum + t.threatCount, 0)}
+                </div>
+                <div className="text-xs">
+                  <span className="font-medium">Countries:</span> {new Set(threats.map(t => t.country)).size}
+                </div>
+                <div className="text-xs">
+                  <span className="font-medium">Active Sources:</span> {threats.length}
+                </div>
+                <div className="text-xs">
+                  <span className="font-medium">Critical:</span> 
+                  <span className="ml-1 text-red-600 font-semibold">
+                    {threats.filter(t => t.severity === 'critical').length}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </CardContent>
     </Card>
