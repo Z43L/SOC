@@ -1,5 +1,4 @@
-import { useEffect, useCallback, useRef } from 'react';
-import { useToast } from '@/hooks/use-toast';
+import { useEffect, useCallback, useRef, useState } from 'react';
 
 type WebSocketEvent = {
   type: string;
@@ -20,10 +19,10 @@ export const useWebSocket = (
   url: string, 
   options: WebSocketOptions = {}
 ) => {
-  const { toast } = useToast();
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const reconnectIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'failed'>('connecting');
 
   const {
     onOpen,
@@ -37,48 +36,41 @@ export const useWebSocket = (
 
   const connect = useCallback(() => {
     if (!url || wsRef.current?.readyState === WebSocket.OPEN) return;
-
+    setConnectionStatus(reconnectAttemptsRef.current > 0 ? 'reconnecting' : 'connecting');
     try {
       console.log('Attempting WebSocket connection to:', url);
       wsRef.current = new WebSocket(url);
 
       wsRef.current.onopen = () => {
         reconnectAttemptsRef.current = 0;
+        setConnectionStatus('connected');
         console.log('WebSocket connection established');
         if (onOpen) onOpen();
       };
 
       wsRef.current.onclose = (event) => {
+        setConnectionStatus('disconnected');
         console.log('WebSocket connection closed:', event.code, event.reason);
         if (onClose) onClose(event);
 
         if (reconnectOnClose && reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current += 1;
+          setConnectionStatus('reconnecting');
           if (reconnectIntervalRef.current) {
             clearTimeout(reconnectIntervalRef.current);
           }
-          
           reconnectIntervalRef.current = setTimeout(() => {
             console.log(`Attempting WebSocket reconnection ${reconnectAttemptsRef.current}/${maxReconnectAttempts}`);
             connect();
           }, reconnectInterval);
-          
-          toast({
-            title: "Connection Lost",
-            description: `Attempting to reconnect (${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`,
-            variant: "default"
-          });
         } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
+          setConnectionStatus('failed');
           console.error('WebSocket connection failed after maximum attempts');
-          toast({
-            title: "Connection Failed",
-            description: "Unable to establish WebSocket connection after multiple attempts.",
-            variant: "destructive"
-          });
         }
       };
 
       wsRef.current.onerror = (error) => {
+        setConnectionStatus('disconnected');
         console.error('WebSocket error:', error);
         if (onError) onError(error);
       };
@@ -92,15 +84,19 @@ export const useWebSocket = (
         }
       };
     } catch (error) {
+      setConnectionStatus('disconnected');
       console.error("WebSocket connection error:", error);
       if (reconnectOnClose && reconnectAttemptsRef.current < maxReconnectAttempts) {
         reconnectAttemptsRef.current += 1;
+        setConnectionStatus('reconnecting');
         setTimeout(() => {
           connect();
         }, reconnectInterval);
+      } else {
+        setConnectionStatus('failed');
       }
     }
-  }, [url, onOpen, onClose, onError, onMessage, reconnectOnClose, reconnectInterval, maxReconnectAttempts, toast]);
+  }, [url, onOpen, onClose, onError, onMessage, reconnectOnClose, reconnectInterval, maxReconnectAttempts]);
 
   const send = useCallback((data: any) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -130,7 +126,7 @@ export const useWebSocket = (
     };
   }, [connect, disconnect]);
 
-  return { send, disconnect, reconnect: connect };
+  return { send, disconnect, reconnect: connect, connectionStatus };
 };
 
 export default useWebSocket;

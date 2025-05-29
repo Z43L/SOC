@@ -35,7 +35,7 @@ const Dashboard: FC<DashboardProps> = ({ user, organization }) => {
   const { toast } = useToast();
   const [timeRange, setTimeRange] = useState<string>('24h');
   const [isRefreshing, setIsRefreshing] = useState(false);
-  
+
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['/api/dashboard', timeRange],
     queryFn: getQueryFn({ on401: 'returnNull' }),
@@ -52,8 +52,10 @@ const Dashboard: FC<DashboardProps> = ({ user, organization }) => {
     }
   });
 
-  // WebSocket for real-time updates
-  useWebSocket(
+  // WebSocket para actualizaciones en tiempo real, pero no bloquea la UI si falla
+  const {
+    connectionStatus
+  } = useWebSocket(
     data ? `ws://${typeof window !== 'undefined' ? window.location.host : 'localhost:5000'}/ws/dashboard` : null,
     {
       onMessage: (message) => {
@@ -154,8 +156,11 @@ const getMetric = (name: MetricName, defaultValue: number = 0, defaultSeverity: 
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar user={user} activeSection="dashboard" />
-      
       <MainContent pageTitle="Security Dashboard" organization={organization}>
+        {/* Indicador de estado de WebSocket, pero no bloquea la UI */}
+        <div className="mb-2 text-xs text-right text-gray-400">
+          WebSocket: {connectionStatus === 'connected' ? '🟢 Conectado' : connectionStatus === 'reconnecting' ? '🟠 Reconectando' : connectionStatus === 'failed' ? '🔴 Sin conexión' : '⚪ Desconectado'}
+        </div>
         {/* Dashboard Filters */}
         <DashboardFilters
           timeRange={timeRange}
