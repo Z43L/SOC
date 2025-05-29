@@ -7,6 +7,19 @@ import * as path from 'path';
 import * as yaml from 'js-yaml';
 
 /**
+ * Resuelve una ruta relativa al directorio del ejecutable del agente
+ * Esto es necesario para compatibilidad con binarios empaquetados
+ */
+export function resolveAgentPath(relativePath: string): string {
+  if (path.isAbsolute(relativePath)) {
+    return relativePath;
+  }
+  
+  const execDir = path.dirname(process.execPath);
+  return path.resolve(execDir, relativePath);
+}
+
+/**
  * Capacidades soportadas por el agente
  */
 export interface AgentCapabilities {
@@ -104,7 +117,7 @@ export const DEFAULT_CONFIG: Omit<AgentConfig, 'configPath'> = {
   },
   
   // Almacenamiento y registros
-  logFilePath: './agent.log',
+  logFilePath: 'agent.log', // Relativo al directorio del ejecutable
   maxStorageSize: 100, // 100 MB
   logLevel: 'info',
   
@@ -166,6 +179,17 @@ export async function loadConfig(configPath: string): Promise<AgentConfig> {
         ...(fileConfig.capabilities || {})
       }
     };
+    
+    // Resolver rutas relativas usando el directorio del ejecutable
+    if (config.logFilePath && !path.isAbsolute(config.logFilePath)) {
+      config.logFilePath = resolveAgentPath(config.logFilePath);
+    }
+    if (config.privateKeyPath && !path.isAbsolute(config.privateKeyPath)) {
+      config.privateKeyPath = resolveAgentPath(config.privateKeyPath);
+    }
+    if (config.serverPublicKeyPath && !path.isAbsolute(config.serverPublicKeyPath)) {
+      config.serverPublicKeyPath = resolveAgentPath(config.serverPublicKeyPath);
+    }
     
     return config;
   } catch (error) {

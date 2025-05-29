@@ -1,0 +1,36 @@
+{
+  "name": "soc-agent",
+  "version": "1.0.0",
+  "description": "SOC Intelligent Agent",
+  "main": "main.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "package": "npm run package:all",
+    "package:all": "npm run package:linux && npm run package:windows && npm run package:macos",
+    "package:linux": "pkg dist/main.js --targets node18-linux-x64,node18-linux-arm64 --output ../dist/agents/soc-agent-linux",
+    "package:windows": "pkg dist/main.js --targets node18-win-x64 --output ../dist/agents/soc-agent-windows.exe",
+    "package:macos": "pkg dist/main.js --targets node18-macos-x64,node18-macos-arm64 --output ../dist/agents/soc-agent-macos"
+  },
+  "pkg": {
+    "assets": [
+      "**/*.yaml",
+      "**/*.yml",
+      "**/*.json"
+    ],
+    "scripts": [
+      "dist/**/*.js"
+    ]
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.16.11",
+    "@types/ws": "^8.5.13",
+    "pkg": "^5.8.1",
+    "typescript": "^5.6.3"
+  }
+}

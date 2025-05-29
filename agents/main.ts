@@ -4,6 +4,7 @@
 
 import * as os from 'os';
 import * as path from 'path';
+import * as fs from 'fs/promises';
 import {
   loadConfig,
   AgentConfig,
@@ -110,7 +111,8 @@ class Agent {
           agentId: this.config.agentId || 'unregistered'
         },
         this.transport,
-        this.metricsCollector
+        this.metricsCollector,
+        AGENT_VERSION
       );
       
       // Inicializar ejecutor de comandos
@@ -502,16 +504,39 @@ async function main() {
   // Si no se especificó, usar ruta por defecto según plataforma
   if (!configPath) {
     const platform = os.platform();
+    // Usar ruta relativa al ejecutable para compatibilidad con binarios empaquetados
+    const execDir = path.dirname(process.execPath);
     
     switch (platform) {
       case 'win32':
-        configPath = path.join(process.env.ProgramData || 'C:\\ProgramData', 'SOC-Agent', 'agent.yaml');
+        // Para Windows, buscar primero junto al ejecutable, luego en ProgramData
+        const winConfigPath = path.join(execDir, 'agent.yaml');
+        try {
+          await fs.access(winConfigPath);
+          configPath = winConfigPath;
+        } catch {
+          configPath = path.join(process.env.ProgramData || 'C:\\ProgramData', 'SOC-Agent', 'agent.yaml');
+        }
         break;
       case 'darwin':
-        configPath = '/etc/soc-agent/agent.yaml';
+        // Para macOS, buscar primero junto al ejecutable, luego en /etc
+        const macConfigPath = path.join(execDir, 'agent.yaml');
+        try {
+          await fs.access(macConfigPath);
+          configPath = macConfigPath;
+        } catch {
+          configPath = '/etc/soc-agent/agent.yaml';
+        }
         break;
       default: // linux y otros
-        configPath = '/etc/soc-agent/agent.yaml';
+        // Para Linux, buscar primero junto al ejecutable, luego en /etc
+        const linuxConfigPath = path.join(execDir, 'agent.yaml');
+        try {
+          await fs.access(linuxConfigPath);
+          configPath = linuxConfigPath;
+        } catch {
+          configPath = '/etc/soc-agent/agent.yaml';
+        }
     }
   }
   
