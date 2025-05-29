@@ -17,6 +17,7 @@ export interface TransportOptions {
   token?: string;
   serverCA?: string;
   enableCompression: boolean;
+  autoReconnect?: boolean; // Add option to control auto-reconnection
 }
 
 export interface TransportRequest {
@@ -220,13 +221,17 @@ export class Transport extends EventEmitter {
         
         this.ws.on('error', (error) => {
           console.error('WebSocket error:', error);
-          this.scheduleReconnect();
+          if (this.options.autoReconnect !== false) {
+            this.scheduleReconnect();
+          }
         });
         
         this.ws.on('close', () => {
           console.log('WebSocket connection closed');
           this.connected = false;
-          this.scheduleReconnect();
+          if (this.options.autoReconnect !== false) {
+            this.scheduleReconnect();
+          }
         });
         
         // Timeout para la conexión inicial
@@ -237,13 +242,17 @@ export class Transport extends EventEmitter {
               this.ws.terminate();
               this.ws = null;
             }
-            this.scheduleReconnect();
+            if (this.options.autoReconnect !== false) {
+              this.scheduleReconnect();
+            }
             resolve(false);
           }
         }, 10000);
       } catch (error) {
         console.error('Error establishing WebSocket connection:', error);
-        this.scheduleReconnect();
+        if (this.options.autoReconnect !== false) {
+          this.scheduleReconnect();
+        }
         resolve(false);
       }
     });
@@ -391,5 +400,21 @@ export class Transport extends EventEmitter {
     }
     
     this.connected = false;
+  }
+
+  /**
+   * Reconecta manualmente el WebSocket
+   */
+  async reconnect(): Promise<boolean> {
+    await this.close();
+    this.reconnectAttempt = 0; // Reset attempt counter
+    return this.connectWebsocket();
+  }
+
+  /**
+   * Verifica si está conectado
+   */
+  isConnected(): boolean {
+    return this.connected && this.ws?.readyState === WebSocket.OPEN;
   }
 }
