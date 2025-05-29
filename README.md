@@ -14,8 +14,8 @@ El proyecto está organizado en varios directorios principales, cada uno con un 
 
 *   **`/` (Raíz del proyecto):** Contiene archivos de configuración generales, el `Dockerfile` para la contenerización, `docker-compose.yml` para la orquestación, `package.json` para las dependencias del proyecto Node.js, y archivos de documentación como este mismo.
 
-*   **`agents/`:** Alberga el código fuente de los agentes de monitoreo que se instalan en los dispositivos cliente. Está suborganizado por sistema operativo (e.g., `linux/`, `macos/`, `windows/`) y contiene lógica común en `common/`.
-    *   *Referencia:* `agents/`
+*   **`agents/`:** Alberga el código fuente de los agentes de monitoreo que se instalan en los dispositivos cliente. Los agentes se empaquetan como binarios autosuficientes usando `pkg` para distribución multiplataforma sin dependencias de Node.js. Incluye capacidades de auto-actualización, telemetría avanzada y verificación de firmas digitales.
+    *   *Referencia:* `agents/` - Ver [Documentación de Empaquetado](docs/agent-packaging.md)
 
 *   **`client/`:** Contiene toda la aplicación frontend desarrollada en React (usando TypeScript y Vite). Desde aquí se gestiona la interfaz de usuario con la que interactúan los administradores del SOC.
     *   *Referencia:* `client/`

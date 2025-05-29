@@ -85,10 +85,10 @@ export class Transport extends EventEmitter {
         // Comprimir datos si está habilitado
         if (this.options.enableCompression) {
           data = zlib.deflateSync(data);
-          reqOptions.headers!['Content-Encoding'] = 'deflate';
+          (reqOptions.headers as any)['Content-Encoding'] = 'deflate';
         }
         
-        reqOptions.headers!['Content-Length'] = data.length.toString();
+        (reqOptions.headers as any)['Content-Length'] = data.length.toString();
       }
 
       const httpModule = url.protocol === 'https:' ? https : http;
@@ -126,7 +126,7 @@ export class Transport extends EventEmitter {
           const success = response.statusCode && response.statusCode >= 200 && response.statusCode < 300;
           
           resolve({
-            success,
+            success: !!success,
             status: response.statusCode || 0,
             data: responseData,
             error: !success ? (responseData?.error || 'Unknown error') : undefined

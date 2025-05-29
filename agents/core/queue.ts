@@ -17,7 +17,7 @@ interface QueueOptions {
  */
 export class EventQueue {
   private inMemoryQueue: AgentEvent[] = [];
-  private db: Database | null = null;
+  private db: any | null = null;
   private options: QueueOptions;
   private isInitialized = false;
 
@@ -122,11 +122,11 @@ export class EventQueue {
 
         if (rows.length > 0) {
           // Añadir eventos de la base de datos al resultado
-          const dbEvents = rows.map(row => JSON.parse(row.event) as AgentEvent);
+          const dbEvents = rows.map((row: any) => JSON.parse(row.event) as AgentEvent);
           result = [...result, ...dbEvents];
 
           // Eliminar eventos recuperados de la base de datos
-          const ids = rows.map(row => row.id).join(',');
+          const ids = rows.map((row: any) => row.id).join(',');
           this.db.prepare(`DELETE FROM events WHERE id IN (${ids})`).run();
         }
       } catch (error) {
