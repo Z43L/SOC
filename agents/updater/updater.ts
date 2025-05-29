@@ -54,7 +54,7 @@ export class Updater {
   }> {
     try {
       // Construir URL de comprobación
-      const url = new URL(this.options.updateEndpoint, this.options.serverUrl);
+      const url = new URL(this.options.updateEndpoint!, this.options.serverUrl);
       url.searchParams.append('os', this.mapPlatform(this.options.platform!));
       url.searchParams.append('arch', this.mapArch(this.options.arch!));
       url.searchParams.append('version', this.options.currentVersion);
@@ -317,9 +317,9 @@ export class Updater {
     return new Promise<string>((resolve, reject) => {
       try {
         const hash = crypto.createHash(algorithm);
-        const stream = fs.createReadStream(filePath);
+        const stream = require('fs').createReadStream(filePath);
         
-        stream.on('data', (data) => {
+        stream.on('data', (data: any) => {
           hash.update(data);
         });
         
@@ -327,7 +327,7 @@ export class Updater {
           resolve(hash.digest('hex'));
         });
         
-        stream.on('error', (error) => {
+        stream.on('error', (error: any) => {
           reject(error);
         });
       } catch (error) {
