@@ -912,55 +912,7 @@ node main.js "$@"`;
                 return 'node18-linux-x64';
         }
     }
-    const initialized = await agent.initialize();
-    if (!initialized) {
-      console.error('Failed to initialize agent, exiting');
-      process.exit(1);
-    }
     
-    const started = await agent.start();
-    if (!started) {
-      console.error('Failed to start agent, exiting');
-      process.exit(1);
-    }
-    
-    console.log('Agent started successfully');
-    
-    // Manejar señales para cierre limpio
-    process.on('SIGINT', async () => {
-      console.log('Received SIGINT, shutting down...');
-      await agent.stop();
-      process.exit(0);
-    });
-    
-    process.on('SIGTERM', async () => {
-      console.log('Received SIGTERM, shutting down...');
-      await agent.stop();
-      process.exit(0);
-    });
-  } catch (error) {
-    console.error('Unhandled error in agent:', error);
-    process.exit(1);
-  }
-}
-
-// Iniciar agente
-main().catch(error => {
-  console.error('Fatal error:', error);
-  process.exit(1);
-});
-`;
-                    const executableName = os === AgentOS.MACOS ? 'agent-macos' : 'agent-linux';
-                    await writeFile(path.join(outputDir, executableName), unixScript, 'utf-8');
-                    await exec(`chmod +x ${path.join(outputDir, executableName)}`);
-                    break;
-            }
-        }
-        catch (error) {
-            console.error(`Error compiling agent for ${os}:`, error);
-            throw error;
-        }
-    }
     /**
      * Obtiene el nombre del archivo principal del agente según el SO
      */
