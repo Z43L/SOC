@@ -9,7 +9,7 @@ import * as childProcess from 'child_process';
 import { promisify } from 'util';
 import { AgentBase } from '../common/agent-base';
 import * as Monitoring from '../common/monitoring';
-import { loadConfig, DEFAULT_CONFIG } from '../common/agent-config';
+import { loadConfig, DEFAULT_CONFIG, AgentConfig } from '../common/agent-config';
 
 const exec = promisify(childProcess.exec);
 
@@ -1053,7 +1053,7 @@ export class LinuxAgent extends AgentBase {
   private log(level: 'debug' | 'info' | 'warn' | 'error', ...args: any[]) {
     const levels = { debug: 0, info: 1, warn: 2, error: 3 };
     const configLevel = this.linuxConfig.logLevel || 'info';
-    if (levels[level] >= levels[configLevel]) {
+    if (levels[level] >= levels[configLevel as keyof typeof levels]) {
       // eslint-disable-next-line no-console
       console[level === 'debug' ? 'log' : level](...args);
     }
