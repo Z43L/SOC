@@ -4,6 +4,7 @@ import { db, pool } from './db';
 import * as schema from '@shared/schema';
 import { PlaybookStatusTypes, ConnectorStatusTypes, ThreatFeedStatusTypes, AgentStatusTypes } from '@shared/schema';
 import { eq, desc, asc, sql, and, or, gte, lte, ilike } from 'drizzle-orm';
+import { ThreatIntel } from './services/threatIntel';
 const PgStore = connectPgSimple(session);
 export class DatabaseStorage {
     sessionStore;

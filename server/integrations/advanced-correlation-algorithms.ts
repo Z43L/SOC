@@ -1026,7 +1026,7 @@ export class AdvancedCorrelationAlgorithms {
                 status: 'new',
                 relatedAlerts: aiResult.relatedAlertIds,
                 timeline: aiResult.timeline.map(t => ({
-                  timestamp: t.timestamp.toISOString(),
+                  timestamp: typeof t.timestamp === 'string' ? t.timestamp : t.timestamp.toISOString(),
                   description: t.description
                 })),
                 aiAnalysis: {
