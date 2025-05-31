@@ -3,6 +3,7 @@
  */
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { logger } from './logger';
 /**
  * Configuración predeterminada
  */
@@ -58,7 +59,7 @@ export async function loadConfig(configPath) {
         }
         catch (error) {
             // Si el archivo no existe, crear uno con la configuración predeterminada
-            console.log(`Configuration file not found at ${configPath}, creating default`);
+            logger.info(`Configuration file not found at ${configPath}, creating default`);
             const defaultConfig = {
                 ...DEFAULT_CONFIG,
                 configPath
@@ -81,7 +82,7 @@ export async function loadConfig(configPath) {
         return config;
     }
     catch (error) {
-        console.error(`Error loading configuration from ${configPath}:`, error);
+        logger.error(`Error loading configuration from ${configPath}:`, error);
         // En caso de error, devolver la configuración predeterminada
         const fallbackConfig = {
             ...DEFAULT_CONFIG,
@@ -106,10 +107,10 @@ export async function saveConfig(config, configPath) {
         }
         // Guardar la configuración
         await fs.writeFile(savePath, JSON.stringify(config, null, 2), 'utf-8');
-        console.log(`Configuration saved to ${savePath}`);
+        logger.info(`Configuration saved to ${savePath}`);
     }
     catch (error) {
-        console.error('Error saving configuration:', error);
+        logger.error('Error saving configuration:', error);
         throw error;
     }
 }

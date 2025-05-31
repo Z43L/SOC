@@ -6,6 +6,9 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 
+// Import logger - will be initialized later to avoid circular dependency
+let logger: any;
+
 /**
  * Resuelve una ruta relativa al directorio del ejecutable del agente
  * Esto es necesario para compatibilidad con binarios empaquetados
@@ -156,7 +159,7 @@ export async function loadConfig(configPath: string): Promise<AgentConfig> {
       fileContent = await fs.readFile(configPath, 'utf-8');
     } catch (error) {
       // Si el archivo no existe, crear uno con la configuración predeterminada
-      console.log(`Configuration file not found at ${configPath}, creating default`);
+      (logger || console).log(`Configuration file not found at ${configPath}, creating default`);
       const defaultConfig = {
         ...DEFAULT_CONFIG,
         configPath
@@ -193,7 +196,7 @@ export async function loadConfig(configPath: string): Promise<AgentConfig> {
     
     return config;
   } catch (error) {
-    console.error(`Error loading configuration from ${configPath}:`, error);
+    (logger || console).error(`Error loading configuration from ${configPath}:`, error);
     
     // En caso de error, devolver la configuración predeterminada
     const fallbackConfig = {
@@ -227,9 +230,9 @@ export async function saveConfig(config: AgentConfig, configPath?: string): Prom
     });
     
     await fs.writeFile(savePath, yamlContent, 'utf-8');
-    console.log(`Configuration saved to ${savePath}`);
+    (logger || console).log(`Configuration saved to ${savePath}`);
   } catch (error) {
-    console.error('Error saving configuration:', error);
+    (logger || console).error('Error saving configuration:', error);
     throw error;
   }
 }

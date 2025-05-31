@@ -7,6 +7,7 @@ import { AgentCommunication } from './communication';
 import * as Monitoring from './monitoring';
 import { initScanner, scanAll } from './scanner';
 import { ScanResult } from './scanner/types';
+import { logger } from './logger';
 
 /**
  * Clase abstracta que implementa la funcionalidad común de todos los agentes
@@ -62,7 +63,7 @@ export abstract class AgentBase {
   async initialize(): Promise<boolean> {
     try {
       // Cargar configuración
-      console.log(`Loading configuration from ${this.config.configPath}`);
+      logger.info(`Loading configuration from ${this.config.configPath}`);
       this.config = await loadConfig(this.config.configPath);
       
       // Actualizar el objeto de comunicación con la nueva configuración
@@ -70,7 +71,7 @@ export abstract class AgentBase {
       
       // Registrar el agente si no tiene ID
       if (!this.config.agentId) {
-        console.log('Agent not registered, attempting registration...');
+        logger.info('Agent not registered, attempting registration...');
         
         // Obtener información del sistema
         const systemInfo = await this.getSystemInfo();
@@ -90,11 +91,11 @@ export abstract class AgentBase {
         );
         
         if (!registration.success) {
-          console.error(`Registration failed: ${registration.message}`);
+          logger.error(`Registration failed: ${registration.message}`);
           return false;
         }
         
-        console.log(`Successfully registered with agent ID: ${registration.agentId}`);
+        logger.info(`Successfully registered with agent ID: ${registration.agentId}`);
         
         // Actualizar configuración con el ID recibido
         this.config.agentId = registration.agentId;
@@ -119,10 +120,10 @@ export abstract class AgentBase {
         await saveConfig(this.config);
       }
       
-      console.log('Agent initialized successfully');
+      logger.info('Agent initialized successfully');
       return true;
     } catch (error) {
-      console.error('Error initializing agent:', error);
+      logger.error('Error initializing agent:', error);
       return false;
     }
   }
@@ -132,18 +133,18 @@ export abstract class AgentBase {
    */
   async start(): Promise<boolean> {
     if (this.running) {
-      console.log('Agent is already running');
+      logger.info('Agent is already running');
       return true;
     }
     
     try {
-      console.log('Starting agent...');
+      logger.info('Starting agent...');
       
       // Reinicializar si es necesario
       if (!this.config.agentId) {
         const initialized = await this.initialize();
         if (!initialized) {
-          console.error('Could not initialize agent, aborting start');
+          logger.error('Could not initialize agent, aborting start');
           return false;
         }
       }
@@ -163,10 +164,10 @@ export abstract class AgentBase {
       // Marcar como en ejecución
       this.running = true;
       
-      console.log('Agent started successfully');
+      logger.info('Agent started successfully');
       return true;
     } catch (error) {
-      console.error('Error starting agent:', error);
+      logger.error('Error starting agent:', error);
       return false;
     }
   }
@@ -176,12 +177,12 @@ export abstract class AgentBase {
    */
   async stop(): Promise<boolean> {
     if (!this.running) {
-      console.log('Agent is not running');
+      logger.info('Agent is not running');
       return true;
     }
     
     try {
-      console.log('Stopping agent...');
+      logger.info('Stopping agent...');
       
       // Limpiar temporizadores
       this.clearTimers();
@@ -197,10 +198,10 @@ export abstract class AgentBase {
       // Marcar como detenido
       this.running = false;
       
-      console.log('Agent stopped successfully');
+      logger.info('Agent stopped successfully');
       return true;
     } catch (error) {
-      console.error('Error stopping agent:', error);
+      logger.error('Error stopping agent:', error);
       return false;
     }
   }
@@ -217,7 +218,7 @@ export abstract class AgentBase {
       try {
         await this.sendHeartbeat();
       } catch (error) {
-        console.error('Error in heartbeat timer:', error);
+        logger.error('Error in heartbeat timer:', error);
       }
     }, this.config.heartbeatInterval * 1000);
     
@@ -226,7 +227,7 @@ export abstract class AgentBase {
       try {
         await this.uploadEvents();
       } catch (error) {
-        console.error('Error in data upload timer:', error);
+        logger.error('Error in data upload timer:', error);
       }
     }, this.config.dataUploadInterval * 1000);
     
@@ -235,7 +236,7 @@ export abstract class AgentBase {
       try {
         await this.performScan();
       } catch (error) {
-        console.error('Error in scan timer:', error);
+        logger.error('Error in scan timer:', error);
       }
     }, this.config.scanInterval * 1000);
   }
@@ -287,7 +288,7 @@ export abstract class AgentBase {
       const events = [...this.pendingEvents];
       this.pendingEvents = [];
       
-      console.log(`Uploading ${events.length} events to server`);
+      logger.info(`Uploading ${events.length} events to server`);
       
       // Convertir a formato completo
       const formattedEvents = events.map(event => ({
@@ -305,16 +306,16 @@ export abstract class AgentBase {
         throw new Error(`Failed to upload events: ${result.message || 'Unknown error'}`);
       }
       
-      console.log(`Successfully uploaded ${events.length} events`);
+      logger.info(`Successfully uploaded ${events.length} events`);
     } catch (error) {
-      console.error('Error uploading events:', error);
+      logger.error('Error uploading events:', error);
       
       // Devolver eventos a la cola si falló
       this.pendingEvents = [...this.pendingEvents, ...this.pendingEvents];
       
       // Limitar el tamaño máximo de la cola para evitar desbordamiento de memoria
       if (this.pendingEvents.length > 1000) {
-        console.warn(`Event queue exceeds 1000 items, discarding oldest events`);
+        logger.warn(`Event queue exceeds 1000 items, discarding oldest events`);
         this.pendingEvents = this.pendingEvents.slice(-1000);
       }
     }
@@ -359,7 +360,7 @@ export abstract class AgentBase {
       if (heartbeatResult.config && Object.keys(heartbeatResult.config).length > 0) {
         // Aplicar cambios de configuración
         // En la implementación real, procesaríamos los cambios específicos
-        console.log('Received configuration update from server');
+        logger.info('Received configuration update from server');
       }
       
       // Subir eventos pendientes aprovechando la conexión
@@ -367,7 +368,7 @@ export abstract class AgentBase {
         await this.uploadEvents();
       }
     } catch (error) {
-      console.error('Error sending heartbeat:', error);
+      logger.error('Error sending heartbeat:', error);
     }
   }
   
@@ -376,7 +377,7 @@ export abstract class AgentBase {
    */
   async performScan(): Promise<void> {
     try {
-      console.log('Performing system scan...');
+      logger.info('Performing system scan...');
       
       // Obtener información del sistema
       const metrics = await this.getSystemMetrics();
@@ -400,9 +401,9 @@ export abstract class AgentBase {
         await this.scanRegistry();
       }
       
-      console.log('System scan completed');
+      logger.info('System scan completed');
     } catch (error) {
-      console.error('Error performing system scan:', error);
+      logger.error('Error performing system scan:', error);
     }
   }
   
