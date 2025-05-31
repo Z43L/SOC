@@ -11,6 +11,8 @@ import { EventEmitter } from 'events';
 
 // Intervalo de reconexión (ms)
 const RECONNECT_INTERVALS = [5000, 10000, 30000, 60000, 120000];
+const MAX_RECONNECT_ATTEMPTS = 20; // Maximum number of reconnection attempts
+const RECONNECT_RESET_INTERVAL = 10 * 60 * 1000; // Reset attempts after 10 minutes of successful connection
 
 export interface TransportOptions {
   serverUrl: string;
@@ -43,14 +45,23 @@ export type CommandHandler = (command: any) => Promise<{
 
 /**
  * Clase de transporte para comunicación con el servidor
+ * 
+ * Incluye las siguientes mejoras de seguridad:
+ * - Límite máximo de intentos de reconexión (20 intentos)
+ * - Reset automático del contador de reconexión después de conexión exitosa
+ * - Validación del tamaño de mensajes (máximo 1MB)
+ * - Validación básica del formato de mensajes
+ * - Manejo mejorado de errores sin desconexión automática
  */
 export class Transport extends EventEmitter {
   private options: TransportOptions;
   private ws: WebSocket | null = null;
   private reconnectAttempt = 0;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private resetTimer: NodeJS.Timeout | null = null;
   private connected = false;
   private commandHandlers: Map<string, CommandHandler> = new Map();
+  private lastSuccessfulConnection: number = 0;
 
   constructor(options: TransportOptions) {
     super();
@@ -190,13 +201,31 @@ export class Transport extends EventEmitter {
         this.ws.on('open', () => {
           console.log('WebSocket connection established');
           this.connected = true;
+          this.lastSuccessfulConnection = Date.now();
           this.reconnectAttempt = 0;
+          
+          // Set up timer to reset reconnect attempts after successful connection
+          if (this.resetTimer) {
+            clearTimeout(this.resetTimer);
+          }
+          this.resetTimer = setTimeout(() => {
+            this.reconnectAttempt = 0;
+            console.log('Reconnect attempt counter reset after successful connection period');
+          }, RECONNECT_RESET_INTERVAL);
+          
           this.emit('connected');
           resolve(true);
         });
         
         this.ws.on('message', async (data) => {
           try {
+            // Message size validation
+            const maxMessageSize = 1024 * 1024; // 1MB max
+            if (data.length > maxMessageSize) {
+              console.warn(`Received oversized message: ${data.length} bytes, ignoring`);
+              return;
+            }
+
             let messageData: Buffer;
             
             // Descomprimir si es necesario
@@ -208,6 +237,12 @@ export class Transport extends EventEmitter {
             
             const message = JSON.parse(messageData.toString('utf-8'));
             
+            // Basic message validation
+            if (typeof message !== 'object' || message === null) {
+              console.warn('Received invalid message format, ignoring');
+              return;
+            }
+            
             // Si es un comando, procesarlo
             if (message.type === 'command') {
               await this.handleCommand(message);
@@ -216,6 +251,7 @@ export class Transport extends EventEmitter {
             this.emit('message', message);
           } catch (error) {
             console.error('Error processing WebSocket message:', error);
+            // Don't disconnect on message parsing errors, just log and continue
           }
         });
         
@@ -295,12 +331,19 @@ export class Transport extends EventEmitter {
       clearTimeout(this.reconnectTimer);
     }
     
+    // Check if we've exceeded maximum reconnection attempts
+    if (this.reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+      console.error(`Maximum reconnection attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Stopping reconnection attempts.`);
+      this.emit('maxReconnectAttemptsReached');
+      return;
+    }
+    
     // Calcular tiempo de espera con jitter aleatorio
     const baseDelay = RECONNECT_INTERVALS[Math.min(this.reconnectAttempt, RECONNECT_INTERVALS.length - 1)];
     const jitter = Math.random() * 0.3 * baseDelay; // 30% jitter
     const delay = baseDelay + jitter;
     
-    console.log(`Scheduling WebSocket reconnect in ${Math.round(delay / 1000)}s (attempt ${this.reconnectAttempt + 1})`);
+    console.log(`Scheduling WebSocket reconnect in ${Math.round(delay / 1000)}s (attempt ${this.reconnectAttempt + 1}/${MAX_RECONNECT_ATTEMPTS})`);
     
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectAttempt++;
@@ -390,6 +433,11 @@ export class Transport extends EventEmitter {
       this.reconnectTimer = null;
     }
     
+    if (this.resetTimer) {
+      clearTimeout(this.resetTimer);
+      this.resetTimer = null;
+    }
+    
     if (this.ws) {
       try {
         this.ws.terminate();
@@ -416,5 +464,32 @@ export class Transport extends EventEmitter {
    */
   isConnected(): boolean {
     return this.connected && this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  /**
+   * Obtiene el estado de reconexión
+   */
+  getReconnectionStatus(): {
+    connected: boolean;
+    reconnectAttempt: number;
+    maxAttempts: number;
+    lastSuccessfulConnection: number;
+    timeSinceLastConnection: number;
+  } {
+    return {
+      connected: this.connected,
+      reconnectAttempt: this.reconnectAttempt,
+      maxAttempts: MAX_RECONNECT_ATTEMPTS,
+      lastSuccessfulConnection: this.lastSuccessfulConnection,
+      timeSinceLastConnection: this.lastSuccessfulConnection ? Date.now() - this.lastSuccessfulConnection : 0
+    };
+  }
+
+  /**
+   * Reinicia el contador de intentos de reconexión manualmente
+   */
+  resetReconnectAttempts(): void {
+    this.reconnectAttempt = 0;
+    console.log('Reconnect attempt counter manually reset');
   }
 }
