@@ -539,12 +539,12 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
                       <div 
                         className="bg-green-500 h-1.5 rounded-full" 
                         style={{ 
-                          width: `${(connectors.filter(c => c.isActive).length / connectors.length) * 100}%` 
+                          width: `${connectors.length > 0 ? (connectors.filter(c => c.isActive).length / connectors.length) * 100 : 0}%` 
                         }}
                       ></div>
                     </div>
                     <p className="text-xs mt-1">
-                      {Math.round((connectors.filter(c => c.isActive).length / connectors.length) * 100)}% of total
+                      {connectors.length > 0 ? Math.round((connectors.filter(c => c.isActive).length / connectors.length) * 100) : 0}% of total
                     </p>
                   </div>
                 </CardContent>
