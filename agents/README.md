@@ -31,7 +31,7 @@ Proporciona una clase abstracta con la lógica común de todos los agentes:
 ### Agent Config (agent-config.ts)
 
 Gestiona la configuración del agente:
-- Carga/guardado de configuración desde/a archivo
+- Carga/guardado de configuración desde/a archivo YAML
 - Valores predeterminados
 - Capacidades configurables
 
@@ -80,7 +80,7 @@ import { LinuxAgent } from './linux/linux-agent';
 
 async function main() {
   // Crear e inicializar el agente
-  const agent = new LinuxAgent('/etc/soc-agent/config.json');
+  const agent = new LinuxAgent('/etc/soc-agent/config.yaml');
   await agent.initialize();
   
   // Iniciar monitoreo

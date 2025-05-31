@@ -10,6 +10,7 @@ import { promisify } from 'util';
 import { AgentBase } from '../common/agent-base';
 import * as Monitoring from '../common/monitoring';
 import { loadConfig, DEFAULT_CONFIG, AgentConfig } from '../common/agent-config';
+import { logger } from '../common/logger';
 
 const exec = promisify(childProcess.exec);
 
@@ -18,7 +19,7 @@ const exec = promisify(childProcess.exec);
  */
 export class LinuxAgent extends AgentBase {
   // Monitores activos
-  private fileWatcher: any = null;
+  private fileWatcher: NodeJS.Timeout | null = null;
   private processWatcher: NodeJS.Timeout | null = null;
   private networkWatcher: NodeJS.Timeout | null = null;
   
