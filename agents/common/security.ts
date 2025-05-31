@@ -3,6 +3,7 @@
  */
 
 import * as crypto from 'crypto';
+import { logger } from './logger';
 
 export interface SignedMessage<T> {
   payload: T;
@@ -71,7 +72,7 @@ export async function verifySignature(message: string, signature: string, public
     
     return verify.verify(publicKey, Buffer.from(signature, 'base64'));
   } catch (error) {
-    console.error(`Error verifying signature:`, error);
+    logger.error(`Error verifying signature:`, error);
     return false;
   }
 }
