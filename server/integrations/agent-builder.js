@@ -811,108 +811,92 @@ echo "Desinstalación completada."
      */
     async compileAgent(outputDir, os) {
         try {
-            // Copiar el código TypeScript del agente
-            const agentSourceDir = path.join(this.templatesDir);
-            
-            // Crear directorio de construcción temporal
-            const tempBuildDir = path.join(outputDir, 'build');
-            await mkdir(tempBuildDir, { recursive: true });
-            
-            // Copiar archivos fuente del agente
-            await exec(`cp -r ${agentSourceDir}/* ${tempBuildDir}/`);
-            
-            // Instalar dependencias en el directorio temporal
-            await exec(`cd ${tempBuildDir} && npm install --production`);
-            
-            // Compilar TypeScript a JavaScript
-            await exec(`cd ${tempBuildDir} && npx tsc --build`);
-            
-            // Crear ejecutable usando pkg
-            const executableName = this.getExecutableName(os);
-            const targetPlatform = this.getPkgTarget(os);
-            
-            try {
-                // Intentar usar pkg para crear ejecutable
-                await exec(`cd ${tempBuildDir} && npx pkg main.js --target ${targetPlatform} --output ${path.join(outputDir, executableName)}`);
-                console.log(`Successfully compiled agent binary: ${executableName}`);
-            } catch (pkgError) {
-                console.warn('pkg compilation failed, creating Node.js wrapper instead:', pkgError);
-                
-                // Fallback: crear un wrapper con Node.js empaquetado
-                await this.createNodeJSWrapper(outputDir, tempBuildDir, os);
+            // Nombre del archivo principal según SO
+            const mainFile = this.getAgentMainFile(os);
+            // Copiar código fuente necesario
+            await exec(`cp -r ${path.join(this.templatesDir, 'common')} ${outputDir}/`);
+            await exec(`cp -r ${path.join(this.templatesDir, os.toString())} ${outputDir}/`);
+            // Crear archivo de punto de entrada
+            const agentEntryPoint = `
+import path from 'path';
+const mainModulePath = path.join(__dirname, '${os.toString()}', '${mainFile}');
+import { ${this.getAgentClassName(os)} as AgentClass } from mainModulePath;
+const { AgentConfig, loadConfig } = require('./common/agent-config');
+
+// Para ser autosuficiente, exportamos las clases necesarias
+exports.${this.getAgentClassName(os)} = AgentClass;
+exports.AgentConfig = AgentConfig;
+exports.loadConfig = loadConfig;
+`;
+            await writeFile(path.join(outputDir, 'agent-core.js'), agentEntryPoint, 'utf-8');
+            // Crear ejecutable según SO
+            switch (os) {
+                case AgentOS.WINDOWS:
+                    // Para Windows, basta con el archivo .js
+                    break;
+                case AgentOS.MACOS:
+                case AgentOS.LINUX:
+                    // Para macOS y Linux, crear un pequeño script ejecutable
+                    const unixScript = `#!/usr/bin/env node
+require('./agent-core');
+
+const { ${this.getAgentClassName(os)} } = require('./agent-core');
+const configPath = '${this.getDefaultConfigPath(os)}';
+
+// Iniciar el agente
+const agent = new ${this.getAgentClassName(os)}(configPath);
+
+async function main() {
+  try {
+    const initialized = await agent.initialize();
+    if (!initialized) {
+      console.error('Failed to initialize agent, exiting');
+      process.exit(1);
+    }
+    
+    const started = await agent.start();
+    if (!started) {
+      console.error('Failed to start agent, exiting');
+      process.exit(1);
+    }
+    
+    console.log('Agent started successfully');
+    
+    // Manejar señales para cierre limpio
+    process.on('SIGINT', async () => {
+      console.log('Received SIGINT, shutting down...');
+      await agent.stop();
+      process.exit(0);
+    });
+    
+    process.on('SIGTERM', async () => {
+      console.log('Received SIGTERM, shutting down...');
+      await agent.stop();
+      process.exit(0);
+    });
+  } catch (error) {
+    console.error('Unhandled error in agent:', error);
+    process.exit(1);
+  }
+}
+
+// Iniciar agente
+main().catch(error => {
+  console.error('Fatal error:', error);
+  process.exit(1);
+});
+`;
+                    const executableName = os === AgentOS.MACOS ? 'agent-macos' : 'agent-linux';
+                    await writeFile(path.join(outputDir, executableName), unixScript, 'utf-8');
+                    await exec(`chmod +x ${path.join(outputDir, executableName)}`);
+                    break;
             }
-            
-            // Limpiar directorio temporal
-            await exec(`rm -rf ${tempBuildDir}`);
-            
-        } catch (error) {
+        }
+        catch (error) {
             console.error(`Error compiling agent for ${os}:`, error);
             throw error;
         }
     }
-    
-    /**
-     * Crea un wrapper con Node.js empaquetado cuando pkg falla
-     */
-    async createNodeJSWrapper(outputDir, tempBuildDir, os) {
-        const executableName = this.getExecutableName(os);
-        
-        if (os === AgentOS.WINDOWS) {
-            // Para Windows, crear un batch file que ejecute Node.js
-            const batchContent = `@echo off
-cd /d "%~dp0"
-node main.js %*`;
-            await writeFile(path.join(outputDir, executableName.replace('.exe', '.bat')), batchContent, 'utf-8');
-            
-            // Copiar main.js compilado
-            await exec(`cp ${tempBuildDir}/main.js ${outputDir}/`);
-            await exec(`cp -r ${tempBuildDir}/node_modules ${outputDir}/`);
-        } else {
-            // Para Unix-like systems, crear shell script
-            const shellContent = `#!/bin/bash
-cd "$(dirname "$0")"
-node main.js "$@"`;
-            await writeFile(path.join(outputDir, executableName), shellContent, 'utf-8');
-            await exec(`chmod +x ${path.join(outputDir, executableName)}`);
-            
-            // Copiar main.js compilado y dependencias
-            await exec(`cp ${tempBuildDir}/main.js ${outputDir}/`);
-            await exec(`cp -r ${tempBuildDir}/node_modules ${outputDir}/`);
-        }
-    }
-    
-    /**
-     * Obtiene el nombre del ejecutable según el SO
-     */
-    getExecutableName(os) {
-        switch (os) {
-            case AgentOS.WINDOWS:
-                return 'agent-windows.exe';
-            case AgentOS.MACOS:
-                return 'agent-macos';
-            case AgentOS.LINUX:
-                return 'agent-linux';
-            default:
-                return 'agent';
-        }
-    }
-    
-    /**
-     * Obtiene el target de pkg según el SO
-     */
-    getPkgTarget(os) {
-        switch (os) {
-            case AgentOS.WINDOWS:
-                return 'node18-win-x64';
-            case AgentOS.MACOS:
-                return 'node18-macos-x64';
-            case AgentOS.LINUX:
-                return 'node18-linux-x64';
-            default:
-                return 'node18-linux-x64';
-        }
-    }
-    
     /**
      * Obtiene el nombre del archivo principal del agente según el SO
      */
