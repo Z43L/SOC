@@ -2,16 +2,38 @@ import { Server as SocketIOServer } from 'socket.io';
 import { Server as HttpServer } from 'http';
 import { soarExecutor } from './SoarExecutorService';
 import { eventBus } from './eventBus';
+import { verifyAgentToken } from '../../integrations/connectors/jwt-auth';
+import { db } from '../../db';
+import { users, organizations, playbookExecutions } from '@shared/schema';
+import { eq, and } from 'drizzle-orm';
 
 interface SocketUser {
   id: string;
   organizationId: number;
   permissions: string[];
+  connectedAt: Date;
+  lastActivity: Date;
+}
+
+interface ConnectionStats {
+  totalConnections: number;
+  activeConnections: number;
+  authenticationFailures: number;
+  rateLimitViolations: number;
 }
 
 export class SoarWebSocketService {
   private io: SocketIOServer;
   private connectedClients = new Map<string, SocketUser>();
+  private connectionStats: ConnectionStats = {
+    totalConnections: 0,
+    activeConnections: 0,
+    authenticationFailures: 0,
+    rateLimitViolations: 0
+  };
+  private readonly INACTIVE_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+  private readonly MAX_CONNECTIONS_PER_ORG = 50;
+  private cleanupInterval?: NodeJS.Timeout;
 
   constructor(httpServer: HttpServer) {
     this.io = new SocketIOServer(httpServer, {
@@ -31,6 +53,7 @@ export class SoarWebSocketService {
     this.setupSocketHandlers();
     this.setupEventListeners();
     this.setupConnectionMonitoring();
+    this.startCleanupTimer();
     
     console.log('[SoarWebSocket] WebSocket service initialized');
   }
@@ -38,20 +61,67 @@ export class SoarWebSocketService {
   private setupConnectionMonitoring(): void {
     this.io.engine.on('connection_error', (err) => {
       console.error('[SoarWebSocket] Connection error:', err.req, err.code, err.message, err.context);
+      this.connectionStats.authenticationFailures++;
     });
 
     // Log connection statistics every 30 seconds
     setInterval(() => {
       const clientCount = this.connectedClients.size;
       if (clientCount > 0) {
-        console.log(`[SoarWebSocket] Connected clients: ${clientCount}`);
+        console.log(`[SoarWebSocket] Connected clients: ${clientCount}`, {
+          totalConnections: this.connectionStats.totalConnections,
+          authFailures: this.connectionStats.authenticationFailures,
+          rateLimitViolations: this.connectionStats.rateLimitViolations
+        });
       }
     }, 30000);
   }
 
+  private startCleanupTimer(): void {
+    // Clean up inactive connections every 5 minutes
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupInactiveConnections();
+    }, 5 * 60 * 1000);
+  }
+
+  private cleanupInactiveConnections(): void {
+    const now = new Date();
+    const inactiveConnections: string[] = [];
+    
+    this.connectedClients.forEach((user, socketId) => {
+      if (now.getTime() - user.lastActivity.getTime() > this.INACTIVE_TIMEOUT) {
+        inactiveConnections.push(socketId);
+      }
+    });
+    
+    for (const socketId of inactiveConnections) {
+      const socket = this.io.sockets.sockets.get(socketId);
+      if (socket) {
+        console.log(`[SoarWebSocket] Disconnecting inactive client: ${socketId}`);
+        socket.disconnect(true);
+      }
+      this.connectedClients.delete(socketId);
+    }
+    
+    if (inactiveConnections.length > 0) {
+      console.log(`[SoarWebSocket] Cleaned up ${inactiveConnections.length} inactive connections`);
+    }
+  }
+
   private setupSocketHandlers(): void {
     this.io.on('connection', (socket) => {
+      this.connectionStats.totalConnections++;
+      this.connectionStats.activeConnections++;
+      
       console.log(`[SoarWebSocket] Client connected: ${socket.id}`);
+
+      // Set connection timeout
+      const connectionTimeout = setTimeout(() => {
+        if (!this.connectedClients.has(socket.id)) {
+          console.log(`[SoarWebSocket] Disconnecting unauthenticated client: ${socket.id}`);
+          socket.disconnect(true);
+        }
+      }, 30000); // 30 seconds to authenticate
 
       // Handle connection errors
       socket.on('connect_error', (error) => {
@@ -59,13 +129,23 @@ export class SoarWebSocketService {
       });
 
       // Handle authentication
-      socket.on('authenticate', (data) => {
-        this.handleAuthentication(socket, data);
+      socket.on('authenticate', async (data) => {
+        clearTimeout(connectionTimeout);
+        await this.handleAuthentication(socket, data);
+      });
+
+      // Update activity tracking for authenticated users on any message
+      socket.use((packet, next) => {
+        const user = this.connectedClients.get(socket.id);
+        if (user) {
+          user.lastActivity = new Date();
+        }
+        next();
       });
 
       // Handle subscription to playbook execution updates
-      socket.on('subscribe:execution', (data) => {
-        this.handleExecutionSubscription(socket, data);
+      socket.on('subscribe:execution', async (data) => {
+        await this.handleExecutionSubscription(socket, data);
       });
 
       // Handle subscription to playbook list updates
@@ -79,8 +159,9 @@ export class SoarWebSocketService {
       });
 
       // Handle disconnect
-      socket.on('disconnect', () => {
-        this.handleDisconnect(socket);
+      socket.on('disconnect', (reason) => {
+        clearTimeout(connectionTimeout);
+        this.handleDisconnect(socket, reason);
       });
 
       // Handle test trigger requests
@@ -93,58 +174,163 @@ export class SoarWebSocketService {
   private setupEventListeners(): void {
     // Listen for playbook execution events
     eventBus.subscribeToEvent('playbook.execution.started', (event) => {
-      this.broadcastExecutionUpdate(event.data.organizationId, 'execution:started', event.data);
+      const orgId = typeof event.data.organizationId === 'number' ? event.data.organizationId : 0;
+      if (orgId > 0) {
+        this.broadcastExecutionUpdate(orgId, 'execution:started', event.data);
+      }
     });
 
     eventBus.subscribeToEvent('playbook.execution.completed', (event) => {
-      this.broadcastExecutionUpdate(event.data.organizationId, 'execution:completed', event.data);
+      const orgId = typeof event.data.organizationId === 'number' ? event.data.organizationId : 0;
+      if (orgId > 0) {
+        this.broadcastExecutionUpdate(orgId, 'execution:completed', event.data);
+      }
     });
 
     eventBus.subscribeToEvent('playbook.execution.failed', (event) => {
-      this.broadcastExecutionUpdate(event.data.organizationId, 'execution:failed', event.data);
+      const orgId = typeof event.data.organizationId === 'number' ? event.data.organizationId : 0;
+      if (orgId > 0) {
+        this.broadcastExecutionUpdate(orgId, 'execution:failed', event.data);
+      }
     });
 
     eventBus.subscribeToEvent('playbook.step.started', (event) => {
-      this.broadcastExecutionUpdate(event.data.organizationId, 'step:started', event.data);
+      const orgId = typeof event.data.organizationId === 'number' ? event.data.organizationId : 0;
+      if (orgId > 0) {
+        this.broadcastExecutionUpdate(orgId, 'step:started', event.data);
+      }
     });
 
     eventBus.subscribeToEvent('playbook.step.completed', (event) => {
-      this.broadcastExecutionUpdate(event.data.organizationId, 'step:completed', event.data);
+      const orgId = typeof event.data.organizationId === 'number' ? event.data.organizationId : 0;
+      if (orgId > 0) {
+        this.broadcastExecutionUpdate(orgId, 'step:completed', event.data);
+      }
     });
 
     eventBus.subscribeToEvent('playbook.step.failed', (event) => {
-      this.broadcastExecutionUpdate(event.data.organizationId, 'step:failed', event.data);
+      const orgId = typeof event.data.organizationId === 'number' ? event.data.organizationId : 0;
+      if (orgId > 0) {
+        this.broadcastExecutionUpdate(orgId, 'step:failed', event.data);
+      }
     });
 
     // Listen for playbook management events
     eventBus.subscribeToEvent('playbook.created', (event) => {
-      this.broadcastPlaybookUpdate(event.data.organizationId, 'playbook:created', event.data);
+      const orgId = typeof event.data.organizationId === 'number' ? event.data.organizationId : 0;
+      if (orgId > 0) {
+        this.broadcastPlaybookUpdate(orgId, 'playbook:created', event.data);
+      }
     });
 
     eventBus.subscribeToEvent('playbook.updated', (event) => {
-      this.broadcastPlaybookUpdate(event.data.organizationId, 'playbook:updated', event.data);
+      const orgId = typeof event.data.organizationId === 'number' ? event.data.organizationId : 0;
+      if (orgId > 0) {
+        this.broadcastPlaybookUpdate(orgId, 'playbook:updated', event.data);
+      }
     });
 
     eventBus.subscribeToEvent('playbook.deleted', (event) => {
-      this.broadcastPlaybookUpdate(event.data.organizationId, 'playbook:deleted', event.data);
+      const orgId = typeof event.data.organizationId === 'number' ? event.data.organizationId : 0;
+      if (orgId > 0) {
+        this.broadcastPlaybookUpdate(orgId, 'playbook:deleted', event.data);
+      }
     });
   }
 
-  private handleAuthentication(socket: any, data: any): void {
+  private async handleAuthentication(socket: any, data: any): Promise<void> {
     try {
-      // In a real implementation, validate JWT token here
       const { token, userId, organizationId, permissions } = data;
       
-      if (!userId || !organizationId) {
-        socket.emit('auth:error', { message: 'Invalid authentication data' });
+      // Validate required fields
+      if (!token) {
+        socket.emit('auth:error', { message: 'Authentication token required' });
+        socket.disconnect(true);
         return;
       }
 
-      // Store user info
+      if (!userId || !organizationId) {
+        socket.emit('auth:error', { message: 'Invalid authentication data' });
+        socket.disconnect(true);
+        return;
+      }
+
+      // Verify JWT token
+      let tokenData;
+      try {
+        tokenData = verifyAgentToken(token);
+        if (!tokenData) {
+          socket.emit('auth:error', { message: 'Invalid or expired token' });
+          socket.disconnect(true);
+          return;
+        }
+      } catch (error) {
+        console.error('[SoarWebSocket] JWT verification failed:', error);
+        socket.emit('auth:error', { message: 'Token verification failed' });
+        socket.disconnect(true);
+        return;
+      }
+
+      // Validate token payload matches provided data
+      if (tokenData.userId.toString() !== userId.toString() || 
+          tokenData.organizationId !== organizationId.toString()) {
+        console.error('[SoarWebSocket] Token data mismatch:', {
+          tokenUserId: tokenData.userId,
+          providedUserId: userId,
+          tokenOrgId: tokenData.organizationId,
+          providedOrgId: organizationId
+        });
+        socket.emit('auth:error', { message: 'Authentication data mismatch' });
+        socket.disconnect(true);
+        return;
+      }
+
+      // Verify user exists and belongs to the organization
+      const user = await db
+        .select({
+          id: users.id,
+          organizationId: users.organizationId,
+          role: users.role,
+          name: users.name
+        })
+        .from(users)
+        .innerJoin(organizations, eq(users.organizationId, organizations.id))
+        .where(and(
+          eq(users.id, parseInt(userId)),
+          eq(users.organizationId, parseInt(organizationId))
+        ))
+        .limit(1);
+
+      if (user.length === 0) {
+        console.error('[SoarWebSocket] User validation failed:', { userId, organizationId });
+        socket.emit('auth:error', { message: 'User not found or organization mismatch' });
+        socket.disconnect(true);
+        return;
+      }
+
+      const userData = user[0];
+
+      // Check organization connection limits
+      const orgConnections = this.getClientsByOrganization(parseInt(organizationId)).length;
+      if (orgConnections >= this.MAX_CONNECTIONS_PER_ORG) {
+        console.error(`[SoarWebSocket] Organization connection limit exceeded:`, {
+          organizationId,
+          currentConnections: orgConnections,
+          limit: this.MAX_CONNECTIONS_PER_ORG
+        });
+        socket.emit('auth:error', { message: 'Organization connection limit exceeded' });
+        socket.disconnect(true);
+        return;
+      }
+
+      // Store validated user info
+      const now = new Date();
       this.connectedClients.set(socket.id, {
         id: userId,
         organizationId: parseInt(organizationId),
         permissions: permissions || [],
+        connectedAt: now,
+        lastActivity: now
       });
 
       // Join organization room
@@ -155,14 +341,16 @@ export class SoarWebSocketService {
         clientId: socket.id,
       });
 
-      console.log(`[SoarWebSocket] Client ${socket.id} authenticated for org ${organizationId}`);
+      console.log(`[SoarWebSocket] Client ${socket.id} authenticated for user ${userData.name} (${userId}) in org ${organizationId}`);
     } catch (error) {
       console.error('[SoarWebSocket] Authentication error:', error);
+      this.connectionStats.authenticationFailures++;
       socket.emit('auth:error', { message: 'Authentication failed' });
+      socket.disconnect(true);
     }
   }
 
-  private handleExecutionSubscription(socket: any, data: any): void {
+  private async handleExecutionSubscription(socket: any, data: any): Promise<void> {
     const user = this.connectedClients.get(socket.id);
     if (!user) {
       socket.emit('error', { message: 'Not authenticated' });
@@ -175,24 +363,60 @@ export class SoarWebSocketService {
       return;
     }
 
-    // Join execution-specific room
-    socket.join(`execution:${executionId}`);
+    try {
+      // Validate execution exists and belongs to user's organization
+      const execution = await db
+        .select({
+          id: playbookExecutions.id,
+          organizationId: playbookExecutions.organizationId,
+          status: playbookExecutions.status
+        })
+        .from(playbookExecutions)
+        .where(eq(playbookExecutions.id, parseInt(executionId)))
+        .limit(1);
 
-    // Send current execution state if available
-    const executionState = soarExecutor.getExecutionState(executionId);
-    if (executionState) {
-      socket.emit('execution:state', {
+      if (execution.length === 0) {
+        socket.emit('error', { message: 'Execution not found' });
+        return;
+      }
+
+      const executionData = execution[0];
+      
+      // Verify execution belongs to user's organization
+      if (executionData.organizationId !== user.organizationId) {
+        console.error(`[SoarWebSocket] Unauthorized execution access attempt:`, {
+          socketId: socket.id,
+          userId: user.id,
+          userOrgId: user.organizationId,
+          executionId,
+          executionOrgId: executionData.organizationId
+        });
+        socket.emit('error', { message: 'Access denied to execution' });
+        return;
+      }
+
+      // Join execution-specific room
+      socket.join(`execution:${executionId}`);
+
+      // Send current execution state if available
+      const executionState = soarExecutor.getExecutionState(executionId);
+      if (executionState) {
+        socket.emit('execution:state', {
+          executionId,
+          state: executionState,
+        });
+      }
+
+      socket.emit('subscription:confirmed', { 
+        type: 'execution',
         executionId,
-        state: executionState,
       });
+
+      console.log(`[SoarWebSocket] Client ${socket.id} subscribed to execution ${executionId} (org: ${user.organizationId})`);
+    } catch (error) {
+      console.error('[SoarWebSocket] Error in execution subscription:', error);
+      socket.emit('error', { message: 'Failed to subscribe to execution' });
     }
-
-    socket.emit('subscription:confirmed', { 
-      type: 'execution',
-      executionId,
-    });
-
-    console.log(`[SoarWebSocket] Client ${socket.id} subscribed to execution ${executionId}`);
   }
 
   private handlePlaybookSubscription(socket: any, data: any): void {
@@ -261,11 +485,12 @@ export class SoarWebSocketService {
     console.log(`[SoarWebSocket] Test trigger initiated for playbook ${playbookId}`);
   }
 
-  private handleDisconnect(socket: any): void {
+  private handleDisconnect(socket: any, reason?: string): void {
     const user = this.connectedClients.get(socket.id);
     if (user) {
-      console.log(`[SoarWebSocket] Client ${socket.id} disconnected (org: ${user.organizationId})`);
+      console.log(`[SoarWebSocket] Client ${socket.id} disconnected (org: ${user.organizationId}, reason: ${reason || 'unknown'})`);
       this.connectedClients.delete(socket.id);
+      this.connectionStats.activeConnections = Math.max(0, this.connectionStats.activeConnections - 1);
     }
   }
 
@@ -331,21 +556,63 @@ export class SoarWebSocketService {
 
   // Shutdown
   shutdown(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = undefined;
+    }
+    
+    // Disconnect all clients gracefully
+    this.connectedClients.forEach((user, socketId) => {
+      const socket = this.io.sockets.sockets.get(socketId);
+      if (socket) {
+        socket.disconnect(true);
+      }
+    });
+    
+    this.connectedClients.clear();
     this.io.close();
     console.log('[SoarWebSocket] WebSocket service shutdown');
   }
+
+  // Get connection statistics
+  getConnectionStats(): ConnectionStats {
+    return { ...this.connectionStats };
+  }
 }
 
-let soarWebSocket: SoarWebSocketService;
+let soarWebSocket: SoarWebSocketService | null = null;
 
 export function initializeWebSocket(httpServer: HttpServer): SoarWebSocketService {
-  soarWebSocket = new SoarWebSocketService(httpServer);
-  return soarWebSocket;
+  if (soarWebSocket) {
+    console.warn('[SoarWebSocket] WebSocket service already initialized, returning existing instance');
+    return soarWebSocket;
+  }
+  
+  try {
+    soarWebSocket = new SoarWebSocketService(httpServer);
+    console.log('[SoarWebSocket] WebSocket service successfully initialized');
+    return soarWebSocket;
+  } catch (error) {
+    console.error('[SoarWebSocket] Failed to initialize WebSocket service:', error);
+    throw new Error(`WebSocket service initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 export function getSoarWebSocket(): SoarWebSocketService {
   if (!soarWebSocket) {
-    throw new Error('WebSocket service not initialized');
+    throw new Error('WebSocket service not initialized. Call initializeWebSocket() first.');
   }
   return soarWebSocket;
+}
+
+export function isWebSocketInitialized(): boolean {
+  return soarWebSocket !== null;
+}
+
+export function shutdownWebSocket(): void {
+  if (soarWebSocket) {
+    soarWebSocket.shutdown();
+    soarWebSocket = null;
+    console.log('[SoarWebSocket] WebSocket service shutdown complete');
+  }
 }
