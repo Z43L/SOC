@@ -3,6 +3,49 @@ import WebSocket, { WebSocketServer } from 'ws';
 import url from 'url';
 let io;
 let wss;
+// Connection tracking and rate limiting
+const connectionCounts = new Map();
+const messageRateLimits = new Map();
+const MAX_CONNECTIONS_PER_IP = 10;
+const MAX_MESSAGES_PER_MINUTE = 60;
+const RATE_LIMIT_WINDOW = 60000; // 1 minute
+function getClientIP(req) {
+    return req.headers['x-forwarded-for']?.split(',')[0] ||
+        req.headers['x-real-ip'] ||
+        req.socket.remoteAddress ||
+        'unknown';
+}
+function checkConnectionLimit(ip) {
+    const currentConnections = connectionCounts.get(ip) || 0;
+    if (currentConnections >= MAX_CONNECTIONS_PER_IP) {
+        console.warn(`[WebSocket] Connection limit exceeded for IP: ${ip}`);
+        return false;
+    }
+    connectionCounts.set(ip, currentConnections + 1);
+    return true;
+}
+function removeConnection(ip) {
+    const currentConnections = connectionCounts.get(ip) || 0;
+    if (currentConnections > 0) {
+        connectionCounts.set(ip, currentConnections - 1);
+    }
+}
+function checkMessageRateLimit(ip) {
+    const now = Date.now();
+    const rateInfo = messageRateLimits.get(ip) || { count: 0, lastReset: now };
+    // Reset counter if window has passed
+    if (now - rateInfo.lastReset > RATE_LIMIT_WINDOW) {
+        rateInfo.count = 0;
+        rateInfo.lastReset = now;
+    }
+    if (rateInfo.count >= MAX_MESSAGES_PER_MINUTE) {
+        console.warn(`[WebSocket] Message rate limit exceeded for IP: ${ip}`);
+        return false;
+    }
+    rateInfo.count++;
+    messageRateLimits.set(ip, rateInfo);
+    return true;
+}
 export function initWebSocket(server) {
     // Initialize Socket.IO for general purpose
     io = new IOServer(server, {
@@ -19,64 +62,165 @@ export function initWebSocket(server) {
     // Handle WebSocket connections
     wss.on('connection', (ws, req) => {
         const pathname = url.parse(req.url).pathname;
-        console.log(`[WebSocket] Client connected to ${pathname}`);
+        const clientIP = getClientIP(req);
+        console.log(`[WebSocket] Client connected to ${pathname} from ${clientIP}`);
+        // Check connection limits
+        if (!checkConnectionLimit(clientIP)) {
+            ws.close(1008, 'Connection limit exceeded');
+            return;
+        }
         // Handle different WebSocket endpoints
         if (pathname === '/ws/dashboard') {
-            handleDashboardConnection(ws);
+            handleDashboardConnection(ws, clientIP);
         }
         else if (pathname === '/api/ws/connectors') {
-            handleConnectorsConnection(ws);
+            handleConnectorsConnection(ws, clientIP);
         }
         else {
             console.log(`[WebSocket] Unknown endpoint: ${pathname}`);
+            removeConnection(clientIP);
             ws.close(1002, 'Unknown endpoint');
         }
     });
     return io;
 }
-function handleDashboardConnection(ws) {
+function handleDashboardConnection(ws, clientIP) {
     console.log('[WebSocket] Dashboard client connected');
+    let messageCount = 0;
+    const maxMessageSize = 1024 * 10; // 10KB max message size
     ws.on('message', (data) => {
         try {
+            // Rate limiting
+            if (!checkMessageRateLimit(clientIP)) {
+                ws.close(1008, 'Rate limit exceeded');
+                return;
+            }
+            // Message size validation
+            if (data.length > maxMessageSize) {
+                console.warn(`[WebSocket] Message too large from ${clientIP}: ${data.length} bytes`);
+                ws.close(1009, 'Message too large');
+                return;
+            }
             const message = JSON.parse(data.toString());
-            console.log('[WebSocket] Dashboard message:', message);
+            // Basic message validation
+            if (typeof message !== 'object' || message === null) {
+                console.warn(`[WebSocket] Invalid message format from ${clientIP}`);
+                ws.send(JSON.stringify({
+                    type: 'error',
+                    message: 'Invalid message format'
+                }));
+                return;
+            }
+            console.log('[WebSocket] Dashboard message:', {
+                type: message.type,
+                from: clientIP,
+                messageId: ++messageCount
+            });
             // Handle dashboard-specific messages
+            // Add your dashboard message handling logic here
         }
         catch (error) {
-            console.error('[WebSocket] Error parsing dashboard message:', error);
+            console.error(`[WebSocket] Error parsing dashboard message from ${clientIP}:`, {
+                error: error instanceof Error ? error.message : 'Unknown error',
+                dataLength: data.length,
+                messageCount
+            });
+            // Send error response if connection is still open
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'error',
+                    message: 'Message parsing failed'
+                }));
+            }
         }
     });
-    ws.on('close', () => {
-        console.log('[WebSocket] Dashboard client disconnected');
+    ws.on('close', (code, reason) => {
+        console.log(`[WebSocket] Dashboard client disconnected: ${code} ${reason}`);
+        removeConnection(clientIP);
+    });
+    ws.on('error', (error) => {
+        console.error(`[WebSocket] Dashboard connection error from ${clientIP}:`, error);
+        removeConnection(clientIP);
     });
     // Send periodic updates (demo)
     const interval = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-                type: 'dashboard_update',
-                timestamp: new Date().toISOString(),
-                data: { status: 'active' }
-            }));
+            try {
+                ws.send(JSON.stringify({
+                    type: 'dashboard_update',
+                    timestamp: new Date().toISOString(),
+                    data: { status: 'active' }
+                }));
+            }
+            catch (error) {
+                console.error(`[WebSocket] Error sending dashboard update to ${clientIP}:`, error);
+                clearInterval(interval);
+            }
         }
         else {
             clearInterval(interval);
         }
     }, 30000);
+    // Clean up interval on close
+    ws.on('close', () => clearInterval(interval));
 }
-function handleConnectorsConnection(ws) {
+function handleConnectorsConnection(ws, clientIP) {
     console.log('[WebSocket] Connectors client connected');
+    let messageCount = 0;
+    const maxMessageSize = 1024 * 50; // 50KB max for connector messages
     ws.on('message', (data) => {
         try {
+            // Rate limiting
+            if (!checkMessageRateLimit(clientIP)) {
+                ws.close(1008, 'Rate limit exceeded');
+                return;
+            }
+            // Message size validation
+            if (data.length > maxMessageSize) {
+                console.warn(`[WebSocket] Connector message too large from ${clientIP}: ${data.length} bytes`);
+                ws.close(1009, 'Message too large');
+                return;
+            }
             const message = JSON.parse(data.toString());
-            console.log('[WebSocket] Connectors message:', message);
+            // Basic message validation
+            if (typeof message !== 'object' || message === null) {
+                console.warn(`[WebSocket] Invalid connector message format from ${clientIP}`);
+                ws.send(JSON.stringify({
+                    type: 'error',
+                    message: 'Invalid message format'
+                }));
+                return;
+            }
+            console.log('[WebSocket] Connectors message:', {
+                type: message.type,
+                from: clientIP,
+                messageId: ++messageCount
+            });
             // Handle connectors-specific messages
+            // Add your connector message handling logic here
         }
         catch (error) {
-            console.error('[WebSocket] Error parsing connectors message:', error);
+            console.error(`[WebSocket] Error parsing connectors message from ${clientIP}:`, {
+                error: error instanceof Error ? error.message : 'Unknown error',
+                dataLength: data.length,
+                messageCount
+            });
+            // Send error response if connection is still open
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'error',
+                    message: 'Message parsing failed'
+                }));
+            }
         }
     });
-    ws.on('close', () => {
-        console.log('[WebSocket] Connectors client disconnected');
+    ws.on('close', (code, reason) => {
+        console.log(`[WebSocket] Connectors client disconnected: ${code} ${reason}`);
+        removeConnection(clientIP);
+    });
+    ws.on('error', (error) => {
+        console.error(`[WebSocket] Connectors connection error from ${clientIP}:`, error);
+        removeConnection(clientIP);
     });
 }
 export function getIo() {
