@@ -301,7 +301,7 @@ Existe un directorio `agents/common/` a nivel raíz de los agentes, lo que sugie
 
 *   **`agents/common/agent-base.ts`**: Podría definir una clase base o funcionalidades compartidas por todos los agentes, independientemente del sistema operativo. Esto ayuda a evitar la duplicación de código y asegura un comportamiento consistente.
     *   *Referencia:* `agents/common/agent-base.ts`
-*   **`agents/common/agent-config.ts`**: Maneja la configuración del agente, como la dirección del servidor, la frecuencia de sondeo, los tipos de eventos a recolectar, etc.
+*   **`agents/common/agent-config.ts`**: Maneja la configuración del agente en formato YAML, como la dirección del servidor, la frecuencia de sondeo, los tipos de eventos a recolectar, etc.
     *   *Referencia:* `agents/common/agent-config.ts`
 *   **`agents/common/communication.ts`**: Encapsula la lógica de comunicación entre el agente y el servidor. Esto incluye el envío de datos recolectados y la recepción de comandos o actualizaciones de configuración. Podría implementar protocolos seguros como HTTPS.
     *   *Referencia:* `agents/common/communication.ts`

@@ -2,6 +2,7 @@ import { ScanEngine, ScanResult, ScanTarget } from './types';
 import { spawn, ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
+import { logger } from '../logger';
 
 export default class YaraEngine implements ScanEngine {
   name = 'YARA';
@@ -18,7 +19,7 @@ export default class YaraEngine implements ScanEngine {
       const proc: ChildProcess = spawn('yara', args);
       let stdout = '';
       proc.stdout?.on('data', (data: Buffer) => { stdout += data.toString(); });
-      proc.stderr?.on('data', (data: Buffer) => { console.error(data.toString()); });
+      proc.stderr?.on('data', (data: Buffer) => { logger.error(data.toString()); });
       proc.on('error', (err: Error) => reject(err));
       proc.on('close', async () => {
         const results: ScanResult[] = [];
