@@ -8,6 +8,16 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { 
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { 
   DropdownMenu,
   DropdownMenuContent,
@@ -16,7 +26,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreVertical, AlertCircle, CheckCircle, Loader2, Play, ListFilter } from "lucide-react";
+import { MoreVertical, AlertCircle, CheckCircle, Loader2, Play, ListFilter, Plus } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import LogsViewer from "@/components/logs/LogsViewer";
@@ -43,6 +53,16 @@ interface ConnectorsProps {
   };
   organization: {
     name: string;
+  };
+}
+
+// Response type for /api/connectors endpoint
+interface ConnectorsResponse {
+  connectors: ConnectorType[];
+  pagination: {
+    limit: number;
+    offset: number;
+    total: number;
   };
 }
 
@@ -87,10 +107,13 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
   });
   
   // Obtener la lista de conectores
-  const { data: connectors = [], isLoading, error } = useQuery<ConnectorType[]>({
+  const { data: connectorsResponse, isLoading, error } = useQuery<ConnectorsResponse>({
     queryKey: ['/api/connectors'],
     staleTime: 30000, // 30 segundos
   });
+  
+  // Extract connectors array from response
+  const connectors = connectorsResponse?.connectors ?? [];
   
   // WebSocket subscription for real-time updates
   useWebSocket(
@@ -107,15 +130,18 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
       onMessage: (event) => {
         if (event.type === 'connector-status-update') {
           // Instead of refreshing the entire list, we can update the specific connector
-          queryClient.setQueryData<ConnectorType[]>(['/api/connectors'], (oldData) => {
+          queryClient.setQueryData<ConnectorsResponse>(['/api/connectors'], (oldData) => {
             if (!oldData) return oldData;
             
-            return oldData.map(connector => {
-              if (connector.id === event.data.id) {
-                return { ...connector, ...event.data };
-              }
-              return connector;
-            });
+            return {
+              ...oldData,
+              connectors: oldData.connectors.map(connector => {
+                if (connector.id === event.data.id) {
+                  return { ...connector, ...event.data };
+                }
+                return connector;
+              })
+            };
           });
           
           // Show a notification for important status changes
@@ -833,21 +859,52 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
                 </Dialog>
               </CardHeader>
               <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full">
-                    <thead>
-                      <tr className="text-left bg-background-lighter">
-                        <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Name</th>
-                        <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Type</th>
-                        <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Data Volume</th>
-                        <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Status</th>
-                        <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Last Success</th>
-                        <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Active</th>
-                        <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-800">
-                      {connectors.map((connector) => (
+                {isLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin mr-3" />
+                    <span className="text-muted-foreground">Loading connectors...</span>
+                  </div>
+                ) : error ? (
+                  <Alert className="border-red-500 bg-red-500 bg-opacity-10">
+                    <AlertCircle className="h-4 w-4 text-red-500" />
+                    <AlertTitle className="text-red-500">Error Loading Connectors</AlertTitle>
+                    <AlertDescription>
+                      Unable to load connectors. Please try refreshing the page.
+                      {error instanceof Error && (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-xs">Error details</summary>
+                          <pre className="text-xs mt-1 whitespace-pre-wrap">{error.message}</pre>
+                        </details>
+                      )}
+                    </AlertDescription>
+                  </Alert>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full">
+                      <thead>
+                        <tr className="text-left bg-background-lighter">
+                          <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Name</th>
+                          <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Type</th>
+                          <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Data Volume</th>
+                          <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Status</th>
+                          <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Last Success</th>
+                          <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Active</th>
+                          <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-800">
+                        {connectors.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                              <div className="flex flex-col items-center">
+                                <AlertCircle className="h-8 w-8 mb-2 opacity-50" />
+                                <p>No connectors configured</p>
+                                <p className="text-xs mt-1">Add your first connector to start collecting security data</p>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : (
+                          connectors.map((connector) => (
                         <tr key={connector.id} className="hover:bg-background-lighter">
                           <td className="p-3">
                             <div className="flex items-center">
@@ -958,10 +1015,12 @@ const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
                             </div>
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
