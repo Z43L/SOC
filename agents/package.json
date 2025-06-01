@@ -6,10 +6,13 @@
   "type": "module",
   "scripts": {
     "build": "tsc main-simple.ts --outDir dist --target ES2020 --module CommonJS --strict",
+    "build:windows": "tsc main-windows.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop",
+    "build:all": "npm run build && npm run build:windows",
+    "test:windows": "tsc test-windows-collectors.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop && node dist/test-windows-collectors.js",
     "package": "npm run package:all",
     "package:all": "npm run package:linux && npm run package:windows && npm run package:macos",
     "package:linux": "pkg dist/main-simple.js --targets node18-linux-x64,node18-linux-arm64 --output ../dist/agents/soc-agent-linux",
-    "package:windows": "pkg dist/main-simple.js --targets node18-win-x64 --output ../dist/agents/soc-agent-windows.exe",
+    "package:windows": "pkg dist/main-windows.js --targets node18-win-x64 --output ../dist/agents/soc-agent-windows.exe",
     "package:macos": "pkg dist/main-simple.js --targets node18-macos-x64,node18-macos-arm64 --output ../dist/agents/soc-agent-macos"
   },
   "pkg": {
