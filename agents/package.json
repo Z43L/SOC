@@ -5,7 +5,7 @@
   "main": "main-simple.ts",
   "type": "module",
   "scripts": {
-    "build": "tsc main-simple.ts --outDir dist --target ES2020 --module CommonJS --strict",
+    "build": "tsc main-simple.ts --outDir dist --target ES2020 --module CommonJS --strict && mv dist/main-simple.js dist/main-simple.cjs",
     "build:windows": "tsc main-windows.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop",
     "build:all": "npm run build && npm run build:windows",
     "test:windows": "tsc test-windows-collectors.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop && node dist/test-windows-collectors.js",
