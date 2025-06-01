@@ -26,6 +26,7 @@ const DEFAULT_MONITORED_DIRS = [
 export const fileSystemCollector: Collector = {
   name: 'filesystem',
   description: 'Monitorea cambios en el sistema de archivos en directorios críticos',
+  compatibleSystems: ['linux'],
   
   /**
    * Inicia el monitoreo del sistema de archivos

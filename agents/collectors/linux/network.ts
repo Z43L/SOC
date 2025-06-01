@@ -39,6 +39,7 @@ interface NetworkConnection {
 export const networkCollector: Collector = {
   name: 'network',
   description: 'Monitorea conexiones de red en sistemas Linux usando ss',
+  compatibleSystems: ['linux'],
   
   /**
    * Inicia el monitoreo de red

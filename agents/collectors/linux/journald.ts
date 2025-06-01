@@ -17,6 +17,7 @@ let processEventCallback: ((event: any) => void) | null = null;
 export const journaldCollector: Collector = {
   name: 'journald',
   description: 'Recopila logs del sistema desde journald para unidades críticas (sshd, sudo, su)',
+  compatibleSystems: ['linux'],
   
   /**
    * Inicia la recopilación de logs de journald

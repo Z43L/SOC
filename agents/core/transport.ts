@@ -25,18 +25,18 @@ export interface TransportOptions {
 export interface TransportRequest {
   endpoint: string;
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
-  data?: any;
+  data?: unknown;
   headers?: Record<string, string>;
 }
 
 export interface TransportResponse {
   success: boolean;
   status: number;
-  data?: any;
+  data?: unknown;
   error?: string;
 }
 
-export type CommandHandler = (command: any) => Promise<{
+export type CommandHandler = (command: Record<string, unknown>) => Promise<{
   stdout: string;
   stderr: string;
   exitCode: number;
@@ -55,6 +55,7 @@ export type CommandHandler = (command: any) => Promise<{
  */
 export class Transport extends EventEmitter {
   private options: TransportOptions;
+  private config?: AgentConfig;
   private ws: WebSocket | null = null;
   private reconnectAttempt = 0;
   private reconnectTimer: NodeJS.Timeout | null = null;
@@ -63,9 +64,10 @@ export class Transport extends EventEmitter {
   private commandHandlers: Map<string, CommandHandler> = new Map();
   private lastSuccessfulConnection: number = 0;
 
-  constructor(options: TransportOptions) {
+  constructor(options: TransportOptions, config?: AgentConfig) {
     super();
     this.options = options;
+    this.config = config;
   }
 
   /**
@@ -82,8 +84,17 @@ export class Transport extends EventEmitter {
           'Accept': 'application/json',
           ...(this.options.token ? { 'Authorization': `Bearer ${this.options.token}` } : {}),
           ...(req.headers || {})
-        }
+        },
+        // Security options
+        rejectUnauthorized: true, // Always validate certificates by default
+        timeout: 30000, // 30 second timeout
       };
+
+      // Override certificate validation only if explicitly allowed in config
+      if (this.config?.allowInsecureConnections) {
+        reqOptions.rejectUnauthorized = false;
+        console.warn('WARNING: Certificate validation is disabled. This should only be used in development.');
+      }
 
       // Añadir certificado CA personalizado si se proporciona
       if (this.options.serverCA) {
@@ -221,8 +232,24 @@ export class Transport extends EventEmitter {
           try {
             // Message size validation
             const maxMessageSize = 1024 * 1024; // 1MB max
-            if (data.length > maxMessageSize) {
-              console.warn(`Received oversized message: ${data.length} bytes, ignoring`);
+            let dataBuffer: Buffer;
+            
+            if (Buffer.isBuffer(data)) {
+              dataBuffer = data;
+            } else if (typeof data === 'string') {
+              dataBuffer = Buffer.from(data, 'utf-8');
+            } else if (data instanceof ArrayBuffer) {
+              dataBuffer = Buffer.from(data);
+            } else if (Array.isArray(data)) {
+              // Handle Buffer array case
+              dataBuffer = Buffer.concat(data);
+            } else {
+              console.warn('Received data in unexpected format, attempting conversion');
+              dataBuffer = Buffer.from(String(data), 'utf-8');
+            }
+            
+            if (dataBuffer.length > maxMessageSize) {
+              console.warn(`Received oversized message: ${dataBuffer.length} bytes, ignoring`);
               return;
             }
 
@@ -230,9 +257,9 @@ export class Transport extends EventEmitter {
             
             // Descomprimir si es necesario
             if (this.options.enableCompression) {
-              messageData = zlib.inflateSync(data as Buffer);
+              messageData = zlib.inflateSync(dataBuffer);
             } else {
-              messageData = data as Buffer;
+              messageData = dataBuffer;
             }
             
             const message = JSON.parse(messageData.toString('utf-8'));

@@ -20,8 +20,3 @@ export const basicMacOSCollector: Collector = {
     return true;
   }
 };
-
-// Exportar todos los colectores para macOS
-export const collectors: Collector[] = [
-  basicMacOSCollector
-];
