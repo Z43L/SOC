@@ -43,27 +43,53 @@ export const eventLogCollector: Collector = {
    */
   async start(): Promise<boolean> {
     try {
-      // Cargar el módulo node-windows-eventlog dinámicamente
+      // Intentar cargar el módulo node-windows-eventlog
       try {
         eventlog = require('node-windows-eventlog');
       } catch (error) {
         if (logger) {
-          logger.warn('Módulo node-windows-eventlog no encontrado. Instalando...');
+          logger.error('Módulo node-windows-eventlog no encontrado. Por favor, instálelo manualmente: npm install node-windows-eventlog');
+          logger.error('El colector del Registro de Eventos requiere dependencias adicionales para funcionar en Windows');
         }
-        await installDependency('node-windows-eventlog');
+        return false;
+      }
+      
+      // Verificar que el módulo tiene las funciones necesarias
+      if (!eventlog.EventLogMonitor || typeof eventlog.EventLogMonitor !== 'function') {
+        if (logger) {
+          logger.error('El módulo node-windows-eventlog no tiene la clase EventLogMonitor requerida');
+        }
+        return false;
+      }
+      
+      // Iniciar monitoreo para cada canal con mejor manejo de errores
+      const startResults: boolean[] = [];
+      for (const channel of EVENT_CHANNELS) {
         try {
-          eventlog = require('node-windows-eventlog');
-        } catch (innerError) {
+          await startEventLogMonitoring(channel);
+          startResults.push(true);
+        } catch (error) {
           if (logger) {
-            logger.error('No se pudo cargar node-windows-eventlog:', innerError);
+            logger.error(`Fallo al iniciar monitoreo para canal ${channel}:`, error);
           }
-          return false;
+          startResults.push(false);
         }
       }
       
-      // Iniciar monitoreo para cada canal
-      for (const channel of EVENT_CHANNELS) {
-        await startEventLogMonitoring(channel);
+      // Verificar si al menos un canal se inició correctamente
+      const successfulChannels = startResults.filter(result => result).length;
+      
+      if (successfulChannels === 0) {
+        if (logger) {
+          logger.error('No se pudo iniciar monitoreo para ningún canal del Registro de Eventos');
+        }
+        return false;
+      }
+      
+      if (successfulChannels < EVENT_CHANNELS.length) {
+        if (logger) {
+          logger.warn(`Se iniciaron ${successfulChannels} de ${EVENT_CHANNELS.length} canales del Registro de Eventos`);
+        }
       }
       
       if (logger) {
@@ -83,19 +109,61 @@ export const eventLogCollector: Collector = {
    */
   async stop(): Promise<boolean> {
     try {
-      // Detener todos los manejadores de eventos
-      for (const handler of eventHandlers) {
-        if (handler && typeof handler.close === 'function') {
-          handler.close();
+      if (eventHandlers.length === 0) {
+        if (logger) {
+          logger.info('No hay manejadores de eventos activos para detener');
         }
+        return true;
       }
+      
+      if (logger) {
+        logger.info(`Deteniendo ${eventHandlers.length} manejadores de eventos...`);
+      }
+      
+      // Detener todos los manejadores de eventos con validación
+      const stopPromises = eventHandlers.map(async (handler, index) => {
+        try {
+          if (!handler) {
+            if (logger) {
+              logger.warn(`Manejador en índice ${index} es nulo`);
+            }
+            return false;
+          }
+          
+          // Intentar diferentes métodos para detener el handler
+          if (typeof handler.stop === 'function') {
+            await handler.stop();
+          } else if (typeof handler.close === 'function') {
+            await handler.close();
+          } else if (typeof handler.removeAllListeners === 'function') {
+            handler.removeAllListeners();
+          }
+          
+          return true;
+        } catch (error) {
+          if (logger) {
+            logger.error(`Error deteniendo manejador en índice ${index}:`, error);
+          }
+          return false;
+        }
+      });
+      
+      // Esperar a que todos los handlers se detengan
+      const stopResults = await Promise.allSettled(stopPromises);
+      const successfulStops = stopResults.filter(result => 
+        result.status === 'fulfilled' && result.value === true
+      ).length;
       
       // Limpiar la lista de manejadores
       eventHandlers.length = 0;
       
+      // Reset el módulo eventlog
+      eventlog = null;
+      
       if (logger) {
-        logger.info('Colector del Registro de Eventos detenido');
+        logger.info(`Colector del Registro de Eventos detenido (${successfulStops}/${stopResults.length} manejadores detenidos correctamente)`);
       }
+      
       return true;
     } catch (error) {
       if (logger) {
@@ -115,19 +183,42 @@ async function startEventLogMonitoring(channel: string): Promise<void> {
       throw new Error('Módulo node-windows-eventlog no inicializado');
     }
     
+    // Validar que el canal sea uno de los permitidos
+    if (!EVENT_CHANNELS.includes(channel)) {
+      throw new Error(`Canal no válido: ${channel}`);
+    }
+    
     if (logger) {
       logger.info(`Iniciando monitoreo para canal: ${channel}`);
+    }
+    
+    // Verificar que la clase EventLogMonitor exista
+    if (!eventlog.EventLogMonitor || typeof eventlog.EventLogMonitor !== 'function') {
+      throw new Error('EventLogMonitor no está disponible en el módulo node-windows-eventlog');
     }
     
     // Crear manejador para el canal
     const handler = new eventlog.EventLogMonitor(channel);
     
+    // Validar que el handler se creó correctamente
+    if (!handler) {
+      throw new Error(`No se pudo crear manejador para el canal: ${channel}`);
+    }
+    
     // Registrar el manejador
     eventHandlers.push(handler);
     
-    // Configurar manejador de eventos
+    // Configurar manejador de eventos con validación
     handler.on('eventlog', (eventData: any) => {
       try {
+        // Validar datos del evento antes de procesar
+        if (!eventData || typeof eventData !== 'object') {
+          if (logger) {
+            logger.warn(`Datos de evento inválidos recibidos del canal ${channel}`);
+          }
+          return;
+        }
+        
         // Procesar el evento
         processEventLogEntry(channel, eventData);
       } catch (error) {
@@ -137,8 +228,19 @@ async function startEventLogMonitoring(channel: string): Promise<void> {
       }
     });
     
-    // Iniciar el monitoreo
-    handler.start();
+    // Manejar errores del handler
+    handler.on('error', (error: any) => {
+      if (logger) {
+        logger.error(`Error en el manejador del canal ${channel}:`, error);
+      }
+    });
+    
+    // Iniciar el monitoreo con validación
+    try {
+      handler.start();
+    } catch (startError) {
+      throw new Error(`Error al iniciar monitoreo para ${channel}: ${startError}`);
+    }
     
     if (logger) {
       logger.info(`Monitoreo iniciado para canal: ${channel}`);
@@ -147,6 +249,8 @@ async function startEventLogMonitoring(channel: string): Promise<void> {
     if (logger) {
       logger.error(`Error iniciando monitoreo para canal ${channel}:`, error);
     }
+    // Propagar el error para que el caller pueda manejar fallos
+    throw error;
   }
 }
 
@@ -154,40 +258,90 @@ async function startEventLogMonitoring(channel: string): Promise<void> {
  * Procesa una entrada del Registro de Eventos
  */
 function processEventLogEntry(channel: string, eventData: any): void {
-  // Mapear nivel de evento a severidad
-  let severity = 'info';
-  if (eventData.level === 'Error' || eventData.level === 'Critical') {
-    severity = 'high';
-  } else if (eventData.level === 'Warning') {
-    severity = 'medium';
-  }
-  
-  // Ajustar severidad basado en IDs de eventos conocidos
-  if (isSecurityCriticalEvent(channel, eventData.eventId)) {
-    severity = 'high';
-  }
-  
-  // Crear evento normalizado
-  const normalizedEvent = {
-    source: 'windows-eventlog',
-    channel,
-    type: 'windows_event',
-    timestamp: new Date(eventData.timeCreated || Date.now()),
-    severity,
-    message: eventData.message || `Evento ${eventData.eventId} en ${channel}`,
-    details: {
-      eventId: eventData.eventId,
-      level: eventData.level,
-      provider: eventData.providerName,
-      computer: eventData.computerName,
-      userId: eventData.userId,
-      properties: eventData.properties
+  try {
+    // Validar datos básicos del evento
+    if (!eventData || typeof eventData !== 'object') {
+      if (logger) {
+        logger.warn(`Datos de evento inválidos para canal ${channel}`);
+      }
+      return;
     }
-  };
-  
-  // Enviar evento a través del callback si está registrado
-  if (eventCallback) {
-    eventCallback(normalizedEvent);
+    
+    // Validar campos mínimos requeridos
+    const eventId = eventData.eventId || eventData.id || 0;
+    const level = eventData.level || eventData.severity || 'Unknown';
+    const timeCreated = eventData.timeCreated || eventData.timestamp || new Date().toISOString();
+    const message = eventData.message || eventData.description || `Evento ${eventId} en ${channel}`;
+    
+    // Mapear nivel de evento a severidad con validación
+    let severity = 'info';
+    if (typeof level === 'string') {
+      const lowerLevel = level.toLowerCase();
+      if (lowerLevel === 'error' || lowerLevel === 'critical') {
+        severity = 'high';
+      } else if (lowerLevel === 'warning' || lowerLevel === 'warn') {
+        severity = 'medium';
+      }
+    }
+    
+    // Ajustar severidad basado en IDs de eventos conocidos
+    if (typeof eventId === 'number' && isSecurityCriticalEvent(channel, eventId)) {
+      severity = 'high';
+    }
+    
+    // Crear timestamp válido
+    let timestamp: Date;
+    try {
+      timestamp = new Date(timeCreated);
+      if (isNaN(timestamp.getTime())) {
+        timestamp = new Date();
+      }
+    } catch {
+      timestamp = new Date();
+    }
+    
+    // Crear evento normalizado con validación
+    const normalizedEvent = {
+      source: 'windows-eventlog',
+      channel: String(channel),
+      type: 'windows_event' as const,
+      timestamp,
+      severity,
+      message: String(message).substring(0, 1000), // Limitar longitud del mensaje
+      details: {
+        eventId: Number(eventId) || 0,
+        level: String(level),
+        provider: String(eventData.providerName || eventData.provider || 'Unknown'),
+        computer: String(eventData.computerName || eventData.computer || 'Unknown'),
+        userId: eventData.userId ? String(eventData.userId) : undefined,
+        properties: eventData.properties || {}
+      }
+    };
+    
+    // Validar evento antes de enviarlo
+    if (!normalizedEvent.message || normalizedEvent.message.trim().length === 0) {
+      if (logger) {
+        logger.warn(`Evento con mensaje vacío ignorado para canal ${channel}`);
+      }
+      return;
+    }
+    
+    // Enviar evento a través del callback si está registrado
+    if (eventCallback && typeof eventCallback === 'function') {
+      try {
+        eventCallback(normalizedEvent);
+      } catch (error) {
+        if (logger) {
+          logger.error(`Error en callback de evento para canal ${channel}:`, error);
+        }
+      }
+    } else if (logger) {
+      logger.debug(`No hay callback registrado para procesar evento del canal ${channel}`);
+    }
+  } catch (error) {
+    if (logger) {
+      logger.error(`Error procesando entrada del registro de eventos para canal ${channel}:`, error);
+    }
   }
 }
 
@@ -261,32 +415,7 @@ function isSecurityCriticalEvent(channel: string, eventId: number): boolean {
   return false;
 }
 
-/**
- * Instala una dependencia Node.js
- */
-async function installDependency(packageName: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const { exec } = require('child_process');
-    if (logger) {
-      logger.info(`Instalando dependencia: ${packageName}`);
-    }
-    
-    exec(`npm install ${packageName}`, (error: any, stdout: string, stderr: string) => {
-      if (error) {
-        if (logger) {
-          logger.error(`Error instalando ${packageName}:`, error);
-        }
-        reject(error);
-        return;
-      }
-      
-      if (logger) {
-        logger.info(`Dependencia ${packageName} instalada correctamente`);
-      }
-      resolve();
-    });
-  });
-}
+
 
 /**
  * Registra un callback para procesar eventos

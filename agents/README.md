@@ -77,7 +77,10 @@ AGENT_TRANSPORT        # Tipo de transporte (https/websocket)
 - **module**: Carga/descarga de módulos del kernel
 
 ### Windows
-- **event-log**: Eventos de seguridad del registro de Windows
+- **event-log**: Eventos de seguridad del registro de Windows (mejorado con validación y manejo robusto de errores)
+- **process**: Monitoreo de procesos con detección de actividad sospechosa usando tasklist y WMI
+- **registry**: Monitoreo de cambios críticos en el registro del sistema
+- **services**: Monitoreo de servicios de Windows para detectar cambios de estado
 
 ### macOS
 - **basic**: Colector básico (expandible según necesidades)
@@ -140,6 +143,30 @@ Los agentes pueden configurarse para monitorear:
 
 ## Implementaciones Específicas por Plataforma
 
+### Windows (windows-agent.ts)
+
+Implementación completa para sistemas Windows que utiliza:
+
+**Colectores de Windows:**
+- **Event Log**: Monitoreo completo del Registro de Eventos de Windows (Security, System, Application, PowerShell)
+- **Process**: Monitoreo de procesos con detección de actividad sospechosa usando tasklist y WMI
+- **Registry**: Monitoreo de cambios críticos en el registro del sistema
+- **Services**: Monitoreo de servicios de Windows para detectar cambios de estado
+
+**Características de seguridad mejoradas:**
+- Eliminación de instalación dinámica de paquetes durante la ejecución (vulnerabilidad de seguridad corregida)
+- Validación exhaustiva de datos de entrada y salida
+- Manejo robusto de errores y recuperación automática
+- Filtrado inteligente de eventos críticos de seguridad
+- Timeouts configurables para comandos del sistema
+
+**Capacidades específicas de Windows:**
+- Integración con WMI (Windows Management Instrumentation)
+- Soporte para comandos nativos de Windows (tasklist, reg, sc, wmic)
+- Detección de procesos sospechosos y ubicaciones peligrosas
+- Monitoreo de servicios críticos del sistema
+- Análisis de cambios en claves críticas del registro
+
 ### Linux (linux-agent.ts)
 
 Implementación para sistemas Linux que utiliza herramientas nativas:
@@ -184,8 +211,8 @@ Los agentes implementan varias medidas de seguridad:
 
 ## Desarrollo Futuro
 
-- Implementación para Windows
+- ✅ **Implementación para Windows** - Completada con colectores completos y características de seguridad mejoradas
 - Implementación para macOS
-- Soporte para agentes sin sistema operativo (dispositivos IoT)
+- Soporte para agentes sin sistema operatorio (dispositivos IoT)
 - Análisis de tráfico profundo mediante captura de paquetes
 - Análisis de memoria para detección avanzada de malware
