@@ -141,13 +141,13 @@ export class Updater {
         // Copiar a una ubicación temporal y configurar para actualizar en el próximo inicio
         const scriptPath = path.join(os.tmpdir(), 'agent-update.bat');
         
-        // Crear script de actualización
-        const script = `
-          @echo off
-          timeout /t 2 /nobreak > nul
-          copy /Y "${newBinaryPath}" "${this.options.binaryPath}"
-          ${this.options.restartCommand || 'exit /b 0'}
-        `;
+        // Crear script de actualización con paths properly quoted para Windows
+        const escapedNewPath = newBinaryPath.replace(/"/g, '\\"');
+        const escapedCurrentPath = this.options.binaryPath.replace(/"/g, '\\"');
+        const script = `@echo off
+timeout /t 2 /nobreak > nul
+copy /Y "${escapedNewPath}" "${escapedCurrentPath}"
+${this.options.restartCommand || 'exit /b 0'}`.trim();
         
         await fs.writeFile(scriptPath, script);
         
