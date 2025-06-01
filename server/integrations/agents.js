@@ -4,6 +4,7 @@
 import { storage } from '../storage';
 import { AgentBuilder, AgentOS } from './agent-builder';
 import { verifyRegistrationKey, generateAgentToken } from './connectors/jwt-auth';
+import { buildQueue } from './build-queue';
 import * as fs from 'fs';
 import * as path from 'path';
 // Crear directorio de descargas si no existe
@@ -464,7 +465,139 @@ export async function generateAgentRegistrationKey(userId) {
 /**
  * Construye un paquete de agente para descarga
  */
-export async function buildAgentPackage(userId, operatingSystem, serverUrl, registrationKey, customName, capabilities) {
+/**
+ * Inicia la construcción de un paquete de agente usando la cola
+ */
+export async function queueAgentBuild(userId, operatingSystem, serverUrl, registrationKey, customName, capabilities, architecture) {
+    try {
+        // Validaciones previas (sin construir aún)
+        const user = await storage.getUser(userId);
+        if (!user) {
+            return {
+                success: false,
+                message: 'User not found'
+            };
+        }
+        if (!user.organizationId) {
+            return {
+                success: false,
+                message: 'User does not belong to any organization'
+            };
+        }
+
+        // Obtener la organización y su plan
+        const organization = await storage.getOrganization(user.organizationId);
+        if (!organization) {
+            return {
+                success: false,
+                message: 'Organization not found'
+            };
+        }
+
+        // Obtener el plan de la organización
+        const planId = organization.planId;
+        if (typeof planId !== 'number') {
+            return {
+                success: false,
+                message: 'Organization does not have a valid plan assigned'
+            };
+        }
+        const plan = await storage.getPlan(planId);
+        if (!plan) {
+            return {
+                success: false,
+                message: 'Subscription plan not found'
+            };
+        }
+
+        // Verificar el límite de agentes para el plan gratuito
+        if (plan.maxAgents === 1) {
+            const currentAgents = await storage.listAgents(organization.id);
+            const activeAgents = currentAgents.filter(agent => agent.status === 'active');
+            if (activeAgents.length >= plan.maxAgents) {
+                return {
+                    success: false,
+                    message: 'You have reached the agent limit for your current plan. Please upgrade to add more agents.'
+                };
+            }
+        }
+
+        // Determinar el tipo de OS
+        let agentOS;
+        switch (operatingSystem.toLowerCase()) {
+            case 'windows':
+                agentOS = AgentOS.WINDOWS;
+                break;
+            case 'macos':
+            case 'mac':
+            case 'osx':
+                agentOS = AgentOS.MACOS;
+                break;
+            case 'linux':
+                agentOS = AgentOS.LINUX;
+                break;
+            default:
+                return {
+                    success: false,
+                    message: `Unsupported operating system: ${operatingSystem}`
+                };
+        }
+
+        // Crear el agente en la base de datos con estado 'building'
+        let agentRecord = null;
+        if (customName) {
+            // Buscar por nombre personalizado y organización
+            const existingAgents = await storage.listAgents(user.organizationId);
+            agentRecord = existingAgents.find(a => a.name === customName);
+        }
+        if (!agentRecord) {
+            const agentData = {
+                userId,
+                name: customName || `Agente-${Date.now()}`,
+                hostname: customName || `host-${Date.now()}`,
+                operatingSystem,
+                version: 'building',
+                ipAddress: '',
+                capabilities: capabilities,
+                status: 'building',
+                organizationId: user.organizationId,
+                agentIdentifier: `${customName || 'agent'}-${Date.now()}`
+            };
+            agentRecord = await storage.createAgent(agentData);
+        }
+
+        // Configurar la construcción del agente
+        const buildConfig = {
+            os: agentOS,
+            serverUrl,
+            registrationKey,
+            userId,
+            customName,
+            capabilities,
+            architecture: architecture || 'universal'
+        };
+
+        // Añadir a la cola
+        const jobId = buildQueue.addBuildJob(userId, buildConfig);
+
+        return {
+            success: true,
+            message: 'Build job queued successfully',
+            jobId,
+            agentId: agentRecord ? agentRecord.id.toString() : null,
+            estimatedTime: '3-5 minutes'
+        };
+
+    } catch (error) {
+        console.error('Error queueing agent build:', error);
+        return {
+            success: false,
+            message: error instanceof Error ? error.message : 'Unknown error'
+        };
+    }
+}
+
+export async function buildAgentPackage(userId, operatingSystem, serverUrl, registrationKey, customName, capabilities, architecture) {
     try {
         // Verificar si el usuario pertenece a una organización
         const user = await storage.getUser(userId);
@@ -563,7 +696,8 @@ export async function buildAgentPackage(userId, operatingSystem, serverUrl, regi
             registrationKey,
             userId,
             customName,
-            capabilities
+            capabilities,
+            architecture: architecture || 'universal'
         };
         // Construir el agente
         const result = await agentBuilder.buildAgent(config);
