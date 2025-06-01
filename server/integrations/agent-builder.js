@@ -271,6 +271,46 @@ if ($serviceExists) {
     Start-Sleep -Seconds 2
 }
 
+# Detectar Node.js en el sistema
+Write-Host "Detectando Node.js..."
+$nodePath = $null
+
+# Intentar encontrar node.exe en el PATH
+try {
+    $nodeCommand = Get-Command node -ErrorAction Stop
+    $nodePath = $nodeCommand.Source
+    Write-Host "Node.js encontrado en: $nodePath" -ForegroundColor Green
+} catch {
+    # Buscar en ubicaciones comunes de Node.js
+    $commonPaths = @(
+        "$env:ProgramFiles\\nodejs\\node.exe",
+        "$env:ProgramFiles(x86)\\nodejs\\node.exe",
+        "$env:LOCALAPPDATA\\Programs\\Microsoft VS Code\\node.exe",
+        "$env:APPDATA\\npm\\node.exe"
+    )
+    
+    foreach ($path in $commonPaths) {
+        if (Test-Path $path) {
+            $nodePath = $path
+            Write-Host "Node.js encontrado en: $nodePath" -ForegroundColor Green
+            break
+        }
+    }
+}
+
+if (-not $nodePath) {
+    Write-Host "Error: Node.js no encontrado en el sistema." -ForegroundColor Red
+    Write-Host "Por favor, instale Node.js desde https://nodejs.org antes de continuar." -ForegroundColor Yellow
+    exit 1
+}
+
+# Verificar que el archivo agent-windows.js existe
+$agentScript = "$installDir\\agent-windows.js"
+if (-not (Test-Path $agentScript)) {
+    Write-Host "Error: Archivo del agente no encontrado en $agentScript" -ForegroundColor Red
+    exit 1
+}
+
 # Usar NSSM para crear/actualizar el servicio
 $nssmPath = "$installDir\\nssm.exe"
 
@@ -281,8 +321,8 @@ if (-not (Test-Path $nssmPath)) {
 
 if ($serviceExists) {
     # Actualizar servicio existente
-    & $nssmPath set $serviceName Application "$installDir\\node.exe"
-    & $nssmPath set $serviceName AppParameters "$installDir\\agent-windows.js"
+    & $nssmPath set $serviceName Application "$nodePath"
+    & $nssmPath set $serviceName AppParameters "$agentScript"
     & $nssmPath set $serviceName AppDirectory "$installDir"
     & $nssmPath set $serviceName DisplayName "SOC Intelligent Security Agent"
     & $nssmPath set $serviceName Description "Monitoriza el sistema y envía datos de seguridad a la plataforma SOC-Inteligente"
@@ -292,7 +332,7 @@ if ($serviceExists) {
     & $nssmPath set $serviceName AppStderr "$dataDir\\agent-stderr.log"
 } else {
     # Crear nuevo servicio
-    & $nssmPath install $serviceName "$installDir\\node.exe" "$installDir\\agent-windows.js"
+    & $nssmPath install $serviceName "$nodePath" "$agentScript"
     & $nssmPath set $serviceName DisplayName "SOC Intelligent Security Agent"
     & $nssmPath set $serviceName Description "Monitoriza el sistema y envía datos de seguridad a la plataforma SOC-Inteligente"
     & $nssmPath set $serviceName Start SERVICE_AUTO_START
@@ -301,13 +341,46 @@ if ($serviceExists) {
     & $nssmPath set $serviceName AppStderr "$dataDir\\agent-stderr.log"
 }
 
-# Iniciar el servicio
-Write-Host "Iniciando servicio SOC-Intelligent..."
-Start-Service -Name $serviceName
+# Verificar que el servicio se configuró correctamente
+Write-Host "Verificando configuración del servicio..."
+$serviceInfo = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+if (-not $serviceInfo) {
+    Write-Host "Error: El servicio no fue creado correctamente." -ForegroundColor Red
+    exit 1
+}
 
-Write-Host "Instalación completada. El agente está en ejecución." -ForegroundColor Green
-Write-Host "ID del Agente: ${config.agentId}" -ForegroundColor Cyan
-Write-Host "Servidor SOC: ${config.serverUrl}" -ForegroundColor Cyan
+# Intentar iniciar el servicio con manejo de errores mejorado
+Write-Host "Iniciando servicio SOC-Intelligent..."
+try {
+    Start-Service -Name $serviceName -ErrorAction Stop
+    
+    # Verificar que el servicio se inició correctamente
+    Start-Sleep -Seconds 3
+    $serviceStatus = Get-Service -Name $serviceName
+    
+    if ($serviceStatus.Status -eq "Running") {
+        Write-Host "Instalación completada. El agente está en ejecución." -ForegroundColor Green
+        Write-Host "ID del Agente: ${config.agentId}" -ForegroundColor Cyan
+        Write-Host "Servidor SOC: ${config.serverUrl}" -ForegroundColor Cyan
+        Write-Host "Ubicación de logs: $dataDir\\agent-stdout.log" -ForegroundColor Cyan
+    } else {
+        Write-Host "Advertencia: El servicio fue creado pero no se está ejecutando." -ForegroundColor Yellow
+        Write-Host "Estado actual: $($serviceStatus.Status)" -ForegroundColor Yellow
+        Write-Host "Verifique los logs en: $dataDir\\agent-stderr.log" -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "Error al iniciar el servicio: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "El servicio fue instalado pero falló al iniciar." -ForegroundColor Yellow
+    Write-Host "" -ForegroundColor Yellow
+    Write-Host "Posibles causas:" -ForegroundColor Yellow
+    Write-Host "1. Verifique que Node.js esté funcionando: $nodePath --version" -ForegroundColor Yellow
+    Write-Host "2. Verifique el archivo del agente: $agentScript" -ForegroundColor Yellow
+    Write-Host "3. Revise los logs de error en: $dataDir\\agent-stderr.log" -ForegroundColor Yellow
+    Write-Host "4. Intente iniciar el servicio manualmente: Start-Service -Name $serviceName" -ForegroundColor Yellow
+    Write-Host "" -ForegroundColor Yellow
+    Write-Host "Para más información, ejecute: Get-EventLog -LogName System -Source 'Service Control Manager' -Newest 5" -ForegroundColor Yellow
+    exit 1
+}
 `;
         // Crear script de desinstalación
         const uninstallScript = `
