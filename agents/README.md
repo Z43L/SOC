@@ -1,32 +1,109 @@
 # Agentes de SOC-Inteligente
 
-Este directorio contiene el código fuente para los agentes de recolección de datos del SOC-Inteligente. Estos agentes están diseñados para ser instalados en sistemas cliente para recopilar información de seguridad y enviarla al servidor central.
+Este directorio contiene el código fuente para los agentes de recolección de datos del SOC-Inteligente. Los agentes utilizan una arquitectura modular unificada con colectores específicos por plataforma.
+
+## Arquitectura Modular
+
+La nueva arquitectura se basa en un sistema de colectores modulares que permite:
+- **Extensibilidad**: Fácil adición de nuevos colectores
+- **Carga dinámica**: Los colectores se cargan según la plataforma
+- **Configuración unificada**: Una sola interfaz de configuración
+- **Logging centralizado**: Sistema de logging consistente
+- **Tipado estricto**: TypeScript con tipos mejorados
 
 ## Estructura del Proyecto
 
 ```
 agents/
-├── common/               # Código común para todos los agentes
-│   ├── agent-base.ts     # Clase base abstracta para todas las implementaciones
-│   ├── agent-config.ts   # Gestión de configuración
-│   ├── communication.ts  # Comunicación con el servidor SOC
-│   └── monitoring.ts     # Interfaces y utilidades para monitoreo
-├── linux/                # Implementación específica para Linux
-│   ├── index.ts          # Punto de entrada para el agente Linux
-│   └── linux-agent.ts    # Implementación de agente para Linux
-├── windows/              # Implementación específica para Windows (pendiente)
-└── README.md             # Este archivo
+├── collectors/             # Sistema de colectores modulares
+│   ├── types.ts           # Interfaces y tipos compartidos
+│   ├── index.ts           # Gestión dinámica de colectores
+│   ├── linux/             # Colectores específicos para Linux
+│   ├── macos/             # Colectores específicos para macOS  
+│   └── windows/           # Colectores específicos para Windows
+├── core/                  # Funcionalidad central
+│   ├── agent-config.ts    # Gestión de configuración con validaciones
+│   ├── logger.ts          # Sistema de logging centralizado
+│   ├── transport.ts       # Transporte seguro con validación SSL
+│   ├── queue.ts           # Cola persistente de eventos
+│   ├── metrics.ts         # Recolección de métricas
+│   └── heartbeat.ts       # Gestión de heartbeats
+├── commands/              # Ejecutor de comandos push
+├── updater/               # Sistema de actualizaciones
+├── main.ts                # Punto de entrada principal con CLI
+└── main-simple.ts         # Versión simplificada para testing
 ```
 
-## Módulos Principales
+## Mejoras de Seguridad
 
-### Agent Base (agent-base.ts)
+- **Validación de integridad**: Verificación SHA256 del binario del agente
+- **Validación SSL/TLS**: Verificación estricta de certificados del servidor
+- **Encriptación de configuración**: Valores sensibles encriptados en configuración
+- **Límites de mensaje**: Validación de tamaño máximo de mensajes (1MB)
+- **Timeouts**: Timeouts de conexión configurables
 
-Proporciona una clase abstracta con la lógica común de todos los agentes:
-- Inicialización y registro con el servidor
-- Programación de tareas periódicas (heartbeat, envío de datos, escaneos)
-- Gestión de cola de eventos
-- Comunicación con el servidor
+## Configuración
+
+### Argumentos de Línea de Comandos
+
+```bash
+soc-agent [opciones]
+
+Opciones:
+  -c, --config <path>      Ruta al archivo de configuración
+  -l, --log-level <level>  Nivel de logging (debug, info, warn, error)
+  -h, --help              Mostrar ayuda
+  -v, --version           Mostrar versión
+```
+
+### Variables de Entorno
+
+```bash
+AGENT_CONFIG_PATH       # Ruta al archivo de configuración
+AGENT_LOG_LEVEL        # Nivel de logging
+AGENT_SERVER_URL       # URL del servidor
+AGENT_ORG_KEY          # Clave de organización
+AGENT_VALIDATE_CERTS   # Validar certificados SSL (true/false)
+AGENT_TRANSPORT        # Tipo de transporte (https/websocket)
+```
+
+## Colectores Disponibles
+
+### Linux
+- **process**: Monitoreo de procesos con detección de actividad sospechosa
+- **network**: Conexiones de red y patrones anómalos
+- **filesystem**: Cambios en archivos críticos usando inotify
+- **journald**: Logs del sistema desde journald
+- **module**: Carga/descarga de módulos del kernel
+
+### Windows
+- **event-log**: Eventos de seguridad del registro de Windows
+
+### macOS
+- **basic**: Colector básico (expandible según necesidades)
+
+## Desarrollo
+
+### Compilación
+
+```bash
+cd agents/
+npm install
+npm run build
+```
+
+### Empaquetado
+
+```bash
+npm run package  # Genera binarios para todas las plataformas
+```
+
+### Testing
+
+```bash
+# Ejecutar con configuración de prueba
+./dist/main.js --config test-config.yaml --log-level debug
+```
 
 ### Agent Config (agent-config.ts)
 
