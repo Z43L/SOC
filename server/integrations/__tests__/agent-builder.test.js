@@ -2,48 +2,52 @@
  * Test básico para el sistema de construcción de agentes
  */
 
-import { AgentBuilder, AgentOS } from '../agent-builder.js';
-import { buildQueue } from '../build-queue.js';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import { AgentOS } from '../agent-builder.js';
+import { BuildQueue } from '../build-queue.js';
+import { ArtifactManager } from '../artifact-manager.js';
 
-async function testBasicBuild() {
-    console.log('Starting basic build test...');
-    
-    const builder = new AgentBuilder();
-    
-    const testConfig = {
-        os: AgentOS.LINUX,
-        serverUrl: 'https://test.example.com',
-        registrationKey: 'test-key-123',
-        userId: 1,
-        customName: 'test-agent',
-        architecture: 'x64',
-        capabilities: {
-            fileSystemMonitoring: true,
-            processMonitoring: true,
-            networkMonitoring: false
-        }
-    };
+async function testAgentConfig() {
+    console.log('Testing agent config generation...');
     
     try {
-        console.log('Testing agent config generation...');
-        const config = builder.generateAgentConfig(testConfig, 'test-agent-001');
-        console.log('Config generated:', JSON.stringify(config, null, 2));
+        // Importar AgentBuilder dinámicamente
+        const { AgentBuilder } = await import('../agent-builder.js');
+        const builder = new AgentBuilder();
         
-        console.log('Config generation test passed ✓');
+        const testConfig = {
+            os: AgentOS.LINUX,
+            serverUrl: 'https://test.example.com',
+            registrationKey: 'test-key-123',
+            userId: 1,
+            customName: 'test-agent',
+            architecture: 'x64',
+            capabilities: {
+                fileSystemMonitoring: true,
+                processMonitoring: true,
+                networkMonitoring: false
+            }
+        };
+        
+        const config = builder.generateAgentConfig(testConfig, 'test-agent-001');
+        console.log('✓ Config generation test passed');
+        console.log('  - Agent ID:', config.agentId);
+        console.log('  - Platform:', config.buildInfo.platform);
+        console.log('  - Architecture:', config.architecture || 'universal');
+        console.log('  - Build ID:', config.buildInfo.buildId);
+        
         return true;
     } catch (error) {
-        console.error('Config generation test failed:', error);
+        console.error('✗ Config generation test failed:', error.message);
         return false;
     }
 }
 
 async function testBuildQueue() {
-    console.log('Starting build queue test...');
+    console.log('Testing build queue...');
     
     try {
+        const buildQueue = new BuildQueue();
+        
         const testConfig = {
             os: AgentOS.WINDOWS,
             serverUrl: 'https://test.example.com',
@@ -53,26 +57,42 @@ async function testBuildQueue() {
             architecture: 'x64'
         };
         
-        console.log('Adding job to queue...');
         const jobId = buildQueue.addBuildJob(2, testConfig);
-        console.log('Job added with ID:', jobId);
+        console.log('✓ Job added to queue:', jobId);
         
-        console.log('Getting job status...');
         const status = buildQueue.getJobStatus(jobId);
-        console.log('Job status:', status);
+        console.log('✓ Job status retrieved:', status.status);
         
-        console.log('Getting queue stats...');
         const stats = buildQueue.getQueueStats();
-        console.log('Queue stats:', stats);
+        console.log('✓ Queue stats:', `${stats.totalJobs} jobs, ${stats.activeBuilds} active`);
         
-        console.log('Cancelling job...');
         const cancelResult = buildQueue.cancelJob(jobId, 2);
-        console.log('Cancel result:', cancelResult);
+        console.log('✓ Job cancellation:', cancelResult.success ? 'success' : 'failed');
         
-        console.log('Build queue test passed ✓');
         return true;
     } catch (error) {
-        console.error('Build queue test failed:', error);
+        console.error('✗ Build queue test failed:', error.message);
+        return false;
+    }
+}
+
+async function testArtifactManager() {
+    console.log('Testing artifact manager...');
+    
+    try {
+        const artifactManager = new ArtifactManager();
+        
+        // Test stats (no actual file operations)
+        const stats = artifactManager.getStats();
+        console.log('✓ Artifact stats retrieved:', `${stats.tokens.total} tokens`);
+        
+        // Test cleanup (should not fail even with no tokens)
+        artifactManager.cleanupExpiredTokens();
+        console.log('✓ Cleanup executed successfully');
+        
+        return true;
+    } catch (error) {
+        console.error('✗ Artifact manager test failed:', error.message);
         return false;
     }
 }
@@ -82,8 +102,9 @@ async function runTests() {
     
     const results = [];
     
-    results.push(await testBasicBuild());
+    results.push(await testAgentConfig());
     results.push(await testBuildQueue());
+    results.push(await testArtifactManager());
     
     const passed = results.filter(r => r === true).length;
     const total = results.length;
@@ -105,4 +126,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     runTests().catch(console.error);
 }
 
-export { testBasicBuild, testBuildQueue };
+export { testAgentConfig, testBuildQueue, testArtifactManager };
