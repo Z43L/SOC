@@ -5,7 +5,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
-import { Collector } from '../index';
+import { Collector } from '../types';
 
 // Procesos de inotifywait
 const inotifyProcesses: any[] = [];

@@ -3,7 +3,7 @@
  */
 
 import { spawn } from 'child_process';
-import { Collector } from '../index';
+import { Collector } from '../types';
 
 // Proceso del journalctl
 let journalProcess: any = null;

@@ -2,6 +2,16 @@
  * Tipos comunes para eventos y colectores
  */
 
+import { Logger } from '../core/logger';
+
+/**
+ * Configuración para colectores
+ */
+export interface CollectorConfig {
+  eventCallback?: (event: any) => void;
+  logger?: Logger;
+}
+
 /**
  * Representa un evento generado por el agente
  */
@@ -140,5 +150,5 @@ export interface Collector {
   stop: () => Promise<boolean>;
   
   // Opcional: configuración específica
-  configure?: (config: any) => Promise<void>;
+  configure?: (config: CollectorConfig) => Promise<void>;
 }

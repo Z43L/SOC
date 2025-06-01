@@ -3,7 +3,8 @@
  */
 
 import * as fs from 'fs';
-import { Collector } from '../index';
+import { Collector, CollectorConfig } from '../types';
+import { Logger } from '../../core/logger';
 
 // Intervalo de sondeo para módulos
 let moduleInterval: NodeJS.Timeout | null = null;
@@ -13,6 +14,9 @@ let lastModules = new Map<string, KernelModule>();
 
 // Callback para procesar eventos
 let moduleEventCallback: ((event: any) => void) | null = null;
+
+// Logger instance
+let logger: Logger | null = null;
 
 // Intervalo de sondeo en milisegundos (default: 60 segundos)
 const POLL_INTERVAL = 60 * 1000;
@@ -25,12 +29,18 @@ interface KernelModule {
   state: string;
 }
 
-/**
- * Colector para monitorear carga de módulos del kernel
- */
 export const moduleCollector: Collector = {
   name: 'module',
   description: 'Monitorea carga y descarga de módulos del kernel en sistemas Linux',
+  compatibleSystems: ['linux'],
+  
+  /**
+   * Configura el colector
+   */
+  async configure(config: CollectorConfig): Promise<void> {
+    moduleEventCallback = config.eventCallback || null;
+    logger = config.logger || null;
+  },
   
   /**
    * Inicia el monitoreo de módulos
@@ -39,7 +49,9 @@ export const moduleCollector: Collector = {
     try {
       // Verificar si /proc/modules existe
       if (!fs.existsSync('/proc/modules')) {
-        console.warn('/proc/modules no está disponible, el colector de módulos no se iniciará');
+        if (logger) {
+          logger.warn('/proc/modules no está disponible, el colector de módulos no se iniciará');
+        }
         return false;
       }
       
@@ -54,7 +66,9 @@ export const moduleCollector: Collector = {
       console.log('Colector de módulos del kernel iniciado');
       return true;
     } catch (error) {
-      console.error('Error al iniciar colector de módulos del kernel:', error);
+      if (logger) {
+        logger.error('Error al iniciar colector de módulos del kernel:', error);
+      }
       return false;
     }
   },
@@ -71,7 +85,9 @@ export const moduleCollector: Collector = {
       }
       return true;
     } catch (error) {
-      console.error('Error al detener colector de módulos del kernel:', error);
+      if (logger) {
+        logger.error('Error al detener colector de módulos del kernel:', error);
+      }
       return false;
     }
   }
@@ -140,7 +156,9 @@ async function checkKernelModules(): Promise<void> {
     // Actualizar estado para la próxima ejecución
     lastModules = currentModules;
   } catch (error) {
-    console.error('Error al verificar módulos del kernel:', error);
+    if (logger) {
+      logger.error('Error al verificar módulos del kernel:', error);
+    }
   }
 }
 
