@@ -14,7 +14,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
-import { artifactManager } from './artifact-manager.js';
 const exec = util.promisify(child_process.exec);
 const writeFile = util.promisify(fs.writeFile);
 const readFile = util.promisify(fs.readFile);
@@ -76,36 +75,15 @@ export class AgentBuilder {
             await writeFile(configPath, JSON.stringify(agentConfig, null, 2), 'utf-8');
             // Generar archivo empaquetado según el SO
             const result = await this.packageAgent(config.os, buildPath, agentConfig, agentId);
-            
-            // Generar token de descarga seguro si la construcción fue exitosa
-            let secureDownload = null;
-            if (result.success && result.filePath) {
-                secureDownload = artifactManager.generateSecureDownloadToken(
-                    config.userId,
-                    result.filePath,
-                    {
-                        platform: config.os,
-                        architecture: config.architecture || 'universal',
-                        buildId: agentConfig.buildInfo.buildId,
-                        agentId: agentId,
-                        customName: config.customName
-                    }
-                );
-            }
-            
             // Limpiar archivos temporales
             this.cleanupBuildDir(buildPath).catch(error => {
                 console.warn('Error cleaning up build files:', error);
             });
-            
             return {
                 success: result.success,
                 message: result.message,
                 filePath: result.filePath,
-                downloadUrl: secureDownload ? secureDownload.downloadUrl : result.downloadUrl,
-                secureToken: secureDownload ? secureDownload.token : null,
-                tokenExpiresAt: secureDownload ? secureDownload.expiresAt : null,
-                fileSize: secureDownload ? secureDownload.fileSize : null,
+                downloadUrl: result.downloadUrl,
                 agentId
             };
         }
@@ -158,33 +136,7 @@ export class AgentBuilder {
             maxStorageSize: 100,
             logLevel: 'info',
             // Nuevo: ID del conector para que el agente pueda construir el endpoint
-            connectorId: config.userId ? String(config.userId) : undefined, // O usar otro identificador real
-            // Metadata de construcción (embebida en tiempo de compilación)
-            buildInfo: {
-                timestamp: new Date().toISOString(),
-                version: '1.0.0',
-                platform: config.os,
-                userId: config.userId,
-                customName: config.customName,
-                buildId: `build-${Date.now()}`
-            },
-            // Configuración de red mejorada
-            network: {
-                retryAttempts: 3,
-                timeout: 30000, // 30 segundos
-                compression: true,
-                // TLS/SSL
-                ssl: {
-                    rejectUnauthorized: true,
-                    checkServerIdentity: true
-                }
-            },
-            // Configuración de auto-actualización
-            autoUpdate: {
-                enabled: true,
-                checkInterval: 3600, // 1 hora
-                endpoint: '/api/agents/updates'
-            }
+            connectorId: config.userId ? String(config.userId) : undefined // O usar otro identificador real
         };
     }
     /**
@@ -222,9 +174,6 @@ export class AgentBuilder {
      */
     async packageAgent(os, buildPath, config, agentId) {
         try {
-            // Primero compilar el binario del agente con pkg
-            await this.compileAgentBinary(os, buildPath, config);
-            
             let outputFileName;
             let outputFilePath;
             let downloadUrl;
@@ -257,10 +206,6 @@ export class AgentBuilder {
                 default:
                     throw new Error(`Unsupported OS: ${os}`);
             }
-            
-            // Aplicar firma digital si está configurada
-            await this.signBinary(outputFilePath, os);
-            
             // Calcular URL de descarga relativa
             downloadUrl = `/downloads/${outputFileName}`;
             return {
@@ -1007,195 +952,6 @@ main().catch(error => {
             throw new Error(`Error creando el archivo tar.gz: el archivo resultante está vacío o no existe (${outputPath})`);
         }
     }
-    /**
-     * Compila el binario del agente usando pkg
-     */
-    async compileAgentBinary(os, buildPath, config) {
-        try {
-            console.log(`Compiling agent binary for ${os} (${config.architecture || 'universal'})...`);
-            
-            // Primero generar el archivo de configuración embebido
-            const configPath = path.join(buildPath, 'embedded-config.json');
-            await writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
-            
-            // Compilar el código TypeScript del agente
-            const agentsDir = path.join(process.cwd(), 'agents');
-            console.log(`Building TypeScript in ${agentsDir}...`);
-            await exec('npm run build', { cwd: agentsDir });
-            
-            // Determinar targets según el OS y arquitecturas
-            let targets;
-            let outputName;
-            const arch = config.architecture || 'universal';
-            
-            switch (os) {
-                case AgentOS.WINDOWS:
-                    if (arch === 'universal' || arch === 'x64') {
-                        targets = 'node18-win-x64';
-                    } else {
-                        throw new Error(`Windows does not support ${arch} architecture`);
-                    }
-                    outputName = 'agent-windows.exe';
-                    break;
-                case AgentOS.MACOS:
-                    if (arch === 'universal') {
-                        targets = 'node18-macos-x64,node18-macos-arm64';
-                    } else if (arch === 'x64') {
-                        targets = 'node18-macos-x64';
-                    } else if (arch === 'arm64') {
-                        targets = 'node18-macos-arm64';
-                    } else {
-                        throw new Error(`Unsupported macOS architecture: ${arch}`);
-                    }
-                    outputName = 'agent-macos';
-                    break;
-                case AgentOS.LINUX:
-                    if (arch === 'universal') {
-                        targets = 'node18-linux-x64,node18-linux-arm64';
-                    } else if (arch === 'x64') {
-                        targets = 'node18-linux-x64';
-                    } else if (arch === 'arm64') {
-                        targets = 'node18-linux-arm64';
-                    } else {
-                        throw new Error(`Unsupported Linux architecture: ${arch}`);
-                    }
-                    outputName = 'agent-linux';
-                    break;
-                default:
-                    throw new Error(`Unsupported OS: ${os}`);
-            }
-            
-            // Compilar con pkg
-            const outputPath = path.join(buildPath, outputName);
-            const distPath = path.join(agentsDir, 'dist', 'main-simple.js');
-            
-            console.log(`Running pkg with targets: ${targets}`);
-            await exec(`npx pkg ${distPath} --targets ${targets} --output ${outputPath}`, { 
-                cwd: agentsDir,
-                env: { ...process.env, NODE_ENV: 'production' }
-            });
-            
-            console.log(`Binary compiled successfully: ${outputPath}`);
-            
-            // Para macOS y Linux con universal, puede generar múltiples binarios (x64 y ARM)
-            // Verificar que al menos uno se haya creado
-            if ((os === AgentOS.LINUX || os === AgentOS.MACOS) && arch === 'universal') {
-                const expectedBinaries = [];
-                if (os === AgentOS.LINUX) {
-                    expectedBinaries.push(`${outputPath}-linux-x64`, `${outputPath}-linux-arm64`);
-                } else {
-                    expectedBinaries.push(`${outputPath}-macos-x64`, `${outputPath}-macos-arm64`);
-                }
-                
-                // Verificar que al menos un binario existe y renombrar el principal
-                let foundBinary = false;
-                for (const binPath of expectedBinaries) {
-                    if (fs.existsSync(binPath)) {
-                        if (!foundBinary) {
-                            // Usar el primer binario como principal
-                            await exec(`cp "${binPath}" "${outputPath}"`);
-                            foundBinary = true;
-                        }
-                    }
-                }
-                
-                if (!foundBinary) {
-                    throw new Error(`No binary was created for ${os}`);
-                }
-            }
-            
-        } catch (error) {
-            console.error(`Error compiling agent binary:`, error);
-            throw error;
-        }
-    }
-
-    /**
-     * Aplica firma digital al binario/paquete
-     */
-    async signBinary(filePath, os) {
-        try {
-            console.log(`Signing binary for ${os}: ${filePath}`);
-            
-            // Verificar si las herramientas de firma están disponibles
-            switch (os) {
-                case AgentOS.WINDOWS:
-                    // Verificar si signtool está disponible
-                    try {
-                        await exec('which signtool || where signtool');
-                        const certPath = process.env.WINDOWS_CERT_PATH;
-                        const certPassword = process.env.WINDOWS_CERT_PASSWORD;
-                        
-                        if (certPath && certPassword) {
-                            await exec(`signtool sign /f "${certPath}" /p "${certPassword}" /t http://timestamp.digicert.com "${filePath}"`);
-                            console.log('Windows binary signed successfully');
-                        } else {
-                            console.warn('Windows certificate not configured, skipping signing');
-                        }
-                    } catch {
-                        console.warn('signtool not available, skipping Windows signing');
-                    }
-                    break;
-                    
-                case AgentOS.MACOS:
-                    // Verificar si codesign está disponible
-                    try {
-                        await exec('which codesign');
-                        const identity = process.env.MACOS_SIGNING_IDENTITY;
-                        
-                        if (identity) {
-                            await exec(`codesign --force --sign "${identity}" "${filePath}"`);
-                            console.log('macOS binary signed successfully');
-                        } else {
-                            console.warn('macOS signing identity not configured, skipping signing');
-                        }
-                    } catch {
-                        console.warn('codesign not available, skipping macOS signing');
-                    }
-                    break;
-                    
-                case AgentOS.LINUX:
-                    // Para Linux, generar firma GPG del archivo
-                    try {
-                        await exec('which gpg');
-                        const signingKey = process.env.LINUX_GPG_KEY;
-                        
-                        if (signingKey) {
-                            await exec(`gpg --detach-sign --armor --default-key "${signingKey}" "${filePath}"`);
-                            console.log('Linux binary signed successfully');
-                        } else {
-                            console.warn('Linux GPG key not configured, skipping signing');
-                        }
-                    } catch {
-                        console.warn('GPG not available, skipping Linux signing');
-                    }
-                    break;
-            }
-            
-            // Generar hash SHA256 para verificación de integridad
-            const hash = await this.generateFileHash(filePath);
-            const hashPath = `${filePath}.sha256`;
-            await writeFile(hashPath, `${hash}  ${path.basename(filePath)}\n`, 'utf-8');
-            console.log(`SHA256 hash generated: ${hashPath}`);
-            
-        } catch (error) {
-            console.error(`Error signing binary:`, error);
-            // No fallar la construcción por problemas de firma
-            console.warn('Continuing without signature...');
-        }
-    }
-
-    /**
-     * Genera hash SHA256 de un archivo
-     */
-    async generateFileHash(filePath) {
-        const crypto = await import('crypto');
-        const fileBuffer = await readFile(filePath);
-        const hashSum = crypto.createHash('sha256');
-        hashSum.update(fileBuffer);
-        return hashSum.digest('hex');
-    }
-
     /**
      * Limpia los archivos temporales de construcción
      */

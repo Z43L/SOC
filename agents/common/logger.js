@@ -46,7 +46,7 @@ export class SimpleLogger {
                 const arg = args.shift();
                 switch (x) {
                     case '%s': return String(arg);
-                    case '%d': return Number(arg);
+                    case '%d': return String(Number(arg));
                     case '%j': return JSON.stringify(arg);
                     case '%%': return '%';
                     default: return x;

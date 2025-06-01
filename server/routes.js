@@ -1,7 +1,6 @@
 import { Router } from "express";
 import express from "express";
 import { createServer } from "http";
-import * as fs from "fs";
 import { storage } from "./storage";
 import { SeverityTypes, AlertStatusTypes, IncidentStatusTypes, insertThreatFeedSchema, insertPlaybookSchema } from "@shared/schema";
 import { z } from "zod";
@@ -28,9 +27,7 @@ import { aiParser } from "./integrations/ai-parser-service";
 import { playbookExecutor } from "./src/services/playbookExecutor";
 // Importar gestión de conectores
 import { initializeConnectors, getActiveConnectors } from "./integrations/connectors";
-import { registerAgent, processAgentData, processAgentHeartbeat, generateAgentRegistrationKey, buildAgentPackage, queueAgentBuild } from "./integrations/agents";
-import { buildQueue } from "./integrations/build-queue";
-import { artifactManager } from "./integrations/artifact-manager";
+import { registerAgent, processAgentData, processAgentHeartbeat, generateAgentRegistrationKey, buildAgentPackage } from "./integrations/agents";
 // Import billing routes
 import billingRoutes from "./src/routes/billing";
 // Import SOAR routes
@@ -653,215 +650,22 @@ export async function registerRoutes(app) {
             if (!userId) {
                 return res.status(400).json({ success: false, message: "User ID missing from session" });
             }
-            const { os, customName, capabilities, architecture, useQueue = true } = req.body;
-            
-            // Validate architecture if provided
-            const validArchitectures = ['x64', 'arm64', 'universal'];
-            if (architecture && !validArchitectures.includes(architecture)) {
-                return res.status(400).json({ 
-                    success: false, 
-                    message: `Invalid architecture. Supported: ${validArchitectures.join(', ')}` 
-                });
-            }
-            
+            const { os, customName, capabilities } = req.body;
             // Use server URL from environment or request
             const serverUrl = process.env.SERVER_URL || `${req.protocol}://${req.get("host")}`;
             // Generate a registration key for this user
             const registrationKey = await generateAgentRegistrationKey(userId);
-            
-            let result;
-            if (useQueue) {
-                // Use build queue (default)
-                result = await queueAgentBuild(userId, os, serverUrl, registrationKey, customName, capabilities, architecture);
-            } else {
-                // Direct build (legacy)
-                result = await buildAgentPackage(userId, os, serverUrl, registrationKey, customName, capabilities, architecture);
-            }
-            
+            // Build the agent package
+            const result = await buildAgentPackage(userId, os, serverUrl, registrationKey, customName, capabilities);
             if (result.success) {
                 res.status(201).json({
                     ...result,
-                    registrationKey,
-                    buildInfo: {
-                        platform: os,
-                        architecture: architecture || 'universal',
-                        timestamp: new Date().toISOString(),
-                        queued: useQueue
-                    }
+                    registrationKey
                 });
             }
             else {
                 res.status(400).json(result);
             }
-        }
-        catch (error) {
-            res.status(500).json({ success: false, message: error.message });
-        }
-    });
-
-    // Build queue management endpoints
-    apiRouter.get("/agents/build/jobs", isAuthenticated, async (req, res) => {
-        try {
-            const userId = req.user?.id;
-            if (!userId) {
-                return res.status(400).json({ success: false, message: "User ID missing from session" });
-            }
-            
-            const jobs = buildQueue.getUserJobs(userId);
-            res.json({ success: true, jobs });
-        }
-        catch (error) {
-            res.status(500).json({ success: false, message: error.message });
-        }
-    });
-
-    apiRouter.get("/agents/build/jobs/:jobId", isAuthenticated, async (req, res) => {
-        try {
-            const userId = req.user?.id;
-            const jobId = req.params.jobId;
-            
-            if (!userId) {
-                return res.status(400).json({ success: false, message: "User ID missing from session" });
-            }
-            
-            const job = buildQueue.getJobStatus(jobId);
-            if (!job) {
-                return res.status(404).json({ success: false, message: "Build job not found" });
-            }
-            
-            if (job.userId !== userId) {
-                return res.status(403).json({ success: false, message: "Unauthorized" });
-            }
-            
-            res.json({ success: true, job });
-        }
-        catch (error) {
-            res.status(500).json({ success: false, message: error.message });
-        }
-    });
-
-    apiRouter.post("/agents/build/jobs/:jobId/cancel", isAuthenticated, async (req, res) => {
-        try {
-            const userId = req.user?.id;
-            const jobId = req.params.jobId;
-            
-            if (!userId) {
-                return res.status(400).json({ success: false, message: "User ID missing from session" });
-            }
-            
-            const result = buildQueue.cancelJob(jobId, userId);
-            if (result.success) {
-                res.json(result);
-            } else {
-                res.status(400).json(result);
-            }
-        }
-        catch (error) {
-            res.status(500).json({ success: false, message: error.message });
-        }
-    });
-
-    // Admin endpoint for build queue stats
-    apiRouter.get("/agents/build/stats", isAuthenticated, requireRole('ADMIN'), async (req, res) => {
-        try {
-            const stats = buildQueue.getQueueStats();
-            res.json({ success: true, stats });
-        }
-        catch (error) {
-            res.status(500).json({ success: false, message: error.message });
-        }
-    });
-
-    // Secure artifact download endpoints
-    apiRouter.get("/artifacts/download/:token", isAuthenticated, async (req, res) => {
-        try {
-            const userId = req.user?.id;
-            const token = req.params.token;
-            
-            if (!userId) {
-                return res.status(400).json({ success: false, message: "User ID missing from session" });
-            }
-            
-            // Validar token
-            const validation = artifactManager.validateDownloadToken(token, userId);
-            if (!validation.valid) {
-                return res.status(403).json({ 
-                    success: false, 
-                    message: `Download not authorized: ${validation.reason}` 
-                });
-            }
-            
-            const { downloadInfo } = validation;
-            
-            // Configurar headers para descarga
-            res.setHeader('Content-Disposition', `attachment; filename="${downloadInfo.fileName}"`);
-            res.setHeader('Content-Type', 'application/octet-stream');
-            res.setHeader('Content-Length', downloadInfo.fileSize);
-            res.setHeader('Cache-Control', 'no-cache');
-            
-            // Registrar descarga
-            artifactManager.recordDownload(token);
-            
-            // Enviar archivo
-            const fileStream = fs.createReadStream(downloadInfo.filePath);
-            fileStream.pipe(res);
-            
-            fileStream.on('error', (error) => {
-                console.error('Error streaming file:', error);
-                if (!res.headersSent) {
-                    res.status(500).json({ success: false, message: 'Error downloading file' });
-                }
-            });
-            
-        } catch (error) {
-            console.error('Error in artifact download:', error);
-            res.status(500).json({ success: false, message: error.message });
-        }
-    });
-
-    // List user's download tokens
-    apiRouter.get("/artifacts/downloads", isAuthenticated, async (req, res) => {
-        try {
-            const userId = req.user?.id;
-            if (!userId) {
-                return res.status(400).json({ success: false, message: "User ID missing from session" });
-            }
-            
-            const tokens = artifactManager.getUserDownloadTokens(userId);
-            res.json({ success: true, downloads: tokens });
-        }
-        catch (error) {
-            res.status(500).json({ success: false, message: error.message });
-        }
-    });
-
-    // Revoke a download token
-    apiRouter.delete("/artifacts/downloads/:token", isAuthenticated, async (req, res) => {
-        try {
-            const userId = req.user?.id;
-            const token = req.params.token;
-            
-            if (!userId) {
-                return res.status(400).json({ success: false, message: "User ID missing from session" });
-            }
-            
-            const result = artifactManager.revokeDownloadToken(token, userId);
-            if (result.success) {
-                res.json(result);
-            } else {
-                res.status(400).json(result);
-            }
-        }
-        catch (error) {
-            res.status(500).json({ success: false, message: error.message });
-        }
-    });
-
-    // Admin endpoint for artifact stats
-    apiRouter.get("/artifacts/stats", isAuthenticated, requireRole('ADMIN'), async (req, res) => {
-        try {
-            const stats = artifactManager.getStats();
-            res.json({ success: true, stats });
         }
         catch (error) {
             res.status(500).json({ success: false, message: error.message });
