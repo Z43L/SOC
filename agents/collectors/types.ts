@@ -8,9 +8,70 @@ import { Logger } from '../core/logger';
  * Configuración para colectores
  */
 export interface CollectorConfig {
-  eventCallback?: (event: any) => void;
+  eventCallback?: (event: Omit<AgentEvent, 'agentId' | 'agentVersion' | 'hostId'>) => void;
   logger?: Logger;
+  [key: string]: unknown; // Allow for collector-specific configuration
 }
+
+/**
+ * Tipos de detalles para diferentes tipos de eventos
+ */
+export interface SystemEventDetails {
+  metrics?: SystemMetrics;
+  error?: string;
+  component?: string;
+}
+
+export interface ProcessEventDetails {
+  process?: ProcessInfo;
+  reason?: string;
+  parentProcess?: ProcessInfo;
+}
+
+export interface FileEventDetails {
+  file?: FileEvent;
+  permissions?: number;
+  owner?: string;
+  group?: string;
+}
+
+export interface NetworkEventDetails {
+  connection?: NetworkConnection;
+  reason?: string;
+  geoLocation?: {
+    country?: string;
+    city?: string;
+    coordinates?: [number, number];
+  };
+}
+
+export interface MalwareEventDetails {
+  detection?: MalwareDetection;
+  confidence?: number;
+  scanEngine?: string;
+}
+
+export interface VulnerabilityEventDetails {
+  vulnerability?: VulnerabilityDetection;
+  cveId?: string;
+  packageName?: string;
+}
+
+export interface AuthEventDetails {
+  authEvent?: AuthEvent;
+  sourceIp?: string;
+  userAgent?: string;
+}
+
+export type EventDetails = 
+  | SystemEventDetails 
+  | ProcessEventDetails 
+  | FileEventDetails 
+  | NetworkEventDetails 
+  | MalwareEventDetails 
+  | VulnerabilityEventDetails 
+  | AuthEventDetails
+  | Record<string, unknown>; // Fallback for extensibility
 
 /**
  * Representa un evento generado por el agente
@@ -21,7 +82,7 @@ export interface AgentEvent {
   severity: 'info' | 'low' | 'medium' | 'high' | 'critical';
   timestamp: Date;
   message: string;
-  details: any;
+  details: EventDetails;
   signature?: string; // Firma digital opcional para verificar autenticidad
   hostId?: string;
   agentVersion?: string;

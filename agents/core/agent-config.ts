@@ -4,14 +4,136 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import * as yaml from 'js-yaml';
 
 // Import logger - will be initialized later to avoid circular dependency
 let logger: any;
 
 /**
- * Validates the integrity of configuration values
+ * Validates the integrity of the agent binary
  */
+export async function validateAgentIntegrity(expectedHash?: string): Promise<boolean> {
+  try {
+    const binaryPath = process.execPath;
+    const fileBuffer = await fs.readFile(binaryPath);
+    const actualHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+    
+    if (expectedHash && expectedHash !== actualHash) {
+      if (logger) {
+        logger.error('Agent binary integrity check failed: hash mismatch');
+      }
+      return false;
+    }
+    
+    if (logger) {
+      logger.info(`Agent binary integrity validated: ${actualHash}`);
+    }
+    
+    return true;
+  } catch (error) {
+    if (logger) {
+      logger.error('Error validating agent integrity:', error);
+    }
+    return false;
+  }
+}
+
+/**
+ * Encrypts sensitive configuration values
+ */
+export function encryptConfigValue(value: string, secret: string): string {
+  const cipher = crypto.createCipher('aes-256-cbc', secret);
+  let encrypted = cipher.update(value, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  return encrypted;
+}
+
+/**
+ * Decrypts sensitive configuration values
+ */
+export function decryptConfigValue(encryptedValue: string, secret: string): string {
+  try {
+    const decipher = crypto.createDecipher('aes-256-cbc', secret);
+    let decrypted = decipher.update(encryptedValue, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (error) {
+    throw new Error('Failed to decrypt configuration value');
+  }
+}
+
+/**
+ * Applies environment variable overrides to configuration
+ */
+function applyEnvironmentOverrides(config: AgentConfig): void {
+  // Server configuration
+  if (process.env.AGENT_SERVER_URL) {
+    config.serverUrl = process.env.AGENT_SERVER_URL;
+  }
+  
+  if (process.env.AGENT_ORG_KEY) {
+    config.organizationKey = process.env.AGENT_ORG_KEY;
+  }
+  
+  // Logging configuration
+  if (process.env.AGENT_LOG_LEVEL) {
+    const logLevel = process.env.AGENT_LOG_LEVEL.toLowerCase();
+    if (['debug', 'info', 'warn', 'error'].includes(logLevel)) {
+      config.logLevel = logLevel as 'debug' | 'info' | 'warn' | 'error';
+    }
+  }
+  
+  if (process.env.AGENT_LOG_FILE) {
+    config.logFilePath = process.env.AGENT_LOG_FILE;
+  }
+  
+  // Security configuration
+  if (process.env.AGENT_VALIDATE_CERTS === 'false') {
+    config.validateCertificates = false;
+  }
+  
+  if (process.env.AGENT_ALLOW_INSECURE === 'true') {
+    config.allowInsecureConnections = true;
+  }
+  
+  // Intervals
+  if (process.env.AGENT_HEARTBEAT_INTERVAL) {
+    const interval = parseInt(process.env.AGENT_HEARTBEAT_INTERVAL, 10);
+    if (!isNaN(interval) && interval >= 30) {
+      config.heartbeatInterval = interval;
+    }
+  }
+  
+  if (process.env.AGENT_UPLOAD_INTERVAL) {
+    const interval = parseInt(process.env.AGENT_UPLOAD_INTERVAL, 10);
+    if (!isNaN(interval) && interval >= 30) {
+      config.dataUploadInterval = interval;
+    }
+  }
+  
+  // Transport
+  if (process.env.AGENT_TRANSPORT) {
+    const transport = process.env.AGENT_TRANSPORT.toLowerCase();
+    if (['https', 'websocket'].includes(transport)) {
+      config.transport = transport as 'https' | 'websocket';
+    }
+  }
+  
+  if (process.env.AGENT_COMPRESSION === 'false') {
+    config.compressionEnabled = false;
+  }
+  
+  // Capabilities overrides
+  if (process.env.AGENT_DISABLE_CAPABILITIES) {
+    const disabledCaps = process.env.AGENT_DISABLE_CAPABILITIES.split(',').map(c => c.trim());
+    for (const cap of disabledCaps) {
+      if (cap in config.capabilities) {
+        (config.capabilities as any)[cap] = false;
+      }
+    }
+  }
+}
 export function validateConfig(config: Partial<AgentConfig>): string[] {
   const errors: string[] = [];
   
@@ -108,6 +230,11 @@ export interface AgentConfig {
   signMessages: boolean;
   privateKeyPath?: string;
   serverPublicKeyPath?: string;
+  encryptedOrganizationKey?: string; // Encrypted version of organizationKey
+  validateCertificates: boolean; // Validate server SSL certificates
+  expectedBinaryHash?: string; // Expected SHA256 hash for integrity validation
+  maxMessageSize: number; // Maximum message size in bytes
+  allowInsecureConnections: boolean; // For development only
   
   // Capacidades
   capabilities: AgentCapabilities;
@@ -155,6 +282,9 @@ export const DEFAULT_CONFIG: Omit<AgentConfig, 'configPath'> = {
   
   // Seguridad
   signMessages: false,
+  validateCertificates: true,
+  maxMessageSize: 1048576, // 1MB
+  allowInsecureConnections: false,
   
   // Capacidades
   capabilities: {
@@ -250,6 +380,9 @@ export async function loadConfig(configPath: string): Promise<AgentConfig> {
         ...(fileConfig.capabilities || {})
       }
     };
+    
+    // Aplicar overrides de variables de entorno
+    applyEnvironmentOverrides(config);
     
     // Resolver rutas relativas usando el directorio del ejecutable
     if (config.logFilePath && !path.isAbsolute(config.logFilePath)) {

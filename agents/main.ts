@@ -16,7 +16,7 @@ import {
   AgentEvent
 } from './core';
 import { loadEnabledCollectors, startCollectors, stopCollectors } from './collectors';
-import { CommandExecutor } from './commands';
+import { CommandExecutor, CommandType } from './commands';
 import { Updater } from './updater';
 
 // Versión actual del agente
@@ -68,6 +68,18 @@ class Agent {
       
       this.config = await loadConfig(this.config.configPath);
       
+      // Validar integridad del agente si se especifica hash esperado
+      if (this.config.expectedBinaryHash) {
+        this.logger.info('Validating agent binary integrity...');
+        const { validateAgentIntegrity } = await import('./core/agent-config');
+        const integrityValid = await validateAgentIntegrity(this.config.expectedBinaryHash);
+        if (!integrityValid) {
+          this.logger.error('Agent binary integrity validation failed. Exiting for security.');
+          return false;
+        }
+        this.logger.info('Agent binary integrity validated successfully');
+      }
+      
       // Inicializar logger con configuración actualizada
       this.logger = new Logger({
         level: this.config.logLevel,
@@ -101,7 +113,7 @@ class Agent {
         serverUrl: this.config.serverUrl,
         token: this.config.agentId,
         enableCompression: this.config.compressionEnabled
-      });
+      }, this.config);
       
       // Inicializar heartbeat manager
       this.heartbeatManager = new HeartbeatManager(
@@ -118,7 +130,7 @@ class Agent {
       // Inicializar ejecutor de comandos
       this.commandExecutor = new CommandExecutor({
         allowedCommands: this.config.enableCommands ? 
-          (this.config.allowedCommands || ['script', 'configUpdate', 'isolate', 'upgrade']) : 
+          (this.config.allowedCommands || ['script', 'configUpdate', 'isolate', 'upgrade']) as CommandType[] : 
           []
       });
       
@@ -265,15 +277,15 @@ class Agent {
       }
       
       // Guardar ID de agente y token
-      this.config.agentId = response.data.agentId;
+      this.config.agentId = (response.data as any).agentId;
       
       // Actualizar transporte con el nuevo token
       this.transport = new Transport({
         serverUrl: this.config.serverUrl,
-        token: response.data.jwtAgent,
-        serverCA: response.data.serverRootCA,
+        token: (response.data as any).jwtAgent,
+        serverCA: (response.data as any).serverRootCA,
         enableCompression: this.config.compressionEnabled
-      });
+      }, this.config);
       
       // Actualizar heartbeat manager con el nuevo ID
       this.heartbeatManager = new HeartbeatManager(
@@ -407,9 +419,9 @@ class Agent {
     // Comando de script
     this.transport.registerCommandHandler('script', async (data) => {
       return this.commandExecutor.executeScript({
-        script: data.script,
-        args: data.args,
-        interpreter: data.interpreter
+        script: (data as any).script,
+        args: (data as any).args,
+        interpreter: (data as any).interpreter
       });
     });
     
@@ -417,17 +429,17 @@ class Agent {
     this.transport.registerCommandHandler('configUpdate', async (data) => {
       return this.commandExecutor.executeConfigUpdate({
         configPath: this.config.configPath,
-        configData: data.config
+        configData: (data as any).config
       });
     });
     
     // Comando de aislamiento
     this.transport.registerCommandHandler('isolate', async (data) => {
       return this.commandExecutor.executeIsolate({
-        enable: data.enable,
-        allowOutbound: data.allowOutbound,
-        allowInbound: data.allowInbound,
-        allowLocalOnly: data.allowLocalOnly
+        enable: (data as any).enable,
+        allowOutbound: (data as any).allowOutbound,
+        allowInbound: (data as any).allowInbound,
+        allowLocalOnly: (data as any).allowLocalOnly
       });
     });
     
@@ -498,11 +510,86 @@ class Agent {
 }
 
 /**
+ * Parsea argumentos de línea de comandos
+ */
+function parseCliArgs(): { configPath?: string; logLevel?: string; help?: boolean; version?: boolean } {
+  const args = process.argv.slice(2);
+  const result: { configPath?: string; logLevel?: string; help?: boolean; version?: boolean } = {};
+  
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    
+    switch (arg) {
+      case '-c':
+      case '--config':
+        result.configPath = args[++i];
+        break;
+      case '-l':
+      case '--log-level':
+        result.logLevel = args[++i];
+        break;
+      case '-h':
+      case '--help':
+        result.help = true;
+        break;
+      case '-v':
+      case '--version':
+        result.version = true;
+        break;
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * Muestra ayuda de uso
+ */
+function showHelp() {
+  console.log(`
+SOC Agent v${AGENT_VERSION}
+
+Usage: soc-agent [options]
+
+Options:
+  -c, --config <path>      Path to configuration file
+  -l, --log-level <level>  Log level (debug, info, warn, error)
+  -h, --help              Show this help message
+  -v, --version           Show version information
+  
+Environment Variables:
+  AGENT_CONFIG_PATH       Path to configuration file
+  AGENT_LOG_LEVEL        Log level override
+  AGENT_SERVER_URL       Server URL override
+  AGENT_ORG_KEY          Organization key override
+  
+Examples:
+  soc-agent --config /etc/soc-agent/config.yaml
+  soc-agent --log-level debug
+  AGENT_CONFIG_PATH=/tmp/config.yaml soc-agent
+`);
+}
+
+/**
  * Función principal
  */
 async function main() {
-  // Determinar ruta de configuración
-  let configPath = process.env.AGENT_CONFIG_PATH || '';
+  // Parsear argumentos CLI
+  const cliArgs = parseCliArgs();
+  
+  // Manejar opciones especiales
+  if (cliArgs.help) {
+    showHelp();
+    process.exit(0);
+  }
+  
+  if (cliArgs.version) {
+    console.log(`SOC Agent v${AGENT_VERSION}`);
+    process.exit(0);
+  }
+  
+  // Determinar ruta de configuración (CLI tiene prioridad sobre env)
+  let configPath = cliArgs.configPath || process.env.AGENT_CONFIG_PATH || '';
   
   // Si no se especificó, usar ruta por defecto según plataforma
   if (!configPath) {

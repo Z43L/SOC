@@ -2,12 +2,9 @@
  * Colector de procesos en Linux
  */
 
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { Collector } from '../types';
-
-// Convertir exec a Promise
-const execAsync = promisify(exec);
+import { spawn } from 'child_process';
+import { Collector, CollectorConfig, ProcessEventDetails } from '../types';
+import { Logger } from '../../core/logger';
 
 // Intervalo de sondeo para procesos
 let processInterval: NodeJS.Timeout | null = null;
@@ -17,6 +14,9 @@ let lastProcessState: Map<number, ProcessInfo> = new Map();
 
 // Callback para procesar eventos
 let processEventCallback: ((event: any) => void) | null = null;
+
+// Logger instance
+let logger: Logger | null = null;
 
 // Intervalo de sondeo en milisegundos (default: 60 segundos)
 const POLL_INTERVAL = 60 * 1000;
@@ -36,6 +36,15 @@ interface ProcessInfo {
 export const processCollector: Collector = {
   name: 'process',
   description: 'Monitorea procesos en ejecución en sistemas Linux',
+  compatibleSystems: ['linux'],
+  
+  /**
+   * Configura el colector
+   */
+  async configure(config: CollectorConfig): Promise<void> {
+    processEventCallback = config.eventCallback || null;
+    logger = config.logger || null;
+  },
   
   /**
    * Inicia el monitoreo de procesos
@@ -70,23 +79,55 @@ export const processCollector: Collector = {
       }
       return true;
     } catch (error) {
-      console.error('Error al detener colector de procesos:', error);
+      if (logger) {
+        logger.error('Error al detener colector de procesos:', error);
+      }
       return false;
     }
   }
 };
 
 /**
- * Recopila información de procesos en ejecución
+ * Obtiene la lista de procesos de forma no bloqueante usando spawn
+ */
+function getProcessListAsync(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const ps = spawn('ps', ['-eo', 'pid,ppid,uid,comm']);
+    let stdout = '';
+    let stderr = '';
+    
+    ps.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+    
+    ps.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    
+    ps.on('close', (code) => {
+      if (code === 0) {
+        resolve(stdout);
+      } else {
+        reject(new Error(`ps command failed with code ${code}: ${stderr}`));
+      }
+    });
+    
+    ps.on('error', (error) => {
+      reject(error);
+    });
+  });
+}
+
+/**
+ * Recopila información de procesos en ejecución usando spawn (no bloqueante)
  */
 async function collectProcesses(): Promise<void> {
   try {
-    // Ejecutar el comando ps para obtener información de procesos
-    const { stdout } = await execAsync('ps -eo pid,ppid,uid,comm');
+    const processData = await getProcessListAsync();
     
     // Analizar la salida
     const currentProcesses = new Map<number, ProcessInfo>();
-    const lines = stdout.trim().split('\n');
+    const lines = processData.trim().split('\n');
     
     // Procesar cada línea (saltar la primera línea que es el encabezado)
     for (let i = 1; i < lines.length; i++) {
@@ -125,7 +166,9 @@ async function collectProcesses(): Promise<void> {
     // Actualizar estado para la próxima ejecución
     lastProcessState = currentProcesses;
   } catch (error) {
-    console.error('Error al recopilar información de procesos:', error);
+    if (logger) {
+      logger.error('Error al recopilar información de procesos:', error);
+    }
   }
 }
 
@@ -134,25 +177,25 @@ async function collectProcesses(): Promise<void> {
  */
 function processNewProcess(processInfo: ProcessInfo): void {
   // Crear evento para el nuevo proceso
-  const event = {
-    source: 'process',
-    type: 'process_started',
-    timestamp: new Date(),
-    severity: 'info',
-    message: `Nuevo proceso: ${processInfo.command} (PID: ${processInfo.pid})`,
-    details: {
-      pid: processInfo.pid,
-      ppid: processInfo.ppid,
-      uid: processInfo.uid,
-      command: processInfo.command
-    }
-  };
+  let severity: 'info' | 'medium' = 'info';
+  let message = `Nuevo proceso: ${processInfo.command} (PID: ${processInfo.pid})`;
   
   // Verificar si el proceso es sospechoso
   if (isSuspiciousProcess(processInfo)) {
-    event.severity = 'medium';
-    event.message = `Proceso sospechoso detectado: ${processInfo.command} (PID: ${processInfo.pid})`;
+    severity = 'medium';
+    message = `Proceso sospechoso detectado: ${processInfo.command} (PID: ${processInfo.pid})`;
   }
+  
+  const event = {
+    eventType: 'process' as const,
+    severity,
+    timestamp: new Date(),
+    message,
+    details: {
+      process: processInfo,
+      reason: 'New process detected'
+    } as ProcessEventDetails
+  };
   
   // Enviar evento
   if (processEventCallback) {
@@ -166,17 +209,14 @@ function processNewProcess(processInfo: ProcessInfo): void {
 function processTerminatedProcess(processInfo: ProcessInfo): void {
   // Crear evento para el proceso terminado
   const event = {
-    source: 'process',
-    type: 'process_terminated',
+    eventType: 'process' as const,
+    severity: 'info' as const,
     timestamp: new Date(),
-    severity: 'info',
     message: `Proceso terminado: ${processInfo.command} (PID: ${processInfo.pid})`,
     details: {
-      pid: processInfo.pid,
-      ppid: processInfo.ppid,
-      uid: processInfo.uid,
-      command: processInfo.command
-    }
+      process: processInfo,
+      reason: 'Process terminated'
+    } as ProcessEventDetails
   };
   
   // Enviar evento
@@ -224,6 +264,6 @@ function isSuspiciousProcess(processInfo: ProcessInfo): boolean {
 /**
  * Registra un callback para procesar eventos
  */
-export function registerEventCallback(callback: (event: any) => void) {
+export function registerEventCallback(callback: (event: Omit<import('../types').AgentEvent, 'agentId' | 'agentVersion' | 'hostId'>) => void) {
   processEventCallback = callback;
 }
