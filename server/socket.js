@@ -54,38 +54,6 @@ export function initWebSocket(server) {
             methods: ['GET', 'POST']
         }
     });
-    
-    // Set up Socket.IO authentication and rooms
-    io.on('connection', (socket) => {
-        console.log(`[Socket.IO] Client connected: ${socket.id}`);
-        
-        // Handle user authentication for build notifications
-        socket.on('authenticate', (data) => {
-            if (data.userId) {
-                socket.join(`user_${data.userId}`);
-                console.log(`[Socket.IO] User ${data.userId} joined their room`);
-                socket.emit('authenticated', { success: true });
-            } else {
-                socket.emit('authenticated', { success: false, message: 'Invalid user ID' });
-            }
-        });
-        
-        // Handle build job subscription
-        socket.on('subscribeBuildUpdates', (data) => {
-            if (data.userId) {
-                socket.join(`builds_user_${data.userId}`);
-                console.log(`[Socket.IO] User ${data.userId} subscribed to build updates`);
-            }
-        });
-        
-        socket.on('disconnect', () => {
-            console.log(`[Socket.IO] Client disconnected: ${socket.id}`);
-        });
-    });
-    
-    // Set up build queue notifications
-    setupBuildQueueNotifications();
-    
     // Initialize WebSocket Server for raw WebSocket connections
     wss = new WebSocketServer({
         server,
@@ -255,76 +223,6 @@ function handleConnectorsConnection(ws, clientIP) {
         removeConnection(clientIP);
     });
 }
-
-/**
- * Configura las notificaciones de la cola de construcción de agentes
- */
-function setupBuildQueueNotifications() {
-    // Importar dinámicamente para evitar dependencias circulares
-    import('./integrations/build-queue.js').then(({ buildQueue }) => {
-        console.log('[WebSocket] Setting up build queue notifications');
-        
-        // Escuchar eventos de la cola de construcción
-        buildQueue.on('jobAdded', (data) => {
-            if (io) {
-                io.to(`user_${data.userId}`).emit('buildJobAdded', {
-                    jobId: data.jobId,
-                    platform: data.config.os,
-                    architecture: data.config.architecture || 'universal',
-                    timestamp: new Date().toISOString()
-                });
-                console.log(`[WebSocket] Notified user ${data.userId} of new build job: ${data.jobId}`);
-            }
-        });
-        
-        buildQueue.on('jobStarted', (data) => {
-            if (io) {
-                io.to(`user_${data.userId}`).emit('buildJobStarted', {
-                    jobId: data.jobId,
-                    timestamp: new Date().toISOString()
-                });
-                console.log(`[WebSocket] Notified user ${data.userId} build started: ${data.jobId}`);
-            }
-        });
-        
-        buildQueue.on('jobCompleted', (data) => {
-            if (io) {
-                io.to(`user_${data.userId}`).emit('buildJobCompleted', {
-                    jobId: data.jobId,
-                    downloadUrl: data.result.downloadUrl,
-                    agentId: data.result.agentId,
-                    timestamp: new Date().toISOString()
-                });
-                console.log(`[WebSocket] Notified user ${data.userId} build completed: ${data.jobId}`);
-            }
-        });
-        
-        buildQueue.on('jobFailed', (data) => {
-            if (io) {
-                io.to(`user_${data.userId}`).emit('buildJobFailed', {
-                    jobId: data.jobId,
-                    error: data.error,
-                    timestamp: new Date().toISOString()
-                });
-                console.log(`[WebSocket] Notified user ${data.userId} build failed: ${data.jobId}`);
-            }
-        });
-        
-        buildQueue.on('jobCancelled', (data) => {
-            if (io) {
-                io.to(`user_${data.userId}`).emit('buildJobCancelled', {
-                    jobId: data.jobId,
-                    timestamp: new Date().toISOString()
-                });
-                console.log(`[WebSocket] Notified user ${data.userId} build cancelled: ${data.jobId}`);
-            }
-        });
-        
-    }).catch(error => {
-        console.error('[WebSocket] Error setting up build queue notifications:', error);
-    });
-}
-
 export function getIo() {
     if (!io)
         throw new Error('Socket.io not initialized');

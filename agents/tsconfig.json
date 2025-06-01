@@ -12,7 +12,8 @@
     "resolveJsonModule": true,
     "declaration": false,
     "sourceMap": false,
-    "removeComments": true
+    "removeComments": true,
+    "moduleResolution": "node"
   },
   "include": [
     "**/*.ts"
