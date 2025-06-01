@@ -17,8 +17,36 @@ function resolveAgentPath(relativePath: string): string {
     return relativePath;
   }
   
-  const execDir = path.dirname(process.execPath);
-  return path.resolve(execDir, relativePath);
+  try {
+    const execDir = path.dirname(process.execPath);
+    return path.resolve(execDir, relativePath);
+  } catch (error) {
+    console.error('Error resolving agent path:', error);
+    // Fallback to current directory
+    return path.resolve(process.cwd(), relativePath);
+  }
+}
+
+/**
+ * Provides guidance for Windows installation in paths with spaces
+ */
+function printWindowsInstallationGuidance(): void {
+  if (os.platform() !== 'win32') return;
+  
+  console.log('\n=== Windows Installation Guidance ===');
+  console.log('If you are experiencing "Cannot find module" errors with paths containing spaces:');
+  console.log('');
+  console.log('1. When running the agent manually, always use quotes:');
+  console.log('   "C:\\Program Files\\SOC-Agent\\soc-agent.exe"');
+  console.log('');
+  console.log('2. When creating Windows services, ensure paths are quoted:');
+  console.log('   sc create SOC-Agent binPath= "\\"C:\\Program Files\\SOC-Agent\\soc-agent.exe\\""');
+  console.log('');
+  console.log('3. Consider installing to a path without spaces:');
+  console.log('   C:\\SOC-Agent\\ or C:\\opt\\soc-agent\\');
+  console.log('');
+  console.log('4. If using Task Scheduler, ensure the "Program/script" field is quoted properly.');
+  console.log('=====================================\n');
 }
 
 /**
@@ -28,7 +56,23 @@ async function main() {
   console.log(`SOC Agent v${AGENT_VERSION} starting...`);
   console.log(`Platform: ${os.platform()}`);
   console.log(`Architecture: ${os.arch()}`);
-  console.log(`Executable path: ${process.execPath}`);
+  
+  // Validate and display executable path with proper error handling
+  let execPath = '';
+  try {
+    execPath = process.execPath;
+    console.log(`Executable path: ${execPath}`);
+    
+    // Check if path contains spaces and warn about potential issues
+    if (execPath.includes(' ') && os.platform() === 'win32') {
+      console.warn('⚠️  Warning: Executable path contains spaces. This may cause issues if not properly quoted in scripts or services.');
+      console.warn('   Ensure the agent is invoked with proper path quoting: "' + execPath + '"');
+    }
+  } catch (error) {
+    console.error('Error accessing executable path:', error);
+    execPath = 'unknown';
+  }
+  
   console.log(`Working directory: ${process.cwd()}`);
   
   // Determinar ruta de configuración
@@ -38,7 +82,15 @@ async function main() {
   if (!configPath) {
     const platform = os.platform();
     // Usar ruta relativa al ejecutable para compatibilidad con binarios empaquetados
-    const execDir = path.dirname(process.execPath);
+    let execDir = '';
+    
+    try {
+      execDir = path.dirname(execPath);
+    } catch (error) {
+      console.error('Error determining executable directory:', error);
+      // Fallback to current directory
+      execDir = process.cwd();
+    }
     
     switch (platform) {
       case 'win32':
@@ -48,7 +100,8 @@ async function main() {
           await fs.access(winConfigPath);
           configPath = winConfigPath;
         } catch {
-          configPath = path.join(process.env.ProgramData || 'C:\\ProgramData', 'SOC-Agent', 'agent.yaml');
+          const programData = process.env.ProgramData || 'C:\\ProgramData';
+          configPath = path.join(programData, 'SOC-Agent', 'agent.yaml');
         }
         break;
       case 'darwin':
@@ -75,6 +128,11 @@ async function main() {
   
   console.log(`Configuration path: ${configPath}`);
   console.log(`Resolved config path: ${resolveAgentPath(configPath)}`);
+  
+  // If we detected a path with spaces issue, show guidance
+  if (execPath.includes(' ') && os.platform() === 'win32') {
+    printWindowsInstallationGuidance();
+  }
   
   // Verificar que podemos crear archivos relativos al ejecutable
   const testLogPath = resolveAgentPath('test.log');
@@ -108,8 +166,17 @@ async function main() {
   await new Promise(() => {});
 }
 
-// Ejecutar función principal
+// Ejecutar función principal con manejo mejorado de errores
 main().catch(error => {
   console.error('Unhandled error:', error);
+  
+  // Check if this is the specific Windows path issue
+  if (error.message && error.message.includes('Cannot find module') && error.message.includes('Program')) {
+    console.error('\n🚨 DETECTED WINDOWS PATH ISSUE 🚨');
+    console.error('This error occurs when the agent executable path contains spaces and is not properly quoted.');
+    console.error('');
+    printWindowsInstallationGuidance();
+  }
+  
   process.exit(1);
 });
