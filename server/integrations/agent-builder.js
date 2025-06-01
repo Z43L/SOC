@@ -14,6 +14,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
+import { artifactManager } from './artifact-manager.js';
 const exec = util.promisify(child_process.exec);
 const writeFile = util.promisify(fs.writeFile);
 const readFile = util.promisify(fs.readFile);
@@ -75,15 +76,36 @@ export class AgentBuilder {
             await writeFile(configPath, JSON.stringify(agentConfig, null, 2), 'utf-8');
             // Generar archivo empaquetado según el SO
             const result = await this.packageAgent(config.os, buildPath, agentConfig, agentId);
+            
+            // Generar token de descarga seguro si la construcción fue exitosa
+            let secureDownload = null;
+            if (result.success && result.filePath) {
+                secureDownload = artifactManager.generateSecureDownloadToken(
+                    config.userId,
+                    result.filePath,
+                    {
+                        platform: config.os,
+                        architecture: config.architecture || 'universal',
+                        buildId: agentConfig.buildInfo.buildId,
+                        agentId: agentId,
+                        customName: config.customName
+                    }
+                );
+            }
+            
             // Limpiar archivos temporales
             this.cleanupBuildDir(buildPath).catch(error => {
                 console.warn('Error cleaning up build files:', error);
             });
+            
             return {
                 success: result.success,
                 message: result.message,
                 filePath: result.filePath,
-                downloadUrl: result.downloadUrl,
+                downloadUrl: secureDownload ? secureDownload.downloadUrl : result.downloadUrl,
+                secureToken: secureDownload ? secureDownload.token : null,
+                tokenExpiresAt: secureDownload ? secureDownload.expiresAt : null,
+                fileSize: secureDownload ? secureDownload.fileSize : null,
                 agentId
             };
         }
