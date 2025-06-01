@@ -248,6 +248,19 @@ if (-not (Test-Path $dataDir)) {
     New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
 }
 
+# Detener servicio y liberar nssm.exe si ya está instalado
+$serviceName = "SOCIntelligentAgent"
+try {
+    if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
+        Write-Host "Deteniendo servicio existente..."
+        Stop-Service -Name $serviceName -Force -ErrorAction Stop
+        Start-Sleep -Seconds 2
+    }
+} catch {}
+
+# Cierra cualquier nssm.exe suelto
+Get-Process nssm -ErrorAction SilentlyContinue | Stop-Process -Force
+
 # Copiar archivos
 Write-Host "Instalando archivos del agente..."
 Copy-Item -Path ".\\agent\\*" -Destination $installDir -Recurse -Force
@@ -260,16 +273,9 @@ Set-Content -Path $configPath -Value $configJson
 
 # Crear servicio Windows
 Write-Host "Instalando servicio de Windows..."
-$serviceName = "SOCIntelligentAgent"
 
-# Verificar si el servicio ya existe
+# Verificar si el servicio ya existe (ya fue detenido anteriormente)
 $serviceExists = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
-
-if ($serviceExists) {
-    Write-Host "El servicio ya existe. Deteniéndolo para actualizar..."
-    Stop-Service -Name $serviceName
-    Start-Sleep -Seconds 2
-}
 
 # Detectar Node.js en el sistema
 Write-Host "Detectando Node.js..."
