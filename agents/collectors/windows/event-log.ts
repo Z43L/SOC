@@ -2,7 +2,8 @@
  * Colector del Registro de Eventos de Windows
  */
 
-import { Collector } from '../index';
+import { Collector, CollectorConfig } from '../types';
+import { Logger } from '../../core/logger';
 
 // Módulo para acceder al Registro de Eventos de Windows
 let eventlog: any = null;
@@ -21,12 +22,21 @@ const eventHandlers: any[] = [];
 // Callback para procesar eventos
 let eventCallback: ((event: any) => void) | null = null;
 
-/**
- * Colector para el Registro de Eventos de Windows
- */
+// Logger instance
+let logger: Logger | null = null;
+
 export const eventLogCollector: Collector = {
   name: 'windows-eventlog',
   description: 'Monitorea eventos de seguridad en el Registro de Eventos de Windows',
+  compatibleSystems: ['win32'],
+  
+  /**
+   * Configura el colector
+   */
+  async configure(config: CollectorConfig): Promise<void> {
+    eventCallback = config.eventCallback || null;
+    logger = config.logger || null;
+  },
   
   /**
    * Inicia el monitoreo del Registro de Eventos
@@ -37,12 +47,16 @@ export const eventLogCollector: Collector = {
       try {
         eventlog = require('node-windows-eventlog');
       } catch (error) {
-        console.warn('Módulo node-windows-eventlog no encontrado. Instalando...');
+        if (logger) {
+          logger.warn('Módulo node-windows-eventlog no encontrado. Instalando...');
+        }
         await installDependency('node-windows-eventlog');
         try {
           eventlog = require('node-windows-eventlog');
         } catch (innerError) {
-          console.error('No se pudo cargar node-windows-eventlog:', innerError);
+          if (logger) {
+            logger.error('No se pudo cargar node-windows-eventlog:', innerError);
+          }
           return false;
         }
       }
@@ -52,10 +66,14 @@ export const eventLogCollector: Collector = {
         await startEventLogMonitoring(channel);
       }
       
-      console.log('Colector del Registro de Eventos iniciado');
+      if (logger) {
+        logger.info('Colector del Registro de Eventos iniciado');
+      }
       return true;
     } catch (error) {
-      console.error('Error al iniciar colector del Registro de Eventos:', error);
+      if (logger) {
+        logger.error('Error al iniciar colector del Registro de Eventos:', error);
+      }
       return false;
     }
   },
@@ -75,10 +93,14 @@ export const eventLogCollector: Collector = {
       // Limpiar la lista de manejadores
       eventHandlers.length = 0;
       
-      console.log('Colector del Registro de Eventos detenido');
+      if (logger) {
+        logger.info('Colector del Registro de Eventos detenido');
+      }
       return true;
     } catch (error) {
-      console.error('Error al detener colector del Registro de Eventos:', error);
+      if (logger) {
+        logger.error('Error al detener colector del Registro de Eventos:', error);
+      }
       return false;
     }
   }
@@ -93,7 +115,9 @@ async function startEventLogMonitoring(channel: string): Promise<void> {
       throw new Error('Módulo node-windows-eventlog no inicializado');
     }
     
-    console.log(`Iniciando monitoreo para canal: ${channel}`);
+    if (logger) {
+      logger.info(`Iniciando monitoreo para canal: ${channel}`);
+    }
     
     // Crear manejador para el canal
     const handler = new eventlog.EventLogMonitor(channel);
@@ -107,16 +131,22 @@ async function startEventLogMonitoring(channel: string): Promise<void> {
         // Procesar el evento
         processEventLogEntry(channel, eventData);
       } catch (error) {
-        console.error(`Error procesando evento del canal ${channel}:`, error);
+        if (logger) {
+          logger.error(`Error procesando evento del canal ${channel}:`, error);
+        }
       }
     });
     
     // Iniciar el monitoreo
     handler.start();
     
-    console.log(`Monitoreo iniciado para canal: ${channel}`);
+    if (logger) {
+      logger.info(`Monitoreo iniciado para canal: ${channel}`);
+    }
   } catch (error) {
-    console.error(`Error iniciando monitoreo para canal ${channel}:`, error);
+    if (logger) {
+      logger.error(`Error iniciando monitoreo para canal ${channel}:`, error);
+    }
   }
 }
 
@@ -237,16 +267,22 @@ function isSecurityCriticalEvent(channel: string, eventId: number): boolean {
 async function installDependency(packageName: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const { exec } = require('child_process');
-    console.log(`Instalando dependencia: ${packageName}`);
+    if (logger) {
+      logger.info(`Instalando dependencia: ${packageName}`);
+    }
     
     exec(`npm install ${packageName}`, (error: any, stdout: string, stderr: string) => {
       if (error) {
-        console.error(`Error instalando ${packageName}:`, error);
+        if (logger) {
+          logger.error(`Error instalando ${packageName}:`, error);
+        }
         reject(error);
         return;
       }
       
-      console.log(`Dependencia ${packageName} instalada correctamente`);
+      if (logger) {
+        logger.info(`Dependencia ${packageName} instalada correctamente`);
+      }
       resolve();
     });
   });

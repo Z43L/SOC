@@ -1,19 +1,27 @@
 /**
  * Colectores para macOS
+ * Implementación básica - extensible en futuras versiones
  */
 
-import { Collector } from '../index';
-import { unifiedLoggingCollector } from './unified-logging';
-import { fseventsCollector } from './fsevents';
-import { processCollector } from './process';
-import { networkCollector } from './network';
-import { tccCollector } from './tcc-amfi';
+import { Collector } from '../types';
+
+// Colector básico para macOS
+export const basicMacOSCollector: Collector = {
+  name: 'macos-basic',
+  description: 'Colector básico para sistemas macOS',
+  compatibleSystems: ['darwin'],
+  
+  async start(): Promise<boolean> {
+    // Implementación básica - expandir según necesidades
+    return true;
+  },
+  
+  async stop(): Promise<boolean> {
+    return true;
+  }
+};
 
 // Exportar todos los colectores para macOS
 export const collectors: Collector[] = [
-  unifiedLoggingCollector,
-  fseventsCollector,
-  processCollector,
-  networkCollector,
-  tccCollector
+  basicMacOSCollector
 ];

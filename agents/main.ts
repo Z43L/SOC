@@ -320,7 +320,10 @@ class Agent {
     // Configurar callback en cada colector
     for (const collector of this.collectors) {
       if (typeof collector.configure === 'function') {
-        collector.configure({ eventCallback: handleEvent });
+        collector.configure({ 
+          eventCallback: handleEvent,
+          logger: this.logger 
+        });
       }
     }
   }

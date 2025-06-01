@@ -4,7 +4,7 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { Collector } from '../index';
+import { Collector } from '../types';
 
 // Convertir exec a Promise
 const execAsync = promisify(exec);
