@@ -57,7 +57,9 @@ sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE soc_dev TO soc_user;"
 docker-compose up -d postgres redis
 ```
 
-### 4. Variables de Entorno
+### 4. Variables de Entorno - Explicación Detallada
+
+Las variables de entorno son configuraciones que le dicen a tu aplicación cómo comportarse. Son como ajustes que puedes cambiar sin modificar el código.
 
 Crear archivo `.env` en la raíz del proyecto:
 
@@ -89,62 +91,374 @@ NODE_ENV="development"
 PORT="3000"
 ```
 
-### 5. Inicialización de la Base de Datos
+**Explicación de cada variable**:
+
+#### Variables de Base de Datos
+```bash
+DATABASE_URL="postgresql://soc_user:soc_password@localhost:5432/soc_dev"
+```
+**Estructura de la URL**:
+- `postgresql://` - Tipo de base de datos
+- `soc_user` - Usuario de la base de datos
+- `soc_password` - Contraseña del usuario
+- `localhost` - Dirección del servidor (local en desarrollo)
+- `5432` - Puerto donde corre PostgreSQL
+- `soc_dev` - Nombre de la base de datos
+
+**¿Por qué usar variables de entorno?**:
+- En desarrollo: `localhost:5432`
+- En producción: `mi-servidor-produccion.com:5432`
+- Solo cambias la variable, no el código
+
+#### Variables de Cache
+```bash
+REDIS_URL="redis://localhost:6379"
+```
+**¿Qué es Redis?**: Base de datos en memoria muy rápida para:
+- Cache de datos frecuentemente accedidos
+- Sesiones de usuario
+- Colas de trabajos en segundo plano
+
+#### Variables de Seguridad
+```bash
+JWT_SECRET="tu-clave-secreta-super-segura-aqui"
+```
+**¿Qué es JWT?**: JSON Web Token - sistema para autenticar usuarios
+**JWT_SECRET**: Clave secreta para firmar tokens de autenticación
+**⚠️ IMPORTANTE**: Esta clave debe ser:
+- Completamente secreta
+- Diferente en cada entorno
+- Al menos 32 caracteres aleatorios
+
+**Ejemplo de generación segura**:
+```bash
+# En Linux/Mac
+openssl rand -base64 32
+
+# Resultado ejemplo:
+# K8n2vX9mR7qP4wY6tZ3sA5bN8cL9dF2gH1jK3mQ7rT8u
+```
+
+#### Variables de Inteligencia Artificial
+```bash
+OPENAI_API_KEY="sk-..."
+ANTHROPIC_API_KEY="sk-ant-..."
+```
+**¿Para qué se usan?**:
+- Análisis automático de alertas de seguridad
+- Generación de reportes inteligentes
+- Detección de anomalías con IA
+- Respuestas automatizadas a incidentes
+
+**¿Cómo obtener las claves?**:
+- OpenAI: https://platform.openai.com/api-keys
+- Anthropic: https://console.anthropic.com/
+
+#### Variables de Pagos
+```bash
+STRIPE_SECRET_KEY="sk_test_..."
+STRIPE_PUBLISHABLE_KEY="pk_test_..."
+```
+**¿Para qué se usan?**: Sistema de suscripciones y facturación
+- `sk_test_`: Clave secreta para desarrollo (servidor)
+- `pk_test_`: Clave pública para desarrollo (frontend)
+- En producción usan `sk_live_` y `pk_live_`
+
+#### Variables de Email
+```bash
+SENDGRID_API_KEY="SG..."
+```
+**¿Para qué se usa?**: Envío de emails automáticos:
+- Notificaciones de alertas críticas
+- Reportes por email
+- Invitaciones de usuarios
+- Confirmaciones de registro
+
+### 5. Inicialización de la Base de Datos - Paso a Paso
 
 ```bash
 # Ejecutar migraciones
 npm run db:push
+```
 
+**¿Qué son las migraciones?**: Scripts que crean o modifican la estructura de la base de datos
+
+**Ejemplo de lo que hace internamente**:
+```sql
+-- Crear tabla de usuarios
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Crear tabla de alertas
+CREATE TABLE alerts (
+  id SERIAL PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  severity VARCHAR(50) NOT NULL,
+  status VARCHAR(50) DEFAULT 'open',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+**¿Por qué usar migraciones?**:
+- Todos los desarrolladores tienen la misma estructura de base de datos
+- Cambios se aplican de forma controlada
+- Historial de cambios en la base de datos
+- Se pueden deshacer si hay problemas
+
+```bash
 # Opcional: Poblar con datos de prueba
 npm run db:seed  # (si existe script)
 ```
 
-## Scripts de Desarrollo
+**¿Qué hace el seed?**: Añade datos de ejemplo para desarrollo
+**Ejemplo de datos de prueba**:
+```javascript
+// Usuarios de prueba
+const testUsers = [
+  { name: 'Admin', email: 'admin@soc.com', role: 'Administrator' },
+  { name: 'Analista', email: 'analista@soc.com', role: 'Security Analyst' }
+];
 
-### Comandos Principales
-
-```bash
-# Desarrollo con hot reload
-npm run dev
-
-# Verificar tipos TypeScript
-npm run check
-
-# Construir proyecto
-npm run build
-
-# Ejecutar tests
-npm run test
-
-# Linting
-npm run lint  # (si existe)
+// Alertas de prueba
+const testAlerts = [
+  { title: 'Intento de login sospechoso', severity: 'high' },
+  { title: 'Actualización de software', severity: 'low' }
+];
 ```
 
-### Scripts Específicos
+## Scripts de Desarrollo - Guía Completa para Principiantes
 
+### Comandos Principales Explicados
+
+#### Desarrollo con Hot Reload
 ```bash
-# Solo backend
+npm run dev
+```
+**¿Qué hace?**: Inicia el servidor en modo desarrollo
+**Hot Reload**: Cuando cambias código, automáticamente:
+1. Detecta el cambio
+2. Recompila el código
+3. Recarga la aplicación
+4. No pierdes el estado de la aplicación
+
+**Ejemplo práctico**:
+```javascript
+// Cambias esto en tu código:
+const mensaje = "Hola Mundo";
+
+// Lo guardas y automáticamente ves:
+const mensaje = "Hola Mundo Actualizado";
+// Sin tener que parar y reiniciar el servidor
+```
+
+**Lo que verás en la consola**:
+```
+> rest-express@1.0.0 dev
+> tsx server/index.ts
+
+[Server] Starting on port 3000...
+[Database] Connected successfully
+[WebSocket] Initialized
+Ready on http://localhost:3000
+```
+
+#### Verificación de Tipos
+```bash
+npm run check
+```
+**¿Qué hace?**: Verifica que tu código TypeScript esté correcto
+**Antes de hacer commit**: Siempre ejecuta esto para evitar errores
+
+**Ejemplo de errores que detecta**:
+```typescript
+// ❌ Error - tipo incorrecto
+const edad: number = "25"; // String en lugar de number
+
+// ❌ Error - propiedad no existe
+const usuario = { nombre: "Juan" };
+console.log(usuario.email); // 'email' no existe
+
+// ✅ Correcto
+const edad: number = 25;
+const usuario = { nombre: "Juan", email: "juan@email.com" };
+console.log(usuario.email);
+```
+
+#### Construcción del Proyecto
+```bash
+npm run build
+```
+**¿Qué hace?**: Prepara tu código para producción
+**Proceso interno**:
+1. **Compilación**: TypeScript → JavaScript
+2. **Optimización**: Minimiza archivos, elimina código no usado
+3. **Bundling**: Combina múltiples archivos en uno
+4. **Creación**: Carpeta `dist/` con archivos optimizados
+
+**Antes y después**:
+```javascript
+// Tu código (development):
+import { validarEmail } from './utils/validacion';
+import { conectarBaseDatos } from './database/conexion';
+
+// Después del build (production):
+// Archivo minificado, optimizado y comprimido
+function validarEmail(e){return/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)}
+// ... todo en archivos compactos
+```
+
+#### Testing
+```bash
+npm run test
+```
+**¿Qué hace?**: Ejecuta pruebas automatizadas
+**¿Por qué son importantes las pruebas?**:
+- Detectan errores antes de llegar a producción
+- Aseguran que cambios no rompan funcionalidad existente
+- Documentan cómo debe comportarse el código
+
+**Ejemplo de prueba**:
+```javascript
+// Archivo: test/usuarios.test.js
+describe('Validación de usuarios', () => {
+  test('debe validar email correcto', () => {
+    expect(validarEmail('juan@email.com')).toBe(true);
+  });
+  
+  test('debe rechazar email incorrecto', () => {
+    expect(validarEmail('email-inválido')).toBe(false);
+  });
+});
+```
+
+### Scripts Específicos por Componente
+
+#### Solo Backend
+```bash
+npm run dev:server
+```
+**Cuándo usarlo**: Cuando trabajas solo en la lógica del servidor
+**Ventajas**:
+- Arranque más rápido
+- Menos consumo de memoria
+- Foco en APIs sin interfaz
+
+#### Solo Frontend
+```bash
+npm run dev:client
+```
+**Cuándo usarlo**: Cuando trabajas solo en la interfaz de usuario
+**Requisito**: El backend debe estar corriendo en otra terminal
+
+**Configuración típica**:
+```bash
+# Terminal 1 - Backend
 npm run dev:server
 
-# Solo frontend  
+# Terminal 2 - Frontend  
 npm run dev:client
-
-# Signature Hub (si necesario)
-npm run sig-hub
-
-# Agentes (desarrollo)
-cd agents && npm run dev
 ```
 
-## Estructura de Desarrollo
+#### Signature Hub
+```bash
+npm run sig-hub
+```
+**¿Qué es?**: Servicio especializado para análisis de firmas de malware
+**Cuándo usarlo**: Desarrollo de funciones de detección de amenazas
 
-### Flujo de Trabajo Típico
+#### Desarrollo de Agentes
+```bash
+cd agents && npm run dev
+```
+**¿Qué son los agentes?**: Programas que se instalan en computadoras para recopilar datos de seguridad
+**Estructura del desarrollo**:
+```bash
+# Terminal 1 - Servidor principal
+npm run dev
 
-1. **Feature Branch**: Crear rama desde `main`
-2. **Desarrollo**: Implementar funcionalidad
-3. **Testing**: Ejecutar tests localmente
-4. **Build**: Verificar que construye correctamente
-5. **PR**: Crear Pull Request
+# Terminal 2 - Agentes
+cd agents
+npm run dev
+
+# Terminal 3 - Pruebas de agente
+cd agents
+npm run test:windows  # o test:linux, test:macos
+```
+
+## Estructura de Desarrollo - Flujo Completo
+
+### Flujo de Trabajo Típico para Principiantes
+
+#### 1. Crear Feature Branch
+```bash
+# Actualizar rama principal
+git checkout main
+git pull origin main
+
+# Crear nueva rama para tu funcionalidad
+git checkout -b feature/mi-nueva-funcionalidad
+```
+**¿Por qué usar ramas?**: Permite trabajar en nuevas funciones sin afectar el código principal
+
+#### 2. Desarrollo Local
+```bash
+# Iniciar desarrollo
+npm run dev
+
+# En otra terminal - verificar tipos constantemente
+npm run check
+
+# Hacer cambios en el código...
+# Guardar archivos...
+# Ver cambios automáticamente en el navegador
+```
+
+#### 3. Testing Continuo
+```bash
+# Ejecutar tests después de cada cambio importante
+npm run test
+
+# Si hay errores, corregir y repetir
+npm run test -- --watch  # modo observación
+```
+
+#### 4. Verificación Final
+```bash
+# Verificar que todo compila
+npm run build
+
+# Verificar tipos
+npm run check
+
+# Ejecutar todos los tests
+npm run test
+
+# Si todo está verde ✅, continuar
+```
+
+#### 5. Commit y Push
+```bash
+# Añadir cambios
+git add .
+
+# Commit con mensaje descriptivo
+git commit -m "feat: añadir validación de email en formulario usuarios"
+
+# Subir cambios
+git push origin feature/mi-nueva-funcionalidad
+```
+
+#### 6. Pull Request
+1. Ir a GitHub
+2. Crear Pull Request desde tu rama hacia `main`
+3. Describir qué cambios hiciste
+4. Esperar revisión de código
+5. Corregir comentarios si los hay
+6. Merge cuando esté aprobado
 
 ### Debugging
 
