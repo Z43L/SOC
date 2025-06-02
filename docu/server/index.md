@@ -34,44 +34,162 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 ```
 
-**Dependencies Críticas**:
-- **Express**: Framework web para Node.js
-- **CORS**: Middleware para Cross-Origin Resource Sharing
-- **registerRoutes**: Función que registra todas las rutas de la API
-- **Vite helpers**: Utilidades para desarrollo y producción
+**Explicación detallada de cada import**:
 
-### 3. Configuración de Express
+#### Express Framework
+```typescript
+import express, { type Request, Response, NextFunction } from "express";
+```
+- **express**: Función principal para crear la aplicación web
+- **Request**: Tipo TypeScript que describe la estructura de una petición HTTP
+- **Response**: Tipo TypeScript que describe la estructura de una respuesta HTTP  
+- **NextFunction**: Tipo para funciones middleware que pasan control al siguiente middleware
+
+**¿Qué es Express?**: Es como un organizador para tu aplicación web. Te ayuda a:
+- Recibir peticiones HTTP (GET, POST, PUT, DELETE)
+- Procesar datos enviados por usuarios
+- Enviar respuestas de vuelta
+- Organizar el código en rutas lógicas
+
+#### CORS (Cross-Origin Resource Sharing)
+```typescript
+import cors from 'cors';
+```
+**¿Qué es CORS?**: Es un mecanismo de seguridad de los navegadores web. Sin CORS:
+- Tu frontend en `localhost:5173` no podría comunicarse con tu backend en `localhost:3000`
+- Los navegadores bloquearían las peticiones por "política de mismo origen"
+
+**Ejemplo sin CORS**:
+```
+❌ Frontend (localhost:5173) → Backend (localhost:3000) = BLOQUEADO
+```
+
+**Ejemplo con CORS**:
+```
+✅ Frontend (localhost:5173) → Backend (localhost:3000) = PERMITIDO
+```
+
+#### Funciones Locales
+```typescript
+import { registerRoutes } from "./routes";
+import { setupVite, serveStatic, log } from "./vite";
+```
+
+**registerRoutes**: Función que registra todas las rutas de la API
+- Ejemplo: `/api/users`, `/api/alerts`, `/api/agents`
+- Organiza qué código se ejecuta para cada URL
+
+**setupVite**: Configura el servidor de desarrollo
+- En desarrollo: Servidor rápido con hot reload
+- En producción: Sirve archivos estáticos optimizados
+
+**serveStatic**: Sirve archivos estáticos (HTML, CSS, JS, imágenes)
+
+**log**: Sistema de logging personalizado para registrar eventos
+
+### 3. Configuración de Express - Explicación Paso a Paso
 
 ```typescript
 const app = express();
+```
+**¿Qué hace?**: Crea una nueva aplicación Express
+**Analogía**: Es como crear un nuevo restaurante vacío - tienes el edificio pero necesitas añadir mesas, menú, cocineros, etc.
+
+```typescript
 app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173', credentials: true }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+```
+**Configuración CORS detallada**:
+- **origin**: URL desde la cual permitimos peticiones
+  - `process.env.CLIENT_URL`: Variable de entorno (en producción: tu dominio real)
+  - `'http://localhost:5173'`: Valor por defecto para desarrollo
+- **credentials: true**: Permite envío de cookies de autenticación
+
+**Ejemplo práctico**:
+```javascript
+// ✅ Permitido - petición desde localhost:5173
+fetch('http://localhost:3000/api/users', { credentials: 'include' })
+
+// ❌ Bloqueado - petición desde otro dominio
+fetch('http://localhost:3000/api/users') // desde localhost:8080
 ```
 
-**Variables de Configuración**:
-- **app**: Instancia principal de Express
-- **cors origin**: URL permitida para requests cross-origin (default: desarrollo en puerto 5173)
-- **credentials: true**: Permite envío de cookies en requests CORS
+```typescript
+app.use(express.json());
+```
+**¿Qué hace?**: Configura Express para entender peticiones con contenido JSON
+**Sin esto**: Si envías `{"name": "Juan"}`, Express no sabría cómo procesarlo
+**Con esto**: Express convierte automáticamente el JSON en un objeto JavaScript
 
-**Middleware Configurado**:
-- **JSON parser**: Parsea body de requests como JSON
-- **URL encoded parser**: Parsea formularios URL-encoded
+**Ejemplo**:
+```javascript
+// Cliente envía:
+fetch('/api/users', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ name: 'Juan', email: 'juan@email.com' })
+})
+
+// Servidor recibe (gracias a express.json()):
+req.body = { name: 'Juan', email: 'juan@email.com' }
+```
+
+```typescript
+app.use(express.urlencoded({ extended: false }));
+```
+**¿Qué hace?**: Permite procesar formularios HTML tradicionales
+**extended: false**: Usa la biblioteca 'querystring' (más simple) en lugar de 'qs' (más compleja)
+
+**Ejemplo de formulario HTML**:
+```html
+<form method="POST" action="/api/contact">
+  <input name="name" value="Juan">
+  <input name="email" value="juan@email.com">
+  <button type="submit">Enviar</button>
+</form>
+```
+**Resultado en el servidor**:
+```javascript
+req.body = { name: 'Juan', email: 'juan@email.com' }
+```
 
 ### 4. Middleware de Logging Personalizado
+
+Este middleware es una parte fundamental del sistema que registra información detallada sobre cada petición HTTP. Veamos línea por línea:
 
 ```typescript
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
+```
 
+**Explicación línea por línea**:
+- `app.use()`: Registra un middleware que se ejecuta en TODAS las peticiones HTTP
+- `(req, res, next)`: Función que recibe:
+  - `req` (request): Información de la petición del cliente
+  - `res` (response): Objeto para enviar respuesta al cliente  
+  - `next`: Función para continuar al siguiente middleware
+- `const start = Date.now()`: Guarda el momento exacto (en milisegundos) cuando empieza la petición
+- `const path = req.path`: Extrae la ruta de la URL (ej: "/api/users")
+- `let capturedJsonResponse`: Variable para almacenar la respuesta JSON que enviamos al cliente
+
+```typescript
   const originalResJson = res.json;
   res.json = function (bodyJson, ...args) {
     capturedJsonResponse = bodyJson;
     return originalResJson.apply(res, [bodyJson, ...args]);
   };
+```
 
+**¿Qué hace este código?**:
+- `originalResJson = res.json`: Guarda la función original que envía respuestas JSON
+- `res.json = function (bodyJson, ...args)`: Reemplaza la función original con nuestra versión
+- `capturedJsonResponse = bodyJson`: Captura el contenido JSON antes de enviarlo
+- `return originalResJson.apply(...)`: Llama a la función original para enviar la respuesta
+
+**¿Por qué hacemos esto?**: Queremos saber qué datos enviamos al cliente para incluirlos en los logs, pero sin interferir con el funcionamiento normal.
+
+```typescript
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
@@ -87,23 +205,36 @@ app.use((req, res, next) => {
       log(logLine);
     }
   });
+```
 
+**Explicación del evento "finish"**:
+- `res.on("finish", ...)`: Escucha el evento que se dispara cuando la respuesta se envía completamente
+- `duration = Date.now() - start`: Calcula cuánto tiempo tomó procesar la petición
+- `if (path.startsWith("/api"))`: Solo registra peticiones que empiecen con "/api" (ignora archivos estáticos)
+- `logLine = ...`: Construye una línea de log con formato: "MÉTODO /ruta CÓDIGO_STATUS en XXXms"
+- `JSON.stringify(capturedJsonResponse)`: Convierte el objeto JSON a texto para incluir en el log
+- `if (logLine.length > 80)`: Si el log es muy largo, lo corta para mantener legibilidad
+- `log(logLine)`: Escribe el log usando nuestro sistema de logging
+
+```typescript
   next();
 });
 ```
 
-**Funcionalidad**:
-- **Performance Monitoring**: Mide tiempo de respuesta de cada request
-- **Response Capturing**: Captura respuesta JSON para logging
-- **Selective Logging**: Solo loggea rutas que empiecen con "/api"
-- **Log Truncation**: Limita longitud de logs a 80 caracteres
+**Finalización**:
+- `next()`: Llama al siguiente middleware en la cadena (muy importante, sin esto la petición se "cuelga")
 
-**Variables**:
-- `start`: Timestamp de inicio del request
-- `path`: Ruta del request
-- `capturedJsonResponse`: Response JSON capturada
-- `duration`: Tiempo total de procesamiento
-- `logLine`: String final del log
+**Ejemplo de log generado**:
+```
+GET /api/users 200 in 45ms :: {"users":[{"id":1,"name":"Juan"}]}
+POST /api/alerts 201 in 123ms :: {"id":42,"status":"created"}
+```
+
+**Beneficios de este sistema**:
+1. **Monitoreo de performance**: Sabemos qué peticiones son lentas
+2. **Debugging**: Podemos ver exactamente qué datos devolvemos
+3. **Auditoría**: Registro completo de la actividad de la API
+4. **Análisis**: Datos para optimizar el rendimiento
 
 ## Función Principal Asíncrona
 
