@@ -1,49 +1,132 @@
 # Arquitectura General del Sistema SOC Inteligente SaaS
 
-## Visión General
+## ¿Qué es la Arquitectura de Software?
 
-El SOC Inteligente SaaS es una plataforma de monitoreo de seguridad distribuida que consta de tres componentes principales interconectados:
+La **arquitectura de software** es como el plano de construcción de un edificio, pero para aplicaciones. Define:
+- **Cómo se organizan** los diferentes componentes
+- **Cómo se comunican** entre sí
+- **Qué responsabilidad** tiene cada parte
+- **Cómo escala** y se mantiene el sistema
 
-1. **Agentes de Monitoreo** - Software instalado en dispositivos cliente
-2. **Plataforma SaaS** - Aplicación web centralizada (Frontend + Backend)
-3. **Sistema de Procesamiento IA** - Motor de análisis e inteligencia artificial
+## Visión General - Explicada con Analogías
 
-## Arquitectura de Alto Nivel
+El SOC Inteligente SaaS es como un **sistema de seguridad de una gran empresa**, pero para el mundo digital:
+
+### 🏢 Analogía: Sistema de Seguridad Empresarial
+
+```
+Sistema de Seguridad Físico          ←→     Sistema SOC Digital
+├── 📹 Cámaras de seguridad          ←→     🔍 Agentes de monitoreo
+├── 🏢 Centro de control             ←→     💻 Plataforma SaaS web
+├── 👨‍💼 Guardias de seguridad           ←→     🤖 IA de análisis
+├── 📋 Registro de eventos           ←→     🗄️ Base de datos
+└── 🚨 Sistema de alarmas            ←→     📢 Sistema de alertas
+```
+
+### Los Tres Pilares del Sistema
+
+1. **Agentes de Monitoreo** (Los "Ojos" del Sistema)
+   - Software instalado en cada computadora de la empresa
+   - Como cámaras de seguridad que vigilan 24/7
+   - Recopilan información sobre actividades sospechosas
+
+2. **Plataforma SaaS** (El "Cerebro" del Sistema)
+   - Aplicación web donde los administradores ven todo
+   - Como el centro de control de seguridad
+   - Procesa y presenta la información de manera comprensible
+
+3. **Sistema de IA** (El "Analista Experto")
+   - Inteligencia artificial que detecta patrones anómalos
+   - Como un detective experimentado que nota cosas extrañas
+   - Reduce falsas alarmas y prioriza amenazas reales
+
+## Arquitectura de Alto Nivel - Explicada Paso a Paso
+
+### Diagrama Detallado con Flujo de Datos
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    SOC Inteligente SaaS                        │
+│                  🏢 SOC Inteligente SaaS                        │
+│                     (En la Nube)                               │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌─────────────────┐    ┌──────────────────┐    ┌─────────────┐│
-│  │   Frontend      │    │     Backend      │    │  Database   ││
+│  │   🖥️ Frontend    │    │   ⚙️ Backend      │    │ 🗄️ Database ││
 │  │   (React/TS)    │◄──►│   (Node.js/TS)   │◄──►│ (PostgreSQL)││
 │  │                 │    │                  │    │             ││
+│  │ • Dashboards    │    │ • APIs           │    │ • Alertas   ││
+│  │ • Reportes      │    │ • Autenticación  │    │ • Usuarios  ││
+│  │ • Configuración │    │ • Procesamiento  │    │ • Configuración ││
 │  └─────────────────┘    └──────────────────┘    └─────────────┘│
 │                                 ▲                               │
-│                                 │                               │
+│                                 │ (APIs REST + WebSockets)      │
 │                     ┌───────────▼──────────┐                   │
-│                     │   Integrations       │                   │
-│                     │   - AI Services      │                   │
-│                     │   - Threat Feeds     │                   │
-│                     │   - External APIs    │                   │
-│                     │   - Agent Manager    │                   │
+│                     │   🔌 Integrations    │                   │
+│                     │   - 🤖 AI Services   │                   │
+│                     │   - 🌐 Threat Feeds  │                   │
+│                     │   - 📡 External APIs │                   │
+│                     │   - 👥 Agent Manager │                   │
 │                     └──────────────────────┘                   │
 └─────────────────────────────────────────────────────────────────┘
                                  ▲
-                                 │ (Comunicación Segura)
+                                 │ (HTTPS + WebSocket Seguro)
                                  ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Agentes Distribuidos                        │
+│                  📡 Agentes Distribuidos                        │
+│                (En dispositivos de la empresa)                  │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │   Windows   │  │    Linux    │  │    macOS    │              │
+│  │ 🪟 Windows   │  │ 🐧 Linux     │  │ 🍎 macOS     │              │
 │  │   Agent     │  │    Agent    │  │    Agent    │              │
 │  │             │  │             │  │             │              │
+│  │ • Procesos  │  │ • Procesos  │  │ • Procesos  │              │
+│  │ • Red       │  │ • Red       │  │ • Red       │              │
+│  │ • Archivos  │  │ • Logs      │  │ • Archivos  │              │
+│  │ • Registro  │  │ • Servicios │  │ • Keychain  │              │
 │  └─────────────┘  └─────────────┘  └─────────────┘              │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
+```
+
+### Flujo de Información Completo
+
+**Ejemplo de un evento de seguridad real**:
+
+```
+1️⃣ DETECCIÓN (Agente)
+🖥️ Laptop de Juan abre "evil-malware.exe"
+├── Agent Windows detecta proceso sospechoso
+├── Calcula score de riesgo: 9.2/10 (muy alto)
+└── Envía evento al servidor central
+
+2️⃣ PROCESAMIENTO (Backend)
+☁️ Servidor SOC recibe evento
+├── Valida autenticidad del agente
+├── Enriquece con threat intelligence
+├── Analiza con IA: confirma malware conocido
+└── Crea alerta crítica automáticamente
+
+3️⃣ ANÁLISIS (IA + Integraciones)
+🤖 Sistema IA analiza contexto
+├── Consulta VirusTotal: 35/60 engines detectan malware
+├── Verifica en MISP: malware usado en campaña reciente
+├── Analiza comportamiento: intenta acceder a datos sensibles
+└── Escala severidad a CRÍTICA
+
+4️⃣ RESPUESTA (Frontend + Notificaciones)
+📢 Sistema notifica inmediatamente
+├── Dashboard muestra alerta roja parpadeante
+├── Email automático al equipo SOC
+├── Slack notification al canal #security-alerts
+└── SMS al administrador de turno
+
+5️⃣ ACCIÓN (Automatización)
+⚡ Respuesta automática (SOAR)
+├── Aísla laptop de Juan de la red
+├── Inicia recolección forense
+├── Crea ticket en JIRA automáticamente
+└── Actualiza threat intelligence interna
 ```
 
 ## Componentes Principales

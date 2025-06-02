@@ -128,30 +128,365 @@ constructor(configPath: string) {
 - Logger configurado con nivel 'info' y output a consola
 - Los otros componentes se inicializan después de cargar configuración
 
-## Flujo de Ejecución del Agente
+## Flujo de Ejecución del Agente - Explicación Detallada para Principiantes
 
-### 1. Fase de Inicialización
+### ¿Qué hace un Agente SOC?
 
-1. **Carga de Configuración**: Lee configuración desde archivo local o servidor
-2. **Inicialización de Core**: Configura logger, transport, queue, etc.
-3. **Detección de Plataforma**: Identifica SO y arquitectura
-4. **Carga de Colectores**: Carga colectores específicos para la plataforma
-5. **Configuración de Seguridad**: Establece certificados y encriptación
+Imagina el agente como un **guardián de seguridad digital** que se instala en cada computadora de tu empresa. Su trabajo es:
+- **Observar** todo lo que pasa en esa computadora
+- **Recopilar** información de eventos importantes
+- **Reportar** al centro de control (servidor SOC)
+- **Responder** a comandos remotos cuando sea necesario
 
-### 2. Fase de Operación
+### Anatomía del Agente - Comparación con el Cuerpo Humano
 
-1. **Inicio de Colectores**: Activa colectores de datos
-2. **Inicio de Heartbeat**: Comienza envío de señales de vida
-3. **Procesamiento de Comandos**: Escucha comandos del servidor
-4. **Recolección de Datos**: Ejecuta colectores según configuración
-5. **Envío de Datos**: Transmite datos al servidor periódicamente
+Para entender mejor cómo funciona, usemos la analogía del cuerpo humano:
 
-### 3. Fase de Mantenimiento
+```
+Agente SOC ≈ Cuerpo Humano
+├── 🧠 Core (Cerebro)          → Coordinación central
+├── 👀 Collectors (Ojos)       → Observación del entorno  
+├── 📡 Transport (Sistema Nervioso) → Comunicación
+├── 📝 Logger (Memoria)        → Registro de eventos
+├── 💾 Queue (Estómago)        → Almacenamiento temporal
+└── ❤️ Heartbeat (Corazón)     → Señales de vida
+```
 
-1. **Auto-actualización**: Verifica y aplica actualizaciones
-2. **Limpieza de Cola**: Mantiene cola de eventos en tamaño óptimo
-3. **Rotación de Logs**: Gestiona archivos de log
-4. **Monitoreo de Performance**: Recolecta métricas propias
+### 1. Fase de Inicialización (Despertar del Agente)
+
+#### ¿Qué pasa cuando el agente se inicia?
+
+```typescript
+// Ejemplo simplificado del proceso de inicialización
+async function startAgent() {
+  console.log('🚀 Iniciando Agente SOC...');
+  
+  // 1. Cargar configuración (como leer instrucciones de trabajo)
+  const config = await loadConfig();
+  
+  // 2. Inicializar sistemas internos (preparar herramientas)
+  const logger = new Logger(config.logging);
+  const transport = new Transport(config.server);
+  
+  // 3. Detectar en qué tipo de computadora estamos
+  const platform = detectPlatform(); // Windows, Linux, macOS
+  
+  // 4. Cargar los "sensores" apropiados para esta plataforma
+  const collectors = await loadCollectors(platform);
+  
+  console.log(`✅ Agente listo en ${platform} con ${collectors.length} sensores`);
+}
+```
+
+**Paso a paso en lenguaje sencillo**:
+
+**1. Leer las instrucciones (Configuración)**:
+```json
+{
+  "servidor_central": "https://soc.miempresa.com",
+  "intervalo_recoleccion": "30 segundos",
+  "que_monitorear": ["procesos", "conexiones_red", "archivos"],
+  "nivel_detalle": "medio"
+}
+```
+
+**2. Preparar herramientas internas**:
+- **Logger**: Como un cuaderno para anotar todo lo que pasa
+- **Transport**: Como un walkie-talkie para hablar con el servidor
+- **Queue**: Como una caja temporal para guardar información
+
+**3. Detectar el entorno**:
+```typescript
+function detectPlatform(): string {
+  if (process.platform === 'win32') return 'Windows';
+  if (process.platform === 'darwin') return 'macOS';
+  if (process.platform === 'linux') return 'Linux';
+  return 'Unknown';
+}
+```
+
+**4. Cargar sensores específicos**:
+```typescript
+// En Windows, carga estos colectores:
+const windowsCollectors = [
+  new WindowsProcessCollector(),    // Vigila programas que se ejecutan
+  new WindowsEventLogCollector(),   // Lee logs de Windows
+  new WindowsRegistryCollector()    // Vigila cambios en el registro
+];
+
+// En Linux, carga estos otros:
+const linuxCollectors = [
+  new LinuxProcessCollector(),      // Vigila procesos
+  new SyslogCollector(),           // Lee logs del sistema
+  new SystemdCollector()           // Vigila servicios
+];
+```
+
+### 2. Fase de Operación (El Agente Trabajando)
+
+#### El Ciclo Diario del Agente
+
+Como un vigilante que hace rondas cada 30 segundos:
+
+```typescript
+async function workLoop() {
+  while (agent.isRunning) {
+    try {
+      // 🔍 PASO 1: Observar (como hacer una ronda de seguridad)
+      console.log('🔍 Iniciando ronda de recolección...');
+      const events = [];
+      
+      // Preguntar a cada "sensor" qué ha visto
+      for (const collector of this.collectors) {
+        const newEvents = await collector.collect();
+        events.push(...newEvents);
+        console.log(`📊 ${collector.name}: ${newEvents.length} eventos nuevos`);
+      }
+      
+      // 📦 PASO 2: Guardar temporalmente (como poner en una caja)
+      await this.eventQueue.add(events);
+      console.log(`📦 Total de eventos en cola: ${this.eventQueue.size()}`);
+      
+      // 📡 PASO 3: Enviar al servidor si hay suficientes eventos
+      if (this.eventQueue.size() >= 100) {
+        await this.sendEventsToServer();
+      }
+      
+      // ⏰ PASO 4: Descansar hasta la próxima ronda
+      console.log('😴 Esperando 30 segundos hasta la próxima ronda...');
+      await sleep(30000);
+      
+    } catch (error) {
+      console.error('❌ Error durante la ronda:', error);
+      await sleep(5000); // Esperar menos tiempo si hay error
+    }
+  }
+}
+```
+
+#### Ejemplo de Eventos Recopilados
+
+**Lo que ve el agente vs. Lo que reporta**:
+
+```typescript
+// Lo que el colector de procesos ve internamente:
+const rawData = `
+notepad.exe    1234  C:\\Windows\\System32\\notepad.exe
+chrome.exe     5678  C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --new-window
+```
+
+// Lo que convierte en evento estructurado:
+const events = [
+  {
+    type: 'process_started',
+    timestamp: '2024-01-15T14:30:00Z',
+    data: {
+      name: 'notepad.exe',
+      pid: 1234,
+      path: 'C:\\Windows\\System32\\notepad.exe',
+      user: 'EMPRESA\\juan.perez',
+      suspicious_score: 0.1  // Puntuación de riesgo: baja
+    }
+  },
+  {
+    type: 'process_started', 
+    timestamp: '2024-01-15T14:30:02Z',
+    data: {
+      name: 'chrome.exe',
+      pid: 5678,
+      path: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      user: 'EMPRESA\\juan.perez',
+      suspicious_score: 0.3  // Puntuación ligeramente mayor
+    }
+  }
+];
+```
+
+#### Comunicación con el Servidor
+
+**El agente como reportero de noticias**:
+
+```typescript
+async function sendEventsToServer() {
+  // 1. Preparar el "paquete de noticias"
+  const events = await this.eventQueue.getBatch(100);
+  
+  const report = {
+    agentId: 'laptop-juan-marketing-001',
+    computerName: 'LAPTOP-JUAN',
+    timestamp: new Date(),
+    eventCount: events.length,
+    events: events
+  };
+  
+  // 2. Enviar al servidor central
+  try {
+    const response = await fetch('https://soc.miempresa.com/api/agent/events', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify(report)
+    });
+    
+    if (response.ok) {
+      console.log('✅ Eventos enviados exitosamente');
+      await this.eventQueue.markAsSent(events);
+    } else {
+      console.error('❌ Error enviando eventos:', response.status);
+    }
+    
+  } catch (error) {
+    console.error('❌ Error de conexión:', error);
+    // Los eventos se quedan en la cola para reintentar después
+  }
+}
+```
+
+### 3. Fase de Mantenimiento (Cuidado Personal del Agente)
+
+#### Auto-cuidado del Agente
+
+Como una persona que se mantiene saludable:
+
+```typescript
+class AgentMaintenance {
+  async performMaintenance() {
+    // 🔄 Verificar si hay actualizaciones disponibles
+    await this.checkForUpdates();
+    
+    // 🧹 Limpiar archivos temporales viejos
+    await this.cleanupOldFiles();
+    
+    // 📊 Revisar el estado de salud
+    await this.performHealthCheck();
+    
+    // 💾 Optimizar uso de memoria
+    await this.optimizeMemory();
+  }
+  
+  async checkForUpdates() {
+    const currentVersion = '1.0.0';
+    const latestVersion = await this.getLatestVersion();
+    
+    if (latestVersion > currentVersion) {
+      console.log(`🔄 Nueva versión disponible: ${latestVersion}`);
+      await this.downloadAndInstallUpdate(latestVersion);
+    }
+  }
+  
+  async performHealthCheck() {
+    const health = {
+      memoryUsage: process.memoryUsage(),
+      uptime: process.uptime(),
+      collectorsRunning: this.collectors.filter(c => c.isActive).length,
+      queueSize: this.eventQueue.size(),
+      lastServerContact: this.transport.lastSuccessfulConnection
+    };
+    
+    // Enviar reporte de salud al servidor
+    await this.sendHealthReport(health);
+  }
+}
+```
+
+### Manejo de Comandos Remotos
+
+#### El Agente como Asistente Personal
+
+El agente puede recibir "órdenes" del servidor central:
+
+```typescript
+class CommandHandler {
+  async handleCommand(command: Command) {
+    console.log(`📞 Comando recibido: ${command.type}`);
+    
+    switch (command.type) {
+      case 'COLLECT_NOW':
+        console.log('⚡ Realizando recolección inmediata...');
+        await this.forceCollection();
+        break;
+        
+      case 'UPDATE_CONFIG':
+        console.log('⚙️ Actualizando configuración...');
+        await this.updateConfiguration(command.data);
+        break;
+        
+      case 'RESTART':
+        console.log('🔄 Reiniciando agente...');
+        await this.gracefulRestart();
+        break;
+        
+      case 'GET_STATUS':
+        console.log('📊 Enviando estado actual...');
+        await this.sendStatusReport();
+        break;
+        
+      default:
+        console.log(`❓ Comando desconocido: ${command.type}`);
+    }
+  }
+}
+```
+
+**Ejemplo de uso práctico**:
+```
+Administrador SOC ve comportamiento extraño en la laptop de Juan
+↓
+Envía comando "COLLECT_NOW" al agente en esa laptop
+↓
+Agente responde inmediatamente con datos detallados
+↓
+Administrador puede investigar el incidente
+```
+
+### Seguridad del Agente
+
+#### Protecciones Implementadas
+
+**1. Autenticación**:
+```typescript
+class AgentSecurity {
+  private apiKey: string;
+  
+  async authenticate() {
+    // El agente tiene una "cédula de identidad" única
+    const credentials = {
+      agentId: 'laptop-juan-001',
+      secretKey: this.apiKey,
+      timestamp: new Date(),
+      signature: this.generateSignature()
+    };
+    
+    const response = await this.sendToServer('/auth', credentials);
+    return response.authenticated;
+  }
+}
+```
+
+**2. Encriptación**:
+```typescript
+// Todos los datos se envían encriptados
+const encryptedData = encrypt(sensitiveData, this.encryptionKey);
+await this.sendToServer('/events', encryptedData);
+```
+
+**3. Validación de Comandos**:
+```typescript
+async validateCommand(command: Command): Promise<boolean> {
+  // ¿El comando viene del servidor correcto?
+  if (!this.isFromTrustedServer(command.source)) return false;
+  
+  // ¿La firma digital es válida?
+  if (!this.verifySignature(command)) return false;
+  
+  // ¿Tenemos permisos para este comando?
+  if (!this.hasPermission(command.type)) return false;
+  
+  return true;
+}
+```
 
 ## Componentes Core del Agente
 

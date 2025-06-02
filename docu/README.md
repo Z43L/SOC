@@ -51,6 +51,7 @@ Un **SOC (Centro de Operaciones de Seguridad)** es un equipo centralizado que mo
 ### 🚀 Configuración y Despliegue
 - [`deployment/`](./deployment/) - Guías de despliegue y configuración
 - [`development/`](./development/) - Guías para desarrolladores
+- [`troubleshooting.md`](./troubleshooting.md) - **Solución de problemas comunes** 🔧
 
 ### 📚 Guías de Referencia
 - [`api/`](./api/) - Documentación de APIs
