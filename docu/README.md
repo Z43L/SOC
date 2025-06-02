@@ -58,6 +58,7 @@ Un **SOC (Centro de Operaciones de Seguridad)** es un equipo centralizado que mo
 - [`interfaces/`](./interfaces/) - Documentación de interfaces y tipos
 - [`integrations/`](./integrations/) - Documentación de integraciones externas
 - [`beginner-guide.md`](./beginner-guide.md) - **Guía completa para principiantes** 🔰
+- [`feature-implementation-example.md`](./feature-implementation-example.md) - **Ejemplo práctico completo de implementación** 🛠️
 
 ## Propósito de esta Documentación
 
