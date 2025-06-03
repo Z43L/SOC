@@ -1,38 +1,172 @@
-# Documentación del Sistema de Agentes
+# Documentación Completa del Sistema de Agentes
 
 ## Propósito General
 
 El sistema de agentes del SOC Inteligente SaaS es responsable de recolectar datos de seguridad directamente desde los endpoints (dispositivos cliente). Los agentes funcionan como binarios autónomos instalados en sistemas Windows, Linux y macOS.
 
+### ¿Qué hace un Agente SOC?
+
+Imagina el agente como un **guardián de seguridad digital** que se instala en cada computadora de tu empresa. Su trabajo es:
+- **Observar** todo lo que pasa en esa computadora
+- **Recopilar** información de eventos importantes
+- **Reportar** al centro de control (servidor SOC)
+- **Responder** a comandos remotos cuando sea necesario
+
+### Características Principales
+
+- **Multiplataforma**: Compatible con Windows, Linux y macOS
+- **Modular**: Sistema de colectores intercambiables según la plataforma
+- **Seguro**: Comunicación encriptada y validación de integridad
+- **Autónomo**: Funciona independientemente sin requerir servicios externos
+- **Configurable**: Personalizable según las necesidades de seguridad
+- **Auto-actualizable**: Capacidad de actualizarse automáticamente
+
 ## Arquitectura del Sistema de Agentes
 
-### Estructura Modular
+### Estructura Modular Actual
 
 ```
 agents/
-├── core/                    # Funcionalidades centrales
-│   ├── agent-config.ts      # Gestión de configuración
-│   ├── logger.ts           # Sistema de logging
-│   ├── transport.ts        # Transporte seguro al servidor
-│   ├── queue.ts            # Cola de eventos
-│   ├── metrics.ts          # Recolección de métricas
-│   └── heartbeat.ts        # Gestión de heartbeats
-├── collectors/             # Sistema de colectores modulares
-│   ├── types.ts           # Interfaces compartidas
-│   ├── index.ts           # Gestión dinámica de colectores
-│   ├── linux/             # Colectores específicos para Linux
-│   ├── macos/             # Colectores específicos para macOS
-│   └── windows/           # Colectores específicos para Windows
-├── commands/              # Ejecutor de comandos remotos
-├── updater/               # Sistema de auto-actualización
-├── main.ts                # Punto de entrada principal
-└── main-simple.ts         # Versión simplificada para testing
+├── core/                         # Funcionalidades centrales
+│   ├── agent-config.ts          # Gestión de configuración con encriptación
+│   ├── logger.ts               # Sistema de logging con rotación
+│   ├── transport.ts            # Transporte HTTPS/WebSocket seguro
+│   ├── queue.ts                # Cola persistente de eventos
+│   ├── metrics.ts              # Recolección de métricas del sistema
+│   ├── heartbeat.ts            # Gestión de heartbeats y estado
+│   └── index.ts                # Exports centralizados
+├── collectors/                   # Sistema de colectores modulares
+│   ├── types.ts               # Interfaces y tipos compartidos
+│   ├── index.ts               # Carga dinámica de colectores
+│   ├── linux/                 # Colectores específicos para Linux
+│   │   ├── filesystem.ts      # Monitor de cambios en archivos
+│   │   ├── journald.ts        # Colector de systemd journald
+│   │   ├── network.ts         # Monitor de conexiones de red
+│   │   ├── process.ts         # Monitor de procesos
+│   │   ├── module.ts          # Monitor de módulos del kernel
+│   │   └── index.ts           # Exports de Linux
+│   ├── windows/               # Colectores específicos para Windows
+│   │   ├── event-log.ts       # Monitor de Event Log
+│   │   ├── process.ts         # Monitor de procesos (WMI)
+│   │   ├── registry.ts        # Monitor del registro
+│   │   ├── services.ts        # Monitor de servicios
+│   │   └── index.ts           # Exports de Windows
+│   └── macos/                 # Colectores específicos para macOS
+│       └── index.ts           # Exports de macOS (en desarrollo)
+├── commands/                     # Sistema de comandos remotos
+│   ├── executor.ts            # Ejecutor de comandos seguros
+│   └── index.ts               # Exports de comandos
+├── updater/                      # Sistema de auto-actualización
+│   ├── updater.ts             # Lógica de actualización
+│   └── index.ts               # Exports del updater
+├── common/                       # Utilidades compartidas
+├── main.ts                       # Punto de entrada principal completo
+├── main-simple.ts               # Versión simplificada para testing
+├── main-windows.ts              # Versión específica para Windows
+├── main-enhanced.ts             # Versión con características avanzadas
+└── windows-agent.ts             # Implementación específica de Windows
 ```
 
-## Documentación de Archivo Principal: main.ts
+### Principios de Diseño
 
-### Propósito
-`agents/main.ts` es el **punto de entrada principal** del agente. Coordina todos los subsistemas y gestiona el ciclo de vida completo del agente.
+1. **Modularidad**: Cada componente tiene una responsabilidad específica
+2. **Compatibilidad Multiplataforma**: Carga dinámica según el sistema operativo
+3. **Seguridad por Diseño**: Validación, encriptación y autenticación en todos los niveles
+4. **Tolerancia a Fallos**: Manejo robusto de errores y reconexión automática
+5. **Configurabilidad**: Cada aspecto del agente es configurable
+6. **Observabilidad**: Logging detallado y métricas para monitoreo
+
+## Documentación Detallada por Archivo
+
+### Archivos Principales (Entry Points)
+
+#### 1. `main.ts` - Punto de Entrada Completo
+
+**Propósito**: Implementación completa del agente con todas las características.
+
+**Estructura del Código**:
+```typescript
+/**
+ * Punto de entrada principal para el agente SOC
+ */
+
+import * as os from 'os';
+import * as path from 'path';
+import * as fs from 'fs/promises';
+import {
+  loadConfig,
+  AgentConfig,
+  EventQueue,
+  Transport,
+  Logger,
+  MetricsCollector,
+  HeartbeatManager,
+  AgentEvent
+} from './core';
+import { loadEnabledCollectors, startCollectors, stopCollectors } from './collectors';
+import { CommandExecutor, CommandType } from './commands';
+import { Updater } from './updater';
+
+// Versión actual del agente
+const AGENT_VERSION = '1.0.0';
+
+/**
+ * Clase principal del agente
+ */
+class Agent {
+  private config: AgentConfig;
+  private logger: Logger;
+  private transport: Transport;
+  private eventQueue: EventQueue;
+  private metricsCollector: MetricsCollector;
+  private heartbeatManager: HeartbeatManager;
+  private commandExecutor: CommandExecutor;
+  private updater: Updater | null = null;
+  
+  private collectors: any[] = [];
+  private running: boolean = false;
+  private uploadTimer: NodeJS.Timeout | null = null;
+  
+  constructor(configPath: string) {
+    // Inicialización de componentes core
+  }
+}
+```
+
+**Funcionalidades Principales**:
+- Inicialización de todos los módulos core
+- Gestión del ciclo de vida completo del agente
+- Coordinación entre colectores, transporte y cola de eventos
+- Manejo de comandos remotos
+- Sistema de auto-actualización
+
+#### 2. `main-simple.ts` - Versión Simplificada
+
+**Propósito**: Implementación minimalista para testing y despliegues básicos.
+
+**Diferencias con main.ts**:
+- Sin sistema de comandos remotos
+- Sin auto-actualización
+- Configuración simplificada
+- Ideal para pruebas y desarrollo
+
+#### 3. `main-windows.ts` - Versión Específica para Windows
+
+**Propósito**: Implementación optimizada para sistemas Windows con características específicas.
+
+**Características Especiales**:
+- Integración con servicios de Windows
+- Colectores específicos de Windows (Event Log, Registry, WMI)
+- Manejo de permisos administrativos
+
+#### 4. `windows-agent.ts` - Implementación Windows Nativa
+
+**Propósito**: Clase especializada para funcionalidades específicas de Windows.
+
+**Funcionalidades**:
+- Interacción con APIs nativas de Windows
+- Gestión de servicios Windows
+- Monitoreo avanzado del registro
 
 ### Imports y Dependencias
 
@@ -488,54 +622,264 @@ async validateCommand(command: Command): Promise<boolean> {
 }
 ```
 
-## Componentes Core del Agente
+## Módulos Core - Documentación Detallada
 
-### 1. AgentConfig (`core/agent-config.ts`)
+### 1. `core/agent-config.ts` - Gestión de Configuración
 
-**Propósito**: Gestión centralizada de configuración
+**Propósito**: Gestión centralizada y segura de la configuración del agente.
 
-**Propiedades Principales**:
-- **serverId**: ID del servidor SOC
-- **agentId**: ID único del agente
-- **serverUrl**: URL del servidor central
-- **uploadInterval**: Intervalo de envío de datos
-- **collectors**: Configuración de colectores
-- **security**: Configuración de seguridad y certificados
+**Interfaces Principales**:
+```typescript
+export interface AgentConfig {
+  // Configuración de conexión al servidor
+  serverUrl: string;
+  organizationKey: string;
+  
+  // Identificación del agente
+  agentId?: string;
+  
+  // Intervalos (en segundos)
+  heartbeatInterval: number;
+  dataUploadInterval: number;
+  scanInterval: number;
+  
+  // Endpoints
+  registrationEndpoint: string;
+  dataEndpoint: string;
+  heartbeatEndpoint: string;
+  
+  // Seguridad
+  signMessages: boolean;
+  privateKeyPath?: string;
+  serverPublicKeyPath?: string;
+  encryptedOrganizationKey?: string;
+  validateCertificates: boolean;
+  expectedBinaryHash?: string;
+  maxMessageSize: number;
+  allowInsecureConnections: boolean;
+  
+  // Capacidades
+  capabilities: AgentCapabilities;
+  
+  // Almacenamiento y registros
+  configPath: string;
+  logFilePath: string;
+  maxStorageSize: number;
+  logLevel: 'debug' | 'info' | 'warn' | 'error';
+  
+  // Cola de eventos
+  queueSize: number;
+  queuePersistPath?: string;
+  
+  // Transporte
+  transport: 'https' | 'websocket';
+  compressionEnabled: boolean;
+  
+  // Comandos push
+  enableCommands: boolean;
+  allowedCommands?: string[];
+}
 
-### 2. Logger (`core/logger.ts`)
+export interface AgentCapabilities {
+  fileSystemMonitoring: boolean;
+  processMonitoring: boolean;
+  networkMonitoring: boolean;
+  registryMonitoring: boolean; // Solo Windows
+  securityLogsMonitoring: boolean;
+  malwareScanning: boolean;
+  vulnerabilityScanning: boolean;
+}
+```
 
-**Propósito**: Sistema de logging unificado
+**Funciones de Seguridad**:
+```typescript
+// Validación de integridad del binario
+export async function validateAgentIntegrity(expectedHash?: string): Promise<boolean>
 
-**Funcionalidades**:
-- Múltiples niveles de log (debug, info, warn, error)
-- Output a archivo y consola
-- Rotación automática de logs
-- Correlación de eventos
+// Encriptación de valores sensibles
+export function encryptConfigValue(value: string, secret: string): string
+export function decryptConfigValue(encryptedValue: string, secret: string): string
 
-### 3. Transport (`core/transport.ts`)
+// Aplicación de variables de entorno
+function applyEnvironmentOverrides(config: AgentConfig): void
+```
 
-**Propósito**: Comunicación segura con el servidor
+**Configuración Predeterminada**:
+```typescript
+export const DEFAULT_CONFIG: Omit<AgentConfig, 'configPath'> = {
+  serverUrl: 'https://soc.example.com',
+  organizationKey: '',
+  heartbeatInterval: 60,
+  dataUploadInterval: 300,
+  scanInterval: 3600,
+  registrationEndpoint: '/api/agents/register',
+  dataEndpoint: '/api/agents/data',
+  heartbeatEndpoint: '/api/agents/heartbeat',
+  signMessages: false,
+  validateCertificates: true,
+  maxMessageSize: 1048576, // 1MB
+  allowInsecureConnections: false,
+  capabilities: {
+    fileSystemMonitoring: true,
+    processMonitoring: true,
+    networkMonitoring: true,
+    registryMonitoring: false,
+    securityLogsMonitoring: true,
+    malwareScanning: false,
+    vulnerabilityScanning: false
+  },
+  logLevel: 'info',
+  maxStorageSize: 500,
+  queueSize: 1000,
+  transport: 'https',
+  compressionEnabled: true,
+  enableCommands: false,
+  cpuAlertThreshold: 90
+};
+```
+
+### 2. `core/logger.ts` - Sistema de Logging
+
+**Propósito**: Sistema de logging robusto con rotación automática y múltiples salidas.
+
+**Interfaz Principal**:
+```typescript
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+interface LogOptions {
+  level: LogLevel;
+  filePath?: string;
+  maxSizeBytes?: number;
+  maxAgeDays?: number;
+  enableConsole?: boolean;
+  rotationCount?: number;
+}
+
+export class Logger {
+  constructor(options: LogOptions)
+  
+  // Métodos de logging
+  debug(message: string, ...args: any[]): void
+  info(message: string, ...args: any[]): void
+  warn(message: string, ...args: any[]): void
+  error(message: string, ...args: any[]): void
+  
+  // Gestión de archivos
+  private initLogFile(): void
+  private rotateLogFile(): void
+  private compressOldLogFile(filePath: string): Promise<void>
+}
+```
 
 **Características**:
-- HTTPS para envío de datos
-- WebSockets para comandos en tiempo real
-- Validación SSL/TLS
-- Compresión de datos
-- Retry logic con backoff exponencial
+- **Rotación Automática**: Por tamaño (50MB) y antigüedad (30 días)
+- **Compresión**: Archivos antiguos se comprimen con gzip
+- **Multi-salida**: Archivo y consola simultáneamente
+- **Niveles Configurables**: debug, info, warn, error
+- **Thread-safe**: Manejo seguro de escritura concurrente
 
-### 4. EventQueue (`core/queue.ts`)
+**Ejemplo de Uso**:
+```typescript
+const logger = new Logger({
+  level: 'info',
+  filePath: '/var/log/soc-agent/agent.log',
+  maxSizeBytes: 52428800, // 50MB
+  maxAgeDays: 30,
+  enableConsole: true,
+  rotationCount: 5
+});
 
-**Propósito**: Gestión de cola de eventos local
+logger.info('Agente iniciado correctamente');
+logger.warn('Conexión inestable detectada');
+logger.error('Error crítico en colector', { error: err.message });
+```
+
+### 3. `core/transport.ts` - Transporte Seguro
+
+**Propósito**: Comunicación segura y confiable con el servidor SOC mediante HTTPS y WebSockets.
+
+**Interfaces Principales**:
+```typescript
+export interface TransportOptions {
+  serverUrl: string;
+  token?: string;
+  serverCA?: string;
+  enableCompression: boolean;
+  autoReconnect?: boolean;
+}
+
+export interface TransportRequest {
+  endpoint: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  data?: unknown;
+  headers?: Record<string, string>;
+}
+
+export interface TransportResponse {
+  success: boolean;
+  status: number;
+  data?: unknown;
+  error?: string;
+}
+
+export type CommandHandler = (command: Record<string, unknown>) => Promise<{
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  durationMs: number;
+}>;
+```
+
+**Clase Transport**:
+```typescript
+export class Transport extends EventEmitter {
+  constructor(options: TransportOptions, config?: AgentConfig)
+  
+  // Peticiones HTTP/HTTPS
+  async request(req: TransportRequest): Promise<TransportResponse>
+  
+  // Conexión WebSocket para comandos en tiempo real
+  connectWebSocket(): void
+  disconnect(): void
+  
+  // Gestión de comandos
+  registerCommandHandler(command: string, handler: CommandHandler): void
+  
+  // Reconexión automática
+  private reconnect(): void
+  private resetReconnectAttempts(): void
+}
+```
+
+**Características de Seguridad**:
+- **TLS 1.3**: Encriptación de transporte
+- **Certificate Pinning**: Validación de certificados específicos
+- **Límites de Mensaje**: Máximo 1MB por mensaje
+- **Retry Logic**: Reconexión exponencial con límites
+- **Compresión**: Compresión gzip opcional
+- **Timeouts**: Timeouts configurables para todas las operaciones
+
+**Reconexión Inteligente**:
+```typescript
+const RECONNECT_INTERVALS = [5000, 10000, 30000, 60000, 120000];
+const MAX_RECONNECT_ATTEMPTS = 20;
+const RECONNECT_RESET_INTERVAL = 10 * 60 * 1000; // 10 minutos
+```
+
+### 4. `core/queue.ts` - Cola de Eventos
+
+**Propósito**: Gestión de cola persistente para eventos del agente con recuperación tras fallos.
 
 **Funcionalidades**:
-- Persistencia en disco
-- Compresión de eventos
-- Límites de tamaño y tiempo
-- Recuperación tras reinicio
+- **Persistencia**: Los eventos se guardan en disco
+- **Compresión**: Compresión automática de eventos antiguos
+- **Límites**: Control de tamaño y cantidad de eventos
+- **Recuperación**: Recuperación automática tras reinicio
+- **Batch Processing**: Procesamiento por lotes para eficiencia
 
-### 5. MetricsCollector (`core/metrics.ts`)
+### 5. `core/metrics.ts` - Recolección de Métricas
 
-**Propósito**: Recolección de métricas del agente
+**Propósito**: Recolección y agregación de métricas del sistema y del agente.
 
 **Métricas Recolectadas**:
 - CPU y memoria del agente
@@ -543,72 +887,404 @@ async validateCommand(command: Command): Promise<boolean> {
 - Errores y excepciones
 - Latencia de comunicación
 - Estado de colectores
+- Métricas del sistema operativo
 
-### 6. HeartbeatManager (`core/heartbeat.ts`)
+### 6. `core/heartbeat.ts` - Gestión de Heartbeats
 
-**Propósito**: Señales de vida al servidor
+**Propósito**: Comunicación periódica con el servidor para mantener estado de conexión.
 
-**Información Enviada**:
-- Estado del agente (running, error, updating)
-- Versión del agente
-- Timestamp último evento
-- Métricas básicas
-- Lista de colectores activos
+**Funcionalidades**:
+- Envío periódico de estado
+- Detección de desconexión
+- Sincronización de configuración
+- Reporte de métricas básicas
 
-## Sistema de Colectores
+## Sistema de Colectores - Documentación Completa
 
 ### Arquitectura Modular
 
-Los colectores siguen un patrón de plugin arquitectura:
+Los colectores siguen una arquitectura de plugin que permite cargar dinámicamente solo los colectores compatibles con el sistema operativo actual:
 
 ```typescript
-interface Collector {
+// collectors/types.ts - Interfaz común para todos los colectores
+export interface Collector {
   name: string;
-  platform: 'windows' | 'linux' | 'macos' | 'all';
-  initialize(): Promise<void>;
-  collect(): Promise<AgentEvent[]>;
-  shutdown(): Promise<void>;
+  description: string;
+  compatibleSystems: ('linux' | 'darwin' | 'win32')[];
+  
+  // Métodos de ciclo de vida
+  start: () => Promise<boolean>;
+  stop: () => Promise<boolean>;
+  
+  // Configuración opcional
+  configure?: (config: CollectorConfig) => Promise<void>;
+}
+
+// Configuración para colectores
+export interface CollectorConfig {
+  eventCallback?: (event: Omit<AgentEvent, 'agentId' | 'agentVersion' | 'hostId'>) => void;
+  logger?: Logger;
+  [key: string]: unknown; // Configuración específica del colector
 }
 ```
 
-### Tipos de Colectores
+### `collectors/index.ts` - Carga Dinámica de Colectores
 
-#### 1. System Collectors
-- **Process Monitor**: Procesos en ejecución
-- **Network Monitor**: Conexiones de red
-- **File System Monitor**: Cambios en archivos
-- **Registry Monitor**: Cambios en registro (Windows)
+**Propósito**: Gestión centralizada de la carga y coordinación de colectores según la plataforma.
 
-#### 2. Security Collectors
-- **Auth Monitor**: Eventos de autenticación
-- **Privilege Escalation**: Escalación de privilegios
-- **Suspicious Activity**: Actividad sospechosa
-- **Malware Indicators**: Indicadores de malware
+**Funciones Principales**:
+```typescript
+// Obtiene todos los colectores compatibles con el SO actual
+export async function getCompatibleCollectors(logger: Logger): Promise<Collector[]> {
+  const platform = os.platform();
+  const collectors: Collector[] = [];
+  
+  switch (platform) {
+    case 'linux':
+      const linuxModules = await import('./linux');
+      Object.values(linuxModules).forEach(collector => {
+        if (isCollector(collector)) {
+          collectors.push(collector);
+        }
+      });
+      break;
+      
+    case 'darwin':
+      const macosModules = await import('./macos');
+      Object.values(macosModules).forEach(collector => {
+        if (isCollector(collector)) {
+          collectors.push(collector);
+        }
+      });
+      break;
+      
+    case 'win32':
+      const windowsModules = await import('./windows');
+      Object.values(windowsModules).forEach(collector => {
+        if (isCollector(collector)) {
+          collectors.push(collector);
+        }
+      });
+      break;
+  }
+  
+  return collectors;
+}
 
-#### 3. Performance Collectors
-- **System Resources**: CPU, memoria, disco
-- **Network Performance**: Bandwidth, latencia
-- **Application Performance**: Performance de apps
+// Carga solo los colectores habilitados en configuración
+export async function loadEnabledCollectors(
+  enabledCollectors: string[],
+  logger: Logger
+): Promise<Collector[]>
 
-### Implementaciones Específicas por Plataforma
+// Inicia todos los colectores especificados
+export async function startCollectors(collectors: Collector[], logger: Logger): Promise<void>
 
-#### Windows (`collectors/windows/`)
-- **Windows Event Log**: Logs de eventos de Windows
-- **WMI Queries**: Consultas WMI para datos del sistema
-- **Registry Monitoring**: Monitoreo del registro
-- **ETW (Event Tracing)**: Tracing avanzado de eventos
+// Detiene todos los colectores especificados
+export async function stopCollectors(collectors: Collector[], logger: Logger): Promise<void>
+```
 
-#### Linux (`collectors/linux/`)
-- **Syslog Monitoring**: Monitoreo de syslog
-- **Process Tree**: Árbol de procesos
-- **Network Namespaces**: Namespaces de red
-- **Systemd Events**: Eventos de systemd
+### Colectores Windows - Documentación Específica
 
-#### macOS (`collectors/macos/`)
-- **Console Logs**: Logs de consola
-- **Endpoint Security Framework**: Framework de seguridad
-- **LaunchDaemons**: Monitoreo de daemons
-- **Keychain Events**: Eventos de keychain
+#### 1. `collectors/windows/process.ts` - Monitor de Procesos
+
+**Propósito**: Monitorea procesos en ejecución utilizando WMI y tasklist de Windows.
+
+**Código Principal**:
+```typescript
+export const processCollector: Collector = {
+  name: 'windows-process',
+  description: 'Monitorea procesos en ejecución en Windows utilizando WMI y tasklist',
+  compatibleSystems: ['win32'],
+  
+  async configure(config: CollectorConfig): Promise<void> {
+    eventCallback = config.eventCallback || null;
+    logger = config.logger || null;
+  },
+  
+  async start(): Promise<boolean> {
+    // Verificar que estamos en Windows
+    if (process.platform !== 'win32') {
+      return false;
+    }
+    
+    // Realizar escaneo inicial
+    await scanProcesses();
+    
+    // Configurar monitoreo periódico cada 30 segundos
+    monitoringInterval = setInterval(scanProcesses, 30000);
+    
+    return true;
+  },
+  
+  async stop(): Promise<boolean> {
+    if (monitoringInterval) {
+      clearInterval(monitoringInterval);
+      monitoringInterval = null;
+    }
+    return true;
+  }
+};
+```
+
+**Funcionalidades**:
+- **Detección de Procesos Nuevos**: Identifica procesos recién iniciados
+- **Procesos Sospechosos**: Lista de procesos potencialmente peligrosos
+- **Métricas de Proceso**: CPU, memoria, tiempo de ejecución
+- **Árbol de Procesos**: Relación padre-hijo entre procesos
+
+**Procesos Sospechosos Monitoreados**:
+```typescript
+const SUSPICIOUS_PROCESSES = new Set([
+  'cmd.exe',         // Línea de comandos
+  'powershell.exe',  // PowerShell
+  'pwsh.exe',        // PowerShell Core
+  'wscript.exe',     // Windows Script Host
+  'cscript.exe',     // Command Script Host
+  'regsvr32.exe',    // Registro de DLL
+  'rundll32.exe',    // Ejecutor de DLL
+  'mshta.exe',       // HTML Application Host
+  'certutil.exe',    // Utilidad de certificados
+  'bitsadmin.exe',   // BITS Admin
+  'schtasks.exe',    // Programador de tareas
+  'at.exe',          // Programador de tareas legacy
+  'sc.exe',          // Service Control
+  'reg.exe',         // Editor de registro
+  'wmic.exe',        // WMI Command
+  'taskkill.exe',    // Terminador de procesos
+  'net.exe',         // Comandos de red
+  'netsh.exe'        // Network Shell
+]);
+```
+
+#### 2. `collectors/windows/event-log.ts` - Monitor Event Log
+
+**Propósito**: Monitorea los Event Logs de Windows para detectar eventos de seguridad.
+
+**Logs Monitoreados**:
+- **Security Log**: Eventos de autenticación y autorización
+- **System Log**: Eventos del sistema
+- **Application Log**: Eventos de aplicaciones
+- **Setup Log**: Eventos de instalación
+- **PowerShell Log**: Eventos de PowerShell
+
+#### 3. `collectors/windows/registry.ts` - Monitor del Registro
+
+**Propósito**: Monitorea cambios críticos en el registro de Windows.
+
+**Claves Monitoreadas**:
+- `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run` - Programas de inicio
+- `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce` - Programas de inicio único
+- `HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run` - Programas de inicio del usuario
+- `HKLM\SYSTEM\CurrentControlSet\Services` - Servicios del sistema
+
+#### 4. `collectors/windows/services.ts` - Monitor de Servicios
+
+**Propósito**: Monitorea servicios de Windows y detecta cambios sospechosos.
+
+**Características**:
+- **Estado de Servicios**: Running, Stopped, Paused
+- **Servicios Nuevos**: Detección de servicios recién instalados
+- **Cambios de Configuración**: Modificaciones en servicios existentes
+
+### Colectores Linux - Documentación Específica
+
+#### 1. `collectors/linux/process.ts` - Monitor de Procesos Linux
+
+**Propósito**: Monitorea procesos en sistemas Linux utilizando `/proc`.
+
+**Fuentes de Datos**:
+- `/proc/[pid]/stat` - Estadísticas del proceso
+- `/proc/[pid]/status` - Estado detallado del proceso
+- `/proc/[pid]/cmdline` - Línea de comandos
+- `/proc/[pid]/exe` - Ejecutable del proceso
+
+#### 2. `collectors/linux/filesystem.ts` - Monitor del Sistema de Archivos
+
+**Propósito**: Monitorea cambios en el sistema de archivos utilizando inotify.
+
+**Eventos Monitoreados**:
+```typescript
+export interface FileEvent {
+  path: string;
+  action: 'create' | 'modify' | 'delete' | 'rename' | 'permission_change';
+  timestamp: Date;
+  user?: string;
+  process?: {
+    pid: number;
+    name: string;
+  };
+  hash?: string;
+  oldPath?: string; // Para acciones 'rename'
+}
+```
+
+**Directorios Monitoreados**:
+- `/etc/` - Archivos de configuración
+- `/bin/`, `/sbin/`, `/usr/bin/`, `/usr/sbin/` - Binarios del sistema
+- `/home/` - Directorios de usuario
+- `/var/log/` - Archivos de log
+- `/tmp/`, `/var/tmp/` - Directorios temporales
+
+#### 3. `collectors/linux/journald.ts` - Monitor de Systemd Journal
+
+**Propósito**: Monitorea logs de systemd journal para eventos del sistema.
+
+**Servicios Monitoreados**:
+- **sshd**: Conexiones SSH
+- **sudo**: Comandos con privilegios elevados
+- **systemd**: Eventos del sistema
+- **cron**: Tareas programadas
+
+#### 4. `collectors/linux/network.ts` - Monitor de Red Linux
+
+**Propósito**: Monitorea conexiones de red y tráfico utilizando netstat y ss.
+
+**Métricas Recolectadas**:
+```typescript
+export interface NetworkConnection {
+  localAddress: string;
+  localPort: number;
+  remoteAddress: string;
+  remotePort: number;
+  protocol: 'tcp' | 'udp';
+  state?: string;
+  processId?: number;
+  processName?: string;
+  bytesIn?: number;
+  bytesOut?: number;
+  established: Date;
+}
+```
+
+#### 5. `collectors/linux/module.ts` - Monitor de Módulos del Kernel
+
+**Propósito**: Monitorea carga y descarga de módulos del kernel Linux.
+
+**Fuentes de Datos**:
+- `/proc/modules` - Módulos cargados actualmente
+- `/sys/module/` - Información detallada de módulos
+- `dmesg` - Mensajes del kernel
+
+### Tipos de Eventos y Estructuras de Datos
+
+#### Evento Principal del Agente
+```typescript
+export interface AgentEvent {
+  agentId: string;
+  eventType: 'system' | 'process' | 'file' | 'network' | 'registry' | 'auth' | 'malware' | 'vulnerability';
+  severity: 'info' | 'low' | 'medium' | 'high' | 'critical';
+  timestamp: Date;
+  message: string;
+  details: EventDetails;
+  signature?: string; // Firma digital opcional
+  hostId?: string;
+  agentVersion?: string;
+  tags?: string[];
+}
+```
+
+#### Métricas del Sistema
+```typescript
+export interface SystemMetrics {
+  cpuUsage: number;        // Porcentaje 0-100
+  memoryUsage: number;     // Porcentaje 0-100
+  diskUsage: number;       // Porcentaje 0-100
+  networkIn: number;       // Bytes/s
+  networkOut: number;      // Bytes/s
+  openFileDescriptors?: number;
+  runningProcesses: number;
+  timestamp: Date;
+  uptime?: number;
+  networkConnections?: number;
+}
+```
+
+#### Información de Proceso
+```typescript
+export interface ProcessInfo {
+  pid: number;
+  ppid?: number;
+  uid?: number;
+  name: string;
+  path?: string;
+  command?: string;
+  user?: string;
+  cpuUsage: number;
+  memoryUsage: number;
+  startTime: Date;
+  status: string;
+  cmdline?: string;
+  args?: string[];
+}
+```
+
+### Gestión de Colectores
+
+#### Configuración Dinámica
+Los colectores pueden ser habilitados/deshabilitados dinámicamente:
+
+```typescript
+// En la configuración del agente
+{
+  "enabledCollectors": [
+    "windows-process",
+    "windows-event-log",
+    "windows-registry",
+    "windows-services"
+  ]
+}
+```
+
+#### Manejo de Errores
+```typescript
+export async function startCollectors(collectors: Collector[], logger: Logger): Promise<void> {
+  for (const collector of collectors) {
+    try {
+      logger.info(`Starting collector: ${collector.name}`);
+      const success = await collector.start();
+      
+      if (success) {
+        logger.info(`Collector ${collector.name} started successfully`);
+      } else {
+        logger.warn(`Collector ${collector.name} failed to start`);
+      }
+    } catch (error) {
+      logger.error(`Error starting collector ${collector.name}: ${error.message}`);
+    }
+  }
+}
+```
+
+#### Filtrado y Procesamiento
+Cada colector puede implementar filtros específicos para reducir el ruido:
+
+```typescript
+// Ejemplo de filtro en process collector
+function shouldReportProcess(process: ProcessInfo): boolean {
+  // No reportar procesos del sistema básicos
+  if (SYSTEM_PROCESSES.has(process.name.toLowerCase())) {
+    return false;
+  }
+  
+  // Reportar procesos sospechosos siempre
+  if (SUSPICIOUS_PROCESSES.has(process.name.toLowerCase())) {
+    return true;
+  }
+  
+  // Reportar procesos con alto uso de CPU
+  if (process.cpuUsage > 80) {
+    return true;
+  }
+  
+  // Reportar procesos con alto uso de memoria
+  if (process.memoryUsage > 500 * 1024 * 1024) { // 500MB
+    return true;
+  }
+  
+  return false;
+}
+```
 
 ## Seguridad del Agente
 
@@ -630,49 +1306,384 @@ interface Collector {
 - **Encryption at Rest**: Encriptación de datos locales
 - **Secure Deletion**: Borrado seguro de datos temporales
 
-## Comandos Remotos
+## Sistema de Comandos Remotos
 
-### Tipos de Comandos Soportados
+### `commands/executor.ts` - Ejecutor de Comandos
 
+**Propósito**: Ejecución segura de comandos remotos enviados desde el servidor SOC.
+
+**Tipos de Comandos Soportados**:
 ```typescript
-enum CommandType {
-  COLLECT_NOW = 'collect_now',        // Recolección inmediata
-  UPDATE_CONFIG = 'update_config',    // Actualizar configuración
-  RESTART = 'restart',                // Reiniciar agente
-  UPDATE_AGENT = 'update_agent',      // Actualizar versión
-  ENABLE_COLLECTOR = 'enable_collector',   // Habilitar colector
-  DISABLE_COLLECTOR = 'disable_collector', // Deshabilitar colector
-  GET_STATUS = 'get_status',          // Obtener estado
-  RUN_DIAGNOSTIC = 'run_diagnostic'   // Ejecutar diagnóstico
+export type CommandType = 'script' | 'configUpdate' | 'isolate' | 'upgrade';
+
+export interface CommandResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  durationMs: number;
+}
+
+export interface CommandExecutorOptions {
+  allowedCommands: CommandType[];
+  tempDir?: string;
+  maxExecutionTime?: number; // en milisegundos
 }
 ```
 
-### Procesamiento de Comandos
+**Clase CommandExecutor**:
+```typescript
+export class CommandExecutor {
+  constructor(options: CommandExecutorOptions)
+  
+  // Ejecuta un script con parámetros
+  async executeScript(params: {
+    script: string;
+    args?: string[];
+    interpreter?: string;
+  }): Promise<CommandResult>
+  
+  // Actualiza la configuración del agente
+  async updateConfig(newConfig: any): Promise<CommandResult>
+  
+  // Aísla el endpoint de la red
+  async isolateEndpoint(): Promise<CommandResult>
+  
+  // Inicia el proceso de actualización
+  async upgradeAgent(version: string): Promise<CommandResult>
+  
+  // Verifica si un comando está permitido
+  private isCommandAllowed(command: CommandType): boolean
+  
+  // Valida la seguridad de un script
+  private validateScriptSecurity(script: string): boolean
+}
+```
 
-1. **Recepción**: Comando recibido via WebSocket
-2. **Validación**: Verificación de autenticidad y formato
-3. **Autorización**: Verificación de permisos
-4. **Ejecución**: Procesamiento del comando
-5. **Respuesta**: Envío de resultado al servidor
+**Características de Seguridad**:
+- **Lista de Comandos Permitidos**: Solo se ejecutan comandos específicamente habilitados
+- **Timeout de Ejecución**: Límite de tiempo configurable (1 minuto por defecto)
+- **Validación de Scripts**: Verificación de contenido antes de ejecución
+- **Sandbox**: Ejecución en directorio temporal aislado
+- **Logging Completo**: Registro de todos los comandos ejecutados
 
-## Auto-actualización
+**Ejemplo de Uso**:
+```typescript
+const executor = new CommandExecutor({
+  allowedCommands: ['script', 'configUpdate'],
+  maxExecutionTime: 30000, // 30 segundos
+  tempDir: '/tmp/soc-agent'
+});
 
-### Proceso de Actualización
+// Ejecutar un script de diagnóstico
+const result = await executor.executeScript({
+  script: 'systeminfo',
+  interpreter: 'cmd.exe'
+});
 
-1. **Check de Versión**: Verificación periódica de nuevas versiones
-2. **Download**: Descarga segura del nuevo binario
-3. **Verification**: Verificación de firma digital
-4. **Backup**: Respaldo del binario actual
-5. **Replacement**: Reemplazo del binario
-6. **Restart**: Reinicio con nueva versión
-7. **Rollback**: Rollback en caso de error
+console.log(`Salida: ${result.stdout}`);
+console.log(`Duración: ${result.durationMs}ms`);
+```
+
+### Procesamiento de Comandos Push
+
+#### Flujo de Comandos
+1. **Recepción**: Comando recibido via WebSocket desde el servidor
+2. **Autenticación**: Verificación de la firma digital del comando
+3. **Autorización**: Verificación de permisos y comando permitido
+4. **Validación**: Validación de parámetros y contenido
+5. **Ejecución**: Procesamiento seguro del comando
+6. **Respuesta**: Envío del resultado al servidor
+
+#### Estructura de Comando
+```typescript
+interface RemoteCommand {
+  id: string;                    // ID único del comando
+  type: CommandType;             // Tipo de comando
+  timestamp: Date;               // Timestamp de creación
+  source: string;                // Origen del comando
+  signature: string;             // Firma digital
+  parameters: {                  // Parámetros específicos
+    [key: string]: any;
+  };
+  timeout?: number;              // Timeout específico
+  priority: 'low' | 'normal' | 'high' | 'critical';
+}
+```
+
+#### Comandos Específicos
+
+**1. Script Execution**:
+```typescript
+// Comando para ejecutar script de diagnóstico
+{
+  type: 'script',
+  parameters: {
+    script: 'Get-Process | Where-Object {$_.CPU -gt 50}',
+    interpreter: 'powershell.exe',
+    args: ['-ExecutionPolicy', 'Bypass']
+  }
+}
+```
+
+**2. Configuration Update**:
+```typescript
+// Comando para actualizar configuración
+{
+  type: 'configUpdate',
+  parameters: {
+    config: {
+      dataUploadInterval: 600,
+      enabledCollectors: ['windows-process', 'windows-event-log']
+    }
+  }
+}
+```
+
+**3. Endpoint Isolation**:
+```typescript
+// Comando para aislar endpoint
+{
+  type: 'isolate',
+  parameters: {
+    duration: 3600, // 1 hora
+    allowedHosts: ['soc.company.com'],
+    reason: 'Malware detection'
+  }
+}
+```
+
+## Sistema de Auto-actualización
+
+### `updater/updater.ts` - Gestor de Actualizaciones
+
+**Propósito**: Actualización automática y segura del binario del agente.
+
+**Configuración del Updater**:
+```typescript
+export interface UpdaterOptions {
+  serverUrl: string;
+  currentVersion: string;
+  binaryPath: string;
+  backupPath?: string;
+  checksumType?: 'sha256' | 'sha512';
+  updateEndpoint?: string;
+  restartCommand?: string;
+  platform?: string;
+  arch?: string;
+  enableSignatureVerification?: boolean;
+  publicKeyPath?: string;
+  trustedCertificate?: string;
+}
+```
+
+**Clase Updater**:
+```typescript
+export class Updater {
+  constructor(options: UpdaterOptions)
+  
+  // Verifica si hay actualizaciones disponibles
+  async checkForUpdate(): Promise<{
+    hasUpdate: boolean;
+    latestVersion?: string;
+    downloadUrl?: string;
+    releaseNotes?: string;
+    critical?: boolean;
+  }>
+  
+  // Descarga y aplica la actualización
+  async performUpdate(): Promise<{
+    success: boolean;
+    error?: string;
+    backupPath?: string;
+  }>
+  
+  // Revierte a la versión anterior
+  async rollback(): Promise<boolean>
+  
+  // Verifica la integridad del archivo
+  private async verifyChecksum(filePath: string, expectedChecksum: string): Promise<boolean>
+  
+  // Verifica la firma digital
+  private async verifySignature(filePath: string): Promise<boolean>
+  
+  // Crea backup del binario actual
+  private async createBackup(): Promise<string>
+}
+```
+
+### Proceso de Actualización Segura
+
+#### 1. Verificación de Actualizaciones
+```typescript
+// El agente verifica periódicamente nuevas versiones
+const updateInfo = await updater.checkForUpdate();
+
+if (updateInfo.hasUpdate) {
+  console.log(`Nueva versión disponible: ${updateInfo.latestVersion}`);
+  
+  if (updateInfo.critical) {
+    // Actualización crítica - aplicar inmediatamente
+    await updater.performUpdate();
+  } else {
+    // Programar actualización para ventana de mantenimiento
+    scheduleUpdate(updateInfo);
+  }
+}
+```
+
+#### 2. Descarga Segura
+```typescript
+async downloadUpdate(url: string, outputPath: string): Promise<boolean> {
+  try {
+    // Descargar archivo
+    await this.downloadFile(url, outputPath);
+    
+    // Verificar checksum
+    const checksumValid = await this.verifyChecksum(outputPath, expectedChecksum);
+    if (!checksumValid) {
+      throw new Error('Checksum verification failed');
+    }
+    
+    // Verificar firma digital
+    if (this.options.enableSignatureVerification) {
+      const signatureValid = await this.verifySignature(outputPath);
+      if (!signatureValid) {
+        throw new Error('Digital signature verification failed');
+      }
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Download failed:', error);
+    return false;
+  }
+}
+```
+
+#### 3. Aplicación de Actualización
+```typescript
+async performUpdate(): Promise<{ success: boolean; error?: string }> {
+  try {
+    // 1. Crear backup del binario actual
+    const backupPath = await this.createBackup();
+    
+    // 2. Descargar nueva versión
+    const downloadSuccess = await this.downloadUpdate();
+    if (!downloadSuccess) {
+      return { success: false, error: 'Download failed' };
+    }
+    
+    // 3. Detener agente actual
+    await this.gracefulShutdown();
+    
+    // 4. Reemplazar binario
+    await this.replaceBinary();
+    
+    // 5. Reiniciar con nueva versión
+    await this.restart();
+    
+    return { success: true };
+  } catch (error) {
+    // En caso de error, revertir
+    await this.rollback();
+    return { success: false, error: error.message };
+  }
+}
+```
+
+#### 4. Mecanismo de Rollback
+```typescript
+async rollback(): Promise<boolean> {
+  try {
+    // Restaurar backup
+    if (await this.restoreBackup()) {
+      // Reiniciar con versión anterior
+      await this.restart();
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error('Rollback failed:', error);
+    return false;
+  }
+}
+```
 
 ### Seguridad de Actualizaciones
 
+#### Verificaciones de Integridad
+- **Checksums**: Verificación SHA256/SHA512 de archivos descargados
 - **Firma Digital**: Verificación de firma del publisher
-- **Checksum Validation**: Validación de checksums
-- **Incremental Updates**: Actualizaciones incrementales
-- **Rollback Mechanism**: Mecanismo de rollback automático
+- **TLS**: Descarga sobre HTTPS con validación de certificados
+- **Backup Automático**: Respaldo antes de cualquier actualización
+
+#### Política de Actualizaciones
+```typescript
+interface UpdatePolicy {
+  // Ventanas de mantenimiento permitidas
+  maintenanceWindows: {
+    start: string; // HH:mm
+    end: string;   // HH:mm
+    days: number[]; // 0=domingo, 6=sábado
+  }[];
+  
+  // Tipos de actualización automática
+  autoUpdate: {
+    critical: boolean;     // Actualizaciones críticas
+    security: boolean;     // Parches de seguridad
+    features: boolean;     // Nuevas características
+    bugfixes: boolean;     // Corrección de errores
+  };
+  
+  // Configuración de rollback
+  rollback: {
+    automatic: boolean;    // Rollback automático en caso de error
+    timeout: number;       // Tiempo antes de rollback automático
+    healthChecks: string[]; // Verificaciones de salud post-actualización
+  };
+}
+```
+
+### Ejemplo de Configuración Completa
+
+```typescript
+const updater = new Updater({
+  serverUrl: 'https://updates.soc.company.com',
+  currentVersion: '1.0.0',
+  binaryPath: process.execPath,
+  backupPath: '/var/lib/soc-agent/backup',
+  checksumType: 'sha256',
+  updateEndpoint: '/api/agents/updates',
+  platform: 'linux',
+  arch: 'x64',
+  enableSignatureVerification: true,
+  publicKeyPath: '/etc/soc-agent/update-key.pub',
+  trustedCertificate: '/etc/soc-agent/update-ca.crt'
+});
+
+// Verificar actualizaciones cada 6 horas
+setInterval(async () => {
+  try {
+    const updateInfo = await updater.checkForUpdate();
+    
+    if (updateInfo.hasUpdate) {
+      console.log(`Update available: ${updateInfo.latestVersion}`);
+      
+      if (updateInfo.critical || isMaintenanceWindow()) {
+        const result = await updater.performUpdate();
+        
+        if (result.success) {
+          console.log('Update completed successfully');
+        } else {
+          console.error('Update failed:', result.error);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Update check failed:', error);
+  }
+}, 6 * 60 * 60 * 1000); // 6 horas
+```
 
 ---
 
