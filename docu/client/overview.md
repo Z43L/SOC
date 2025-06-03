@@ -1,5 +1,15 @@
 # Documentación del Cliente (Frontend)
 
+## Navegación de la Documentación
+
+Esta documentación está organizada en múltiples archivos para facilitar la navegación:
+
+- **[overview.md](./overview.md)** - Arquitectura general y patrones (este archivo)
+- **[pages.md](./pages.md)** - Documentación detallada de todas las páginas
+- **[components.md](./components.md)** - Documentación de componentes reutilizables
+- **[hooks.md](./hooks.md)** - Hooks personalizados y contexts
+- **[utils.md](./utils.md)** - Utilidades, configuración y schemas
+
 ## Propósito General
 
 El cliente frontend del SOC Inteligente SaaS es una **Single Page Application (SPA)** desarrollada en React con TypeScript. Proporciona la interfaz de usuario para administradores del SOC, permitiendo gestionar alertas, incidentes, agentes, configuraciones y análisis de seguridad.
