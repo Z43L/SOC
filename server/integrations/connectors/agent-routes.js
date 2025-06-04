@@ -18,14 +18,40 @@ const router = express.Router();
  */
 router.post('/register', async (req, res) => {
     try {
-        const { hostname, ipAddress, operatingSystem, version, capabilities, systemInfo, organizationKey } = req.body;
+        const { hostname, ipAddress, operatingSystem, version, capabilities, systemInfo, organizationKey, registrationKey } = req.body;
+        
         // Validate required fields
-        if (!hostname || !ipAddress || !operatingSystem || !version || !organizationKey) {
+        if (!hostname || !ipAddress || !operatingSystem || !version) {
             return res.status(400).json({
                 success: false,
-                message: 'Missing required fields'
+                message: 'Missing required fields (hostname, ipAddress, operatingSystem, version)'
             });
         }
+        
+        // Check if we have either organizationKey or registrationKey
+        if (!organizationKey && !registrationKey) {
+            return res.status(400).json({
+                success: false,
+                message: 'Missing organizationKey or registrationKey'
+            });
+        }
+        
+        // If registrationKey is provided, use the main registration system
+        if (registrationKey) {
+            // Import the main registration function
+            const { registerAgent } = await import('../agents.js');
+            const result = await registerAgent(
+                registrationKey,
+                hostname,
+                ipAddress,
+                operatingSystem,
+                version,
+                capabilities || []
+            );
+            return res.status(result.success ? 201 : 400).json(result);
+        }
+        
+        // Otherwise, use the connector-based approach with organizationKey
         // Find the agent connector for this organization
         const connectors = connectorRegistry.getAllConnectors()
             .filter(connector => connector.type === 'agent' &&
