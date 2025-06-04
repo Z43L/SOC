@@ -389,14 +389,10 @@ export class DatabaseStorage {
         return result.length > 0;
     }
     async listConnectors(organizationId) {
-        const conditions = [];
-        if (organizationId !== undefined) {
-            conditions.push(eq(schema.connectors.organizationId, organizationId));
-        }
-        if (conditions.length > 0) {
-            return await db.select().from(schema.connectors).where(and(...conditions));
-        }
-        return await db.select().from(schema.connectors);
+        const query = db.select().from(schema.connectors);
+        return organizationId
+            ? query.where(eq(schema.connectors.organizationId, organizationId))
+            : query;
     }
     async toggleConnectorStatus(id, isActive, organizationId) {
         const statusValue = isActive ? ConnectorStatusTypes.Enum.active : ConnectorStatusTypes.Enum.inactive;

@@ -34,21 +34,22 @@ function setupConnectorRoutes(app) {
     router.get('/', async (_req, res) => {
         try {
             const raw = connectorManager.getAllConnectors();
-            const list = Array.isArray(raw)
+            const connectors = Array.isArray(raw)
                 ? raw
                 : raw instanceof Map
                     ? Array.from(raw.values())
                     : Object.values(raw);
             // NEW: response shape expected by the frontend
             res.json({
-                connectors: list,
+                connectors,
                 pagination: {
-                    limit: list.length,
+                    limit: connectors.length,
                     offset: 0,
-                    total: list.length
+                    total: connectors.length
                 }
             });
-        } catch (error) {
+        }
+        catch (error) {
             res.status(500).json({
                 error: `Error obteniendo conectores: ${error instanceof Error ? error.message : 'Error desconocido'}`
             });

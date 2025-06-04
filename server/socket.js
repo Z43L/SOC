@@ -6,7 +6,7 @@ let wss;
 // Connection tracking and rate limiting
 const connectionCounts = new Map();
 const messageRateLimits = new Map();
-const MAX_CONNECTIONS_PER_IP = 10;
+const MAX_CONNECTIONS_PER_IP = 50;
 const MAX_MESSAGES_PER_MINUTE = 60;
 const RATE_LIMIT_WINDOW = 60000; // 1 minute
 function getClientIP(req) {
@@ -55,10 +55,7 @@ export function initWebSocket(server) {
         }
     });
     // Initialize WebSocket Server for raw WebSocket connections
-    wss = new WebSocketServer({
-        server,
-        path: '/ws' // This will handle /ws/* paths
-    });
+    wss = new WebSocketServer({ server });
     // Handle WebSocket connections
     wss.on('connection', (ws, req) => {
         const pathname = url.parse(req.url).pathname;
@@ -70,7 +67,7 @@ export function initWebSocket(server) {
             return;
         }
         // Handle different WebSocket endpoints
-        if (pathname === '/ws/dashboard') {
+        if (pathname === '/api/ws/dashboard') {
             handleDashboardConnection(ws, clientIP);
         }
         else if (pathname === '/api/ws/connectors') {
