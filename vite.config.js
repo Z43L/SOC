@@ -33,9 +33,10 @@ export default defineConfig({
     server: {
         proxy: {
             '/api': {
-                target: 'http://localhost:5001', // Cambia el puerto si tu backend usa otro
+                target: 'http://localhost:5001', // Map external port 5001 al backend (docker-compose)
                 changeOrigin: true,
                 secure: false,
+                ws: true // Habilita proxy de WebSockets para /api/ws
             },
         },
     },
