@@ -120,7 +120,7 @@ class Agent {
         {
           interval: this.config.heartbeatInterval,
           endpoint: this.config.heartbeatEndpoint,
-          agentId: this.config.agentId || 'unregistered'
+          agentId: this.config.agentId || ''
         },
         this.transport,
         this.metricsCollector,
@@ -292,7 +292,7 @@ class Agent {
         {
           interval: this.config.heartbeatInterval,
           endpoint: this.config.heartbeatEndpoint,
-          agentId: this.config.agentId
+          agentId: this.config.agentId || ''
         },
         this.transport,
         this.metricsCollector

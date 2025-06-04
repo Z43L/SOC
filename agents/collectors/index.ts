@@ -9,7 +9,7 @@ import { Logger } from '../core/logger';
 // Importación dinámica de colectores
 let linuxCollectors: Promise<{ [key: string]: Collector }> | null = null;
 let macosCollectors: Promise<{ [key: string]: Collector }> | null = null;
-let windowsCollectors: Promise<{ [key: string]: Collector }> | null = null;
+let windowsCollectors: Promise<Collector[]> | null = null;
 
 /**
  * Obtiene todos los colectores compatibles con el sistema operativo actual
@@ -49,10 +49,10 @@ export async function getCompatibleCollectors(logger: Logger): Promise<Collector
       
       case 'win32':
         if (!windowsCollectors) {
-          windowsCollectors = import('./windows');
+          windowsCollectors = import('./windows').then(mod => mod.windowsCollectors);
         }
-        const windowsModules = await windowsCollectors;
-        Object.values(windowsModules).forEach(collector => {
+        const windowsList = await windowsCollectors;
+        windowsList.forEach(collector => {
           if (isCollector(collector)) {
             collectors.push(collector);
           }

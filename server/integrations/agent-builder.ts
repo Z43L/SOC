@@ -75,7 +75,7 @@ export class AgentBuilder {
   constructor() {
     // Directorios de trabajo
     this.buildDir = path.join(os.tmpdir(), 'soc-agent-builder');
-    this.outputDir = path.join(process.cwd(), 'dist', 'public', 'downloads');
+    this.outputDir = path.join(process.cwd(), 'public', 'downloads'); // <-- fix here
     this.templatesDir = path.join(process.cwd(), 'agents');
     // Crear directorios si no existen
     this.ensureDirectories();
@@ -173,9 +173,7 @@ export class AgentBuilder {
       
       // Endpoints
       registrationEndpoint: '/api/agents/register',
-      // Cambiado para usar el endpoint correcto de conectores
-      // El agente debe reemplazar :id por el valor de connectorId en la config
-      dataEndpoint: '/connectors/:connectorId/process-data',
+      dataEndpoint: '/api/agents/data', // <-- Corregido aquí
       heartbeatEndpoint: '/api/agents/heartbeat',
       
       // Seguridad
@@ -230,69 +228,60 @@ export class AgentBuilder {
    * Empaqueta el agente para el sistema operativo especificado
    */
   private async packageAgent(
-    os: AgentOS, 
-    buildPath: string, 
+    os: AgentOS,
+    buildPath: string,
     config: AgentConfig,
     agentId: string
-  ): Promise<{ 
-    success: boolean; 
-    message: string; 
+  ): Promise<{
+    success: boolean;
+    message: string;
     filePath?: string;
     downloadUrl?: string;
   }> {
     try {
+      let outputFilePath: string; // Declare before switch
       let outputFileName: string;
-      let outputFilePath: string;
-      let downloadUrl: string;
-      
-      // Crear script de instalación específico para cada SO
+      // Lanzar build automatizado antes de empaquetar el binario
+      const { stdout, stderr } = await exec(`npm run build:agent:${os}`, { cwd: path.join(process.cwd(), 'agents') });
+      console.log('BUILD STDOUT:', stdout);
+      console.error('BUILD STDERR:', stderr);
+      // Crear archivos necesarios para cada SO
       switch (os) {
-        case AgentOS.WINDOWS:
-          outputFileName = `soc-agent-windows-${agentId}.zip`;
-          outputFilePath = path.join(this.outputDir, outputFileName);
-          
-          // Crear archivos necesarios para Windows
-          await this.createWindowsAgentFiles(buildPath, config);
-          
-          // Comprimir archivos en ZIP
-          await this.createZipArchive(buildPath, outputFilePath);
-          
+        case AgentOS.WINDOWS: {
+          // Correct output path: dist/agents/soc-agent-windows.exe (relative to project root)
+          const buildOutput = path.join(process.cwd(), 'dist', 'agents', 'soc-agent-windows.exe');
+          const exeName = `soc-agent-windows-${agentId}.exe`;
+          outputFilePath = path.join(this.outputDir, exeName);
+          outputFileName = exeName;
+          await fs.promises.copyFile(buildOutput, outputFilePath);
           break;
-          
-        case AgentOS.MACOS:
-          outputFileName = `soc-agent-macos-${agentId}.tar.gz`;
-          outputFilePath = path.join(this.outputDir, outputFileName);
-          
-          // Crear archivos necesarios para macOS
-          await this.createMacOSAgentFiles(buildPath, config);
-          
-          // Comprimir archivos en tar.gz
-          await this.createTarArchive(buildPath, outputFilePath);
-          
+        }
+        case AgentOS.MACOS: {
+          const buildOutput = path.join(process.cwd(), 'dist', 'agents', 'soc-agent-macos');
+          const exeName = `soc-agent-macos-${agentId}`;
+          outputFilePath = path.join(this.outputDir, exeName);
+          outputFileName = exeName;
+          await fs.promises.copyFile(buildOutput, outputFilePath);
           break;
-          
-        case AgentOS.LINUX:
-          outputFileName = `soc-agent-linux-${agentId}.tar.gz`;
-          outputFilePath = path.join(this.outputDir, outputFileName);
-          
-          // Crear archivos necesarios para Linux
-          await this.createLinuxAgentFiles(buildPath, config);
-          
-          // Comprimir archivos en tarball
-          await this.createTarArchive(buildPath, outputFilePath);
-          
+        }
+        case AgentOS.LINUX: {
+          const buildOutput = path.join(process.cwd(), 'dist', 'agents', 'soc-agent-linux');
+          const exeName = `soc-agent-linux-${agentId}`;
+          outputFilePath = path.join(this.outputDir, exeName);
+          outputFileName = exeName;
+          await fs.promises.copyFile(buildOutput, outputFilePath);
           break;
-          
+        }
         default:
           throw new Error(`Unsupported OS: ${os}`);
       }
-      
+
       // Calcular URL de descarga relativa
-      downloadUrl = `/downloads/${outputFileName}`;
-      
+      const downloadUrl = `/downloads/${outputFileName}`;
+
       return {
         success: true,
-        message: `Agent package created successfully`,
+        message: `Agent binary created successfully`,
         filePath: outputFilePath,
         downloadUrl
       };
@@ -509,59 +498,6 @@ if ($removeData -eq "S" -or $removeData -eq "s") {
 Write-Host "Desinstalación completada." -ForegroundColor Green
 `;
 
-    // Crear script del agente compilado
-    const agentScript = `
-// Agente compilado para Windows
-// Este archivo es autogenerado, no modificar manualmente
-
-import { WindowsAgent } from './agent-core';
-
-// Iniciar agente con la configuración predeterminada
-const configPath = "C:\\\\ProgramData\\\\SOCIntelligent\\\\agent-config.json";
-const agent = new WindowsAgent(configPath);
-
-// Inicializar y comenzar monitoreo
-async function main() {
-  try {
-    const initialized = await agent.initialize();
-    if (!initialized) {
-      console.error('Failed to initialize agent, exiting');
-      process.exit(1);
-    }
-    
-    const started = await agent.start();
-    if (!started) {
-      console.error('Failed to start agent, exiting');
-      process.exit(1);
-    }
-    
-    console.log('Agent started successfully');
-    
-    // Manejar señales para cierre limpio
-    process.on('SIGINT', async () => {
-      console.log('Received SIGINT, shutting down...');
-      await agent.stop();
-      process.exit(0);
-    });
-    
-    process.on('SIGTERM', async () => {
-      console.log('Received SIGTERM, shutting down...');
-      await agent.stop();
-      process.exit(0);
-    });
-  } catch (error) {
-    console.error('Unhandled error in agent:', error);
-    process.exit(1);
-  }
-}
-
-// Iniciar agente
-main().catch(error => {
-  console.error('Fatal error:', error);
-  process.exit(1);
-});
-`;
-
     // Crear directorio para archivos del agente
     const agentDir = path.join(buildPath, 'agent');
     await mkdir(agentDir, { recursive: true });
@@ -569,7 +505,6 @@ main().catch(error => {
     // Escribir archivos
     await writeFile(path.join(buildPath, 'install.ps1'), installScript, 'utf-8');
     await writeFile(path.join(buildPath, 'uninstall.ps1'), uninstallScript, 'utf-8');
-    await writeFile(path.join(agentDir, 'agent-windows.js'), agentScript, 'utf-8');
     
     // Descargar NSSM (Non-Sucking Service Manager) para gestionar servicios de Windows
     await this.downloadFile(
@@ -682,7 +617,7 @@ fi
 PLIST_PATH="/Library/LaunchDaemons/com.soc-intelligent.agent.plist"
 INSTALL_DIR="/Library/SOCIntelligent"
 CONFIG_DIR="/Library/Application Support/SOCIntelligent"
-LOG_DIR="/Library/Logs/SOCIntelligent"
+LOG_DIR="/Library/Logs/SOCInteligente"
 
 # Detener y eliminar servicio
 if [ -f "$PLIST_PATH" ]; then

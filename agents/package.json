@@ -5,18 +5,29 @@
   "main": "main-simple.ts",
   "type": "module",
   "scripts": {
-    "build": "tsc main-simple.ts --outDir dist --target ES2020 --module CommonJS --strict && mv dist/main-simple.js dist/main-simple.cjs",
-    "build:windows": "tsc main-windows.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop && mv dist/main-windows.js dist/main-windows.cjs",
-    "build:all": "npm run build && npm run build:windows",
-    "test:windows": "tsc test-windows-collectors.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop && node dist/test-windows-collectors.js",
+    "build": "tsc main-simple.ts --outDir dist --target ES2020 --module CommonJS --strict && shx mv dist/main-simple.js dist/main-simple.cjs",
+    "clean": "rimraf dist",
+    "build:windows": "tsc main-windows.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop",
+    "build:linux": "tsc main-simple.ts --outDir dist --target ES2020 --module CommonJS --strict",
+    "build:macos": "tsc main-simple.ts --outDir dist --target ES2020 --module CommonJS --strict",
     "package": "npm run package:all",
     "package:all": "npm run package:linux && npm run package:windows && npm run package:macos",
-    "package:linux": "pkg dist/main-simple.js --targets node18-linux-x64,node18-linux-arm64 --output ../dist/agents/soc-agent-linux",
-    "package:windows": "pkg dist/main-windows.js --targets node18-win-x64 --output ../dist/agents/soc-agent-windows.exe",
-    "package:macos": "pkg dist/main-simple.js --targets node18-macos-x64,node18-macos-arm64 --output ../dist/agents/soc-agent-macos"
+    "package:linux": "shx mkdir -p ../dist/agents && pkg dist/main-simple.js --targets node18-linux-x64,node18-linux-arm64 --output ../dist/agents/soc-agent-linux",
+    "package:windows": "shx mkdir -p ../dist/agents && pkg dist/main-windows.js --targets node18-win-x64 --output ../dist/agents/soc-agent-windows.exe",
+    "package:macos": "shx mkdir -p ../dist/agents && pkg dist/main-simple.js --targets node18-macos-x64,node18-macos-arm64 --output ../dist/agents/soc-agent-macos",
+    "build:agent": "npm run clean && npm run build:windows && npm run package:windows",
+    "build:agent:windows": "npm run clean && npm run build:windows && npm run package:windows",
+    "build:agent:linux": "npm run clean && npm run build:linux && npm run package:linux",
+    "build:agent:macos": "npm run clean && npm run build:macos && npm run package:macos",
+    "test:windows": "tsc test-windows-collectors.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop && node dist/test-windows-collectors.js"
   },
   "pkg": {
     "assets": [
+      "dist/core/logger.js",
+      "common/logger.ts",
+      "dist/collectors/windows/*.js",
+      "dist/collectors/types.js",
+      "dist/common/*.js",
       "**/*.yaml",
       "**/*.yml",
       "**/*.json"
@@ -34,6 +45,8 @@
     "@types/node": "^20.16.11",
     "@types/ws": "^8.5.13",
     "pkg": "^5.8.1",
+    "rimraf": "^6.0.1",
+    "sh": "^0.0.3",
     "typescript": "^5.6.3"
   }
 }
