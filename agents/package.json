@@ -38,6 +38,7 @@
   },
   "dependencies": {
     "js-yaml": "^4.1.0",
+    "shx": "^0.4.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
