@@ -53,7 +53,9 @@ router.post('/register', async (req, res) => {
         // Generate JWT token for future authentication
         const token = jwt.sign({
             agentId: result.agentId,
-            organizationId: connector.organizationId
+            userId: 0, // System user for agents registered via organization key
+            organizationId: connector.organizationId,
+            type: 'agent'
         }, process.env.JWT_SECRET || 'soc-platform-secret', {
             expiresIn: '1y'
         });
