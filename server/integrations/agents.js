@@ -139,7 +139,7 @@ export async function registerAgent(registrationKey, hostname, ipAddress, operat
             };
         }
         // Generar token JWT para este agente
-        const token = generateAgentToken(newAgent.id.toString(), userId, user.organizationId);
+        const token = generateAgentToken(newAgent.agentIdentifier, userId, user.organizationId);
         // Configuración a devolver al agente
         const agentConfig = {
             heartbeatInterval: 60, // cada minuto
@@ -150,7 +150,7 @@ export async function registerAgent(registrationKey, hostname, ipAddress, operat
         };
         return {
             success: true,
-            agentId: newAgent.id.toString(),
+            agentId: newAgent.agentIdentifier, // Use agentIdentifier instead of numeric id
             token,
             config: agentConfig
         };

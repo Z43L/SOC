@@ -118,12 +118,19 @@ router.post('/heartbeat', verifyAgentJwt, async (req, res) => {
         const connectors = connectorRegistry.getAllConnectors()
             .filter(connector => connector.type === 'agent' &&
             connector.organizationId === organizationId);
+        
         if (connectors.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Agent connector not found for this organization'
+            // Fallback to main agent processing system
+            const { processAgentHeartbeat } = await import('../agents.js');
+            const result = await processAgentHeartbeat(agentId, 'active', {
+                cpu,
+                memory,
+                diskSpace,
+                version
             });
+            return res.status(result.success ? 200 : 400).json(result);
         }
+        
         // Use the first matching connector
         const connector = connectors[0];
         // Process heartbeat
@@ -164,12 +171,20 @@ router.post('/data', verifyAgentJwt, async (req, res) => {
         const connectors = connectorRegistry.getAllConnectors()
             .filter(connector => connector.type === 'agent' &&
             connector.organizationId === organizationId);
+        
         if (connectors.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Agent connector not found for this organization'
-            });
+            // Fallback to main agent processing system
+            const { processAgentData } = await import('../agents.js');
+            const result = await processAgentData(agentId, events);
+            
+            // Update agent's last heartbeat time
+            await db.update(agents)
+                .set({ lastHeartbeat: new Date() })
+                .where(eq(agents.agentIdentifier, agentId));
+            
+            return res.status(result.success ? 200 : 400).json(result);
         }
+        
         // Use the first matching connector
         const connector = connectors[0];
         // Process events
