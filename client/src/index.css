@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+/* Threat Map Styles */
+.threat-popup {
+  font-family: inherit;
+  min-width: 200px;
+}
+
+.threat-popup h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.threat-popup p {
+  margin: 4px 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.severity-critical {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.severity-high {
+  color: #ea580c;
+  font-weight: 600;
+}
+
+.severity-medium {
+  color: #ca8a04;
+  font-weight: 600;
+}
+
+.severity-low {
+  color: #16a34a;
+  font-weight: 600;
+}
+
+/* Leaflet popup customization */
+.leaflet-popup-content-wrapper {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+.leaflet-popup-tip {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+}
+
+/* Threat marker animations */
+.threat-marker {
+  transition: all 0.3s ease;
+}
+
+.threat-marker:hover {
+  transform: scale(1.1);
+}
+
+.threat-marker-pulse {
+  animation: threat-pulse 2s infinite;
+}
+
+@keyframes threat-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(220, 38, 38, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
+  }
+}
+
+/* Popup button styling */
+.threat-popup button {
+  transition: all 0.2s ease;
+}
+
+.threat-popup button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}

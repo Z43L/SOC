@@ -1,0 +1,770 @@
+import { FC, useState } from "react";
+import Sidebar from "@/components/layout/Sidebar";
+import { MainContent } from "@/components/layout/MainContent";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
+import { Switch } from "@/components/ui/switch";
+import { AlertCircle, CheckCircle, Loader2 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Progress } from "@/components/ui/progress";
+import { 
+  LineChart, 
+  Line, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  Legend, 
+  ResponsiveContainer 
+} from "recharts";
+
+interface ConnectorsProps {
+  user: {
+    name: string;
+    initials: string;
+    role: string;
+  };
+  organization: {
+    name: string;
+  };
+}
+
+interface Connector {
+  id: string;
+  name: string;
+  vendor: string;
+  type: string;
+  dataVolume: string;
+  status: 'active' | 'inactive' | 'warning' | 'configuring' | 'error';
+  lastData: string;
+  isActive: boolean;
+  icon: string;
+}
+
+// Datos simulados para el gráfico de métricas
+const metricsData = [
+  { name: '00:00', volume: 240, errors: 2 },
+  { name: '04:00', volume: 300, errors: 0 },
+  { name: '08:00', volume: 620, errors: 1 },
+  { name: '12:00', volume: 530, errors: 0 },
+  { name: '16:00', volume: 750, errors: 3 },
+  { name: '20:00', volume: 490, errors: 1 },
+  { name: 'Now', volume: 380, errors: 0 },
+];
+
+// Datos de los conectores para ejemplo
+const sampleConnectors: Connector[] = [
+  {
+    id: "1",
+    name: "Endpoint Protection",
+    vendor: "CrowdStrike",
+    type: "EDR",
+    dataVolume: "850 MB/day",
+    status: "active",
+    lastData: "2 min ago",
+    isActive: true,
+    icon: "shield-alt"
+  },
+  {
+    id: "2",
+    name: "Network IDS",
+    vendor: "Suricata",
+    type: "Network IDS",
+    dataVolume: "1.2 GB/day",
+    status: "active",
+    lastData: "1 min ago",
+    isActive: true,
+    icon: "network-wired"
+  },
+  {
+    id: "3",
+    name: "Perimeter Firewall",
+    vendor: "Palo Alto",
+    type: "Firewall",
+    dataVolume: "750 MB/day",
+    status: "warning",
+    lastData: "15 min ago",
+    isActive: true,
+    icon: "fire-alt"
+  },
+  {
+    id: "4",
+    name: "AWS CloudTrail",
+    vendor: "Amazon Web Services",
+    type: "Cloud Security",
+    dataVolume: "450 MB/day",
+    status: "active",
+    lastData: "5 min ago",
+    isActive: true,
+    icon: "cloud"
+  },
+  {
+    id: "5",
+    name: "Azure Security Center",
+    vendor: "Microsoft",
+    type: "Cloud Security",
+    dataVolume: "350 MB/day",
+    status: "active",
+    lastData: "3 min ago",
+    isActive: true,
+    icon: "cloud"
+  }
+];
+
+const Connectors: FC<ConnectorsProps> = ({ user, organization }) => {
+  const { toast } = useToast();
+  const [isAddConnectorOpen, setIsAddConnectorOpen] = useState(false);
+  const [isConfigureOpen, setIsConfigureOpen] = useState(false);
+  const [isTestConnectorOpen, setIsTestConnectorOpen] = useState(false);
+  const [isMetricsOpen, setIsMetricsOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [selectedConnector, setSelectedConnector] = useState<Connector | null>(null);
+  const [testingStatus, setTestingStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [connectors, setConnectors] = useState<Connector[]>(sampleConnectors);
+  
+  // Agregar nuevo conector
+  const handleAddConnector = () => {
+    toast({
+      title: "Connector Added",
+      description: "The new connector has been added successfully. Please configure its settings.",
+    });
+    setIsAddConnectorOpen(false);
+  };
+
+  // Configurar conector existente
+  const handleConfigureConnector = (connector: Connector) => {
+    setSelectedConnector(connector);
+    setIsConfigureOpen(true);
+  };
+
+  // Guardar configuración
+  const handleSaveConfiguration = () => {
+    toast({
+      title: "Configuration Saved",
+      description: `The configuration for ${selectedConnector?.name} has been updated successfully.`,
+    });
+    setIsConfigureOpen(false);
+  };
+
+  // Probar conector
+  const handleTestConnector = (connector: Connector) => {
+    setSelectedConnector(connector);
+    setTestingStatus('idle');
+    setIsTestConnectorOpen(true);
+  };
+
+  // Ejecutar prueba de conector
+  const runConnectorTest = () => {
+    setTestingStatus('testing');
+    // Simulamos un proceso asíncrono
+    setTimeout(() => {
+      // Simular resultado aleatorio: éxito o error
+      const result = Math.random() > 0.2 ? 'success' : 'error';
+      setTestingStatus(result as 'success' | 'error');
+    }, 2000);
+  };
+
+  // Ver métricas del conector
+  const handleViewMetrics = (connector: Connector) => {
+    setSelectedConnector(connector);
+    setIsMetricsOpen(true);
+  };
+
+  // Activar/desactivar conector
+  const handleToggleConnector = (connector: Connector, newState: boolean) => {
+    // Actualizar estado del conector en el estado local
+    setConnectors(prev => 
+      prev.map(c => 
+        c.id === connector.id 
+          ? {...c, isActive: newState, status: newState ? 'active' : 'inactive'} 
+          : c
+      )
+    );
+    
+    toast({
+      title: newState ? "Connector Activated" : "Connector Deactivated",
+      description: `${connector.name} has been ${newState ? "activated" : "deactivated"}.`,
+    });
+  };
+
+  // Eliminar conector
+  const handleDeleteConnector = (connector: Connector) => {
+    setSelectedConnector(connector);
+    setIsDeleteConfirmOpen(true);
+  };
+
+  // Confirmar eliminación
+  const confirmDeleteConnector = () => {
+    // Eliminar conector del estado local
+    setConnectors(prev => prev.filter(c => c.id !== selectedConnector?.id));
+    
+    toast({
+      title: "Connector Deleted",
+      description: `${selectedConnector?.name} has been removed successfully.`,
+      variant: "destructive"
+    });
+    setIsDeleteConfirmOpen(false);
+  };
+  
+  // Obtener badge de estado
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'active':
+        return <Badge className="bg-green-900 bg-opacity-20 text-green-500">Active</Badge>;
+      case 'inactive':
+        return <Badge className="bg-red-700 bg-opacity-20 text-red-500">Inactive</Badge>;
+      case 'warning':
+        return <Badge className="bg-orange-700 bg-opacity-20 text-orange-500">Warning</Badge>;
+      case 'configuring':
+        return <Badge className="bg-blue-900 bg-opacity-20 text-blue-500">Configuring</Badge>;
+      case 'error':
+        return <Badge className="bg-red-700 bg-opacity-20 text-red-500">Error</Badge>;
+      default:
+        return <Badge>{status}</Badge>;
+    }
+  };
+  
+  return (
+    <div className="flex h-screen overflow-hidden">
+      <Sidebar user={user} activeSection="connectors" />
+      
+      <MainContent pageTitle="Data Connectors" organization={organization}>
+        <Tabs defaultValue="overview">
+          <TabsList className="mb-6">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="endpoints">Endpoint Security</TabsTrigger>
+            <TabsTrigger value="network">Network Security</TabsTrigger>
+            <TabsTrigger value="cloud">Cloud Security</TabsTrigger>
+            <TabsTrigger value="threat">Threat Intelligence</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="overview">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-center">
+                    <p className="text-muted-foreground text-sm">Total Data Sources</p>
+                    <h3 className="text-3xl font-bold mt-1">{connectors.length}</h3>
+                    <p className="text-green-500 text-xs mt-1">
+                      <i className="fas fa-arrow-up mr-1"></i> 3 new this month
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-center">
+                    <p className="text-muted-foreground text-sm">Active Connectors</p>
+                    <h3 className="text-3xl font-bold mt-1">
+                      {connectors.filter(c => c.isActive).length}
+                    </h3>
+                    <div className="w-full bg-gray-800 rounded-full h-1.5 mt-2">
+                      <div 
+                        className="bg-green-500 h-1.5 rounded-full" 
+                        style={{ 
+                          width: `${(connectors.filter(c => c.isActive).length / connectors.length) * 100}%` 
+                        }}
+                      ></div>
+                    </div>
+                    <p className="text-xs mt-1">
+                      {Math.round((connectors.filter(c => c.isActive).length / connectors.length) * 100)}% of total
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-center">
+                    <p className="text-muted-foreground text-sm">Data Volume</p>
+                    <h3 className="text-3xl font-bold mt-1">3.2 TB</h3>
+                    <p className="text-muted-foreground text-xs mt-1">
+                      Daily average
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-center">
+                    <p className="text-muted-foreground text-sm">Integration Health</p>
+                    <h3 className="text-3xl font-bold mt-1 text-green-500">Good</h3>
+                    <p className="text-muted-foreground text-xs mt-1">
+                      {connectors.filter(c => c.status === 'warning').length} warnings to review
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+            
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>All Data Connectors</CardTitle>
+                  <CardDescription>Manage your security data sources</CardDescription>
+                </div>
+                <Dialog open={isAddConnectorOpen} onOpenChange={setIsAddConnectorOpen}>
+                  <DialogTrigger asChild>
+                    <Button>
+                      <i className="fas fa-plus mr-2"></i> Add Connector
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                      <DialogTitle>Add New Data Connector</DialogTitle>
+                      <DialogDescription>
+                        Configure a new data source to ingest security data from your environment.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Connector Type</label>
+                        <select className="w-full bg-background border border-gray-700 rounded px-3 py-2">
+                          <option>SIEM Integration</option>
+                          <option>Endpoint Protection</option>
+                          <option>Network IDS/IPS</option>
+                          <option>Firewall</option>
+                          <option>Cloud Security</option>
+                          <option>Vulnerability Scanner</option>
+                          <option>Threat Intelligence Feed</option>
+                          <option>Custom Log Source</option>
+                        </select>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Display Name</label>
+                        <input 
+                          type="text" 
+                          placeholder="Production Firewall"
+                          className="w-full bg-background border border-gray-700 rounded px-3 py-2"
+                        />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Vendor</label>
+                        <select className="w-full bg-background border border-gray-700 rounded px-3 py-2">
+                          <option>Palo Alto Networks</option>
+                          <option>Cisco</option>
+                          <option>Fortinet</option>
+                          <option>Check Point</option>
+                          <option>CrowdStrike</option>
+                          <option>Microsoft</option>
+                          <option>Splunk</option>
+                          <option>Other</option>
+                        </select>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Connection Method</label>
+                        <select className="w-full bg-background border border-gray-700 rounded px-3 py-2">
+                          <option>API</option>
+                          <option>Log Collection</option>
+                          <option>Syslog</option>
+                          <option>Agent</option>
+                          <option>SFTP</option>
+                        </select>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setIsAddConnectorOpen(false)}>Cancel</Button>
+                      <Button onClick={handleAddConnector}>Create & Configure</Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full">
+                    <thead>
+                      <tr className="text-left bg-background-lighter">
+                        <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Name</th>
+                        <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Type</th>
+                        <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Data Volume</th>
+                        <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Status</th>
+                        <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Last Data</th>
+                        <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Active</th>
+                        <th className="p-3 text-xs font-medium text-muted-foreground tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800">
+                      {connectors.map((connector) => (
+                        <tr key={connector.id} className="hover:bg-background-lighter">
+                          <td className="p-3">
+                            <div className="flex items-center">
+                              <div className="w-8 h-8 rounded flex items-center justify-center bg-blue-900 bg-opacity-20 mr-3">
+                                <i className={`fas fa-${connector.icon} text-blue-500`}></i>
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-text-primary">{connector.name}</p>
+                                <p className="text-xs text-muted-foreground">{connector.vendor}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-3 text-sm text-muted-foreground">{connector.type}</td>
+                          <td className="p-3 text-sm text-muted-foreground">{connector.dataVolume}</td>
+                          <td className="p-3">{getStatusBadge(connector.status)}</td>
+                          <td className="p-3 text-sm text-muted-foreground">{connector.lastData}</td>
+                          <td className="p-3">
+                            <Switch
+                              checked={connector.isActive}
+                              onCheckedChange={(checked) => handleToggleConnector(connector, checked)}
+                            />
+                          </td>
+                          <td className="p-3 text-sm">
+                            <div className="flex space-x-2">
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => handleConfigureConnector(connector)}
+                                title="Configure"
+                              >
+                                <i className="fas fa-cog"></i>
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => handleViewMetrics(connector)}
+                                title="View Metrics"
+                              >
+                                <i className="fas fa-chart-line"></i>
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => handleTestConnector(connector)}
+                                title="Test Connection"
+                              >
+                                <i className="fas fa-vial"></i>
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => handleDeleteConnector(connector)}
+                                title="Delete"
+                                className="hover:text-red-500"
+                              >
+                                <i className="fas fa-trash-alt"></i>
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+          
+          {/* Otras pestañas */}
+          <TabsContent value="endpoints">
+            <Card>
+              <CardHeader>
+                <CardTitle>Endpoint Security Connectors</CardTitle>
+                <CardDescription>Manage endpoint detection and response integrations</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground">Configure endpoint connectors from this view.</p>
+              </CardContent>
+            </Card>
+          </TabsContent>
+          
+          <TabsContent value="network">
+            <Card>
+              <CardHeader>
+                <CardTitle>Network Security Connectors</CardTitle>
+                <CardDescription>Manage network security monitoring integrations</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground">Configure network security connectors from this view.</p>
+              </CardContent>
+            </Card>
+          </TabsContent>
+          
+          <TabsContent value="cloud">
+            <Card>
+              <CardHeader>
+                <CardTitle>Cloud Security Connectors</CardTitle>
+                <CardDescription>Manage cloud security integrations</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground">Configure cloud security connectors from this view.</p>
+              </CardContent>
+            </Card>
+          </TabsContent>
+          
+          <TabsContent value="threat">
+            <Card>
+              <CardHeader>
+                <CardTitle>Threat Intelligence Connectors</CardTitle>
+                <CardDescription>Manage threat intel feed integrations</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground">Configure threat intelligence connectors from this view.</p>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </MainContent>
+      
+      {/* Dialog de Configuración de Conector */}
+      <Dialog open={isConfigureOpen} onOpenChange={setIsConfigureOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Configure {selectedConnector?.name}</DialogTitle>
+            <DialogDescription>
+              Adjust settings for {selectedConnector?.vendor} {selectedConnector?.type} integration
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Display Name</label>
+                <input 
+                  type="text" 
+                  value={selectedConnector?.name}
+                  className="w-full bg-background border border-gray-700 rounded px-3 py-2"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Collection Frequency</label>
+                <select className="w-full bg-background border border-gray-700 rounded px-3 py-2">
+                  <option>Real-time</option>
+                  <option>Every 5 minutes</option>
+                  <option>Every 15 minutes</option>
+                  <option>Every hour</option>
+                  <option>Every day</option>
+                </select>
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium">API URL or Endpoint</label>
+              <input 
+                type="text" 
+                placeholder="https://api.example.com/v1"
+                className="w-full bg-background border border-gray-700 rounded px-3 py-2"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Authentication Method</label>
+              <select className="w-full bg-background border border-gray-700 rounded px-3 py-2">
+                <option>API Key</option>
+                <option>OAuth</option>
+                <option>Basic Authentication</option>
+                <option>Bearer Token</option>
+                <option>Certificate</option>
+              </select>
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium">API Key / Secret</label>
+              <input 
+                type="password" 
+                placeholder="••••••••••••••••••••••"
+                className="w-full bg-background border border-gray-700 rounded px-3 py-2"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Data Retention</label>
+              <select className="w-full bg-background border border-gray-700 rounded px-3 py-2">
+                <option>30 days</option>
+                <option>60 days</option>
+                <option>90 days</option>
+                <option>180 days</option>
+                <option>1 year</option>
+              </select>
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              <input 
+                id="parse-logs"
+                type="checkbox" 
+                checked={true}
+                className="rounded border-gray-700"
+              />
+              <label htmlFor="parse-logs" className="text-sm">Parse logs using AI assistance</label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsConfigureOpen(false)}>Cancel</Button>
+            <Button onClick={handleSaveConfiguration}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Dialog de Prueba de Conector */}
+      <Dialog open={isTestConnectorOpen} onOpenChange={setIsTestConnectorOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Test Connection: {selectedConnector?.name}</DialogTitle>
+            <DialogDescription>
+              Verify connectivity to {selectedConnector?.vendor} {selectedConnector?.type}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-6">
+            {testingStatus === 'idle' && (
+              <div className="flex flex-col items-center justify-center p-4">
+                <p className="text-center mb-4">
+                  This will attempt to connect to {selectedConnector?.name} and verify that data can be retrieved.
+                </p>
+                <Button onClick={runConnectorTest}>Run Test</Button>
+              </div>
+            )}
+            
+            {testingStatus === 'testing' && (
+              <div className="flex flex-col items-center justify-center p-4">
+                <Loader2 className="h-10 w-10 animate-spin mb-4 text-primary" />
+                <p className="text-center">Testing connection to {selectedConnector?.name}...</p>
+                <div className="w-full mt-4">
+                  <Progress value={45} className="w-full" />
+                </div>
+              </div>
+            )}
+            
+            {testingStatus === 'success' && (
+              <Alert className="border-green-500 bg-green-500 bg-opacity-10">
+                <CheckCircle className="h-4 w-4 text-green-500" />
+                <AlertTitle className="text-green-500">Connection Successful</AlertTitle>
+                <AlertDescription>
+                  Successfully connected to {selectedConnector?.name} and retrieved data. The integration is working properly.
+                </AlertDescription>
+              </Alert>
+            )}
+            
+            {testingStatus === 'error' && (
+              <Alert className="border-red-500 bg-red-500 bg-opacity-10">
+                <AlertCircle className="h-4 w-4 text-red-500" />
+                <AlertTitle className="text-red-500">Connection Failed</AlertTitle>
+                <AlertDescription>
+                  Failed to connect to {selectedConnector?.name}. Please verify your credentials and endpoint configuration.
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+          <DialogFooter>
+            {(testingStatus === 'success' || testingStatus === 'error') && (
+              <Button variant="outline" onClick={() => runConnectorTest()}>Test Again</Button>
+            )}
+            <Button onClick={() => setIsTestConnectorOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Dialog de Métricas */}
+      <Dialog open={isMetricsOpen} onOpenChange={setIsMetricsOpen}>
+        <DialogContent className="sm:max-w-[700px]">
+          <DialogHeader>
+            <DialogTitle>Metrics: {selectedConnector?.name}</DialogTitle>
+            <DialogDescription>
+              Data ingestion and performance metrics
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-center">
+                    <p className="text-muted-foreground text-sm">Daily Volume</p>
+                    <h3 className="text-3xl font-bold mt-1">{selectedConnector?.dataVolume}</h3>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-center">
+                    <p className="text-muted-foreground text-sm">Ingest Latency</p>
+                    <h3 className="text-3xl font-bold mt-1">1.2s</h3>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+            
+            <h4 className="text-sm font-semibold mb-2">24-Hour Performance</h4>
+            <div className="h-72 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={metricsData}
+                  margin={{
+                    top: 5,
+                    right: 30,
+                    left: 20,
+                    bottom: 5,
+                  }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                  <XAxis dataKey="name" stroke="#888" />
+                  <YAxis yAxisId="left" stroke="#888" />
+                  <YAxis yAxisId="right" orientation="right" stroke="#888" />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: '#1e1e1e', 
+                      borderColor: '#333',
+                      color: '#fff'
+                    }} 
+                  />
+                  <Legend />
+                  <Line
+                    yAxisId="left"
+                    type="monotone"
+                    dataKey="volume"
+                    name="Data Volume (MB)"
+                    stroke="#8884d8"
+                    activeDot={{ r: 8 }}
+                  />
+                  <Line 
+                    yAxisId="right" 
+                    type="monotone" 
+                    dataKey="errors" 
+                    name="Errors" 
+                    stroke="#ff5555" 
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setIsMetricsOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Dialog de Confirmación de Eliminación */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Delete Connector</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this connector? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Alert className="border-red-500 bg-red-500 bg-opacity-10">
+              <AlertCircle className="h-4 w-4 text-red-500" />
+              <AlertTitle className="text-red-500">Warning</AlertTitle>
+              <AlertDescription>
+                Deleting {selectedConnector?.name} will permanently remove all configuration data and stop data collection from this source.
+              </AlertDescription>
+            </Alert>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={confirmDeleteConnector}>Delete Connector</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+export default Connectors;

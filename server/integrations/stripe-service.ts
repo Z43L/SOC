@@ -1,0 +1,577 @@
+import Stripe from 'stripe';
+import { db } from '../db';
+import { plans, organizations, type Plan, type Organization } from '@shared/schema';
+import { eq } from 'drizzle-orm';
+
+// Inicializamos la instancia de Stripe
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
+
+/**
+ * Servicio para interactuar con Stripe y gestionar suscripciones
+ */
+export class StripeService {
+  /**
+   * Comprueba si Stripe está correctamente configurado
+   */
+  static isConfigured(): boolean {
+    return !!process.env.STRIPE_SECRET_KEY;
+  }
+
+  /**
+   * Crea un cliente en Stripe para una organización
+   */
+  static async createCustomer(organization: Organization): Promise<string | null> {
+    try {
+      if (!this.isConfigured()) {
+        console.error('Stripe no está configurado');
+        return null;
+      }
+
+      // Crear cliente en Stripe
+      const customer = await stripe.customers.create({
+        name: organization.name,
+        email: organization.domain.split('.')[0] + '@' + organization.domain.split('.').slice(1).join('.'),
+        metadata: {
+          organizationId: organization.id.toString()
+        }
+      });
+
+      // Actualizar organización con el ID del cliente
+      await db.update(organizations)
+        .set({ stripeCustomerId: customer.id })
+        .where(eq(organizations.id, organization.id));
+
+      return customer.id;
+    } catch (error) {
+      console.error('Error al crear cliente en Stripe:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Crea o actualiza los precios de un plan en Stripe
+   */
+  static async createOrUpdatePlanPrices(plan: Plan): Promise<{ monthlyPriceId?: string, yearlyPriceId?: string }> {
+    try {
+      if (!this.isConfigured()) {
+        console.error('Stripe no está configurado');
+        return {};
+      }
+
+      // Comprobar si los precios ya existen
+      let monthlyPriceId = plan.stripePriceIdMonthly;
+      let yearlyPriceId = plan.stripePriceIdYearly;
+
+      // Si no existe, crear precio mensual
+      if (!monthlyPriceId && plan.priceMonthly > 0) {
+        const monthlyPrice = await stripe.prices.create({
+          unit_amount: plan.priceMonthly,
+          currency: 'usd',
+          recurring: { interval: 'month' },
+          product_data: {
+            name: `${plan.name} (Mensual)`,
+            description: plan.description
+          },
+          metadata: {
+            planId: plan.id.toString(),
+            planName: plan.name,
+            billingCycle: 'monthly'
+          }
+        });
+        monthlyPriceId = monthlyPrice.id;
+      }
+
+      // Si no existe, crear precio anual
+      if (!yearlyPriceId && plan.priceYearly > 0) {
+        const yearlyPrice = await stripe.prices.create({
+          unit_amount: plan.priceYearly,
+          currency: 'usd',
+          recurring: { interval: 'year' },
+          product_data: {
+            name: `${plan.name} (Anual)`,
+            description: plan.description
+          },
+          metadata: {
+            planId: plan.id.toString(),
+            planName: plan.name,
+            billingCycle: 'yearly'
+          }
+        });
+        yearlyPriceId = yearlyPrice.id;
+      }
+
+      // Actualizar plan con los IDs de precios
+      if (monthlyPriceId !== plan.stripePriceIdMonthly || yearlyPriceId !== plan.stripePriceIdYearly) {
+        await db.update(plans)
+          .set({
+            stripePriceIdMonthly: monthlyPriceId || plan.stripePriceIdMonthly,
+            stripePriceIdYearly: yearlyPriceId || plan.stripePriceIdYearly
+          })
+          .where(eq(plans.id, plan.id));
+      }
+
+      return {
+        monthlyPriceId,
+        yearlyPriceId
+      };
+    } catch (error) {
+      console.error('Error al crear o actualizar precios en Stripe:', error);
+      return {};
+    }
+  }
+
+  /**
+   * Crea una suscripción para una organización
+   */
+  static async createSubscription(
+    organizationId: number,
+    planId: number,
+    billingCycle: 'monthly' | 'yearly'
+  ): Promise<string | null> {
+    try {
+      if (!this.isConfigured()) {
+        console.error('Stripe no está configurado');
+        return null;
+      }
+
+      // Obtener la organización
+      const [organization] = await db.select()
+        .from(organizations)
+        .where(eq(organizations.id, organizationId));
+
+      if (!organization) {
+        console.error(`No se encontró la organización con ID ${organizationId}`);
+        return null;
+      }
+
+      // Obtener el plan
+      const [plan] = await db.select()
+        .from(plans)
+        .where(eq(plans.id, planId));
+
+      if (!plan) {
+        console.error(`No se encontró el plan con ID ${planId}`);
+        return null;
+      }
+
+      // Asegurarse de que el cliente existe en Stripe
+      let stripeCustomerId = organization.stripeCustomerId;
+      if (!stripeCustomerId) {
+        stripeCustomerId = await this.createCustomer(organization);
+        if (!stripeCustomerId) {
+          console.error('No se pudo crear el cliente en Stripe');
+          return null;
+        }
+      }
+
+      // Asegurarse de que los precios existen en Stripe
+      const { monthlyPriceId, yearlyPriceId } = await this.createOrUpdatePlanPrices(plan);
+      
+      // Seleccionar el precio correcto según el ciclo de facturación
+      const priceId = billingCycle === 'monthly' 
+        ? monthlyPriceId || plan.stripePriceIdMonthly
+        : yearlyPriceId || plan.stripePriceIdYearly;
+
+      if (!priceId) {
+        console.error(`No hay precio configurado para el plan ${plan.name} y ciclo ${billingCycle}`);
+        return null;
+      }
+
+      // Crear la suscripción en Stripe
+      const subscription = await stripe.subscriptions.create({
+        customer: stripeCustomerId,
+        items: [{ price: priceId }],
+        metadata: {
+          organizationId: organization.id.toString(),
+          planId: plan.id.toString(),
+          billingCycle
+        }
+      });
+
+      // Actualizar la organización con la información de la suscripción
+      const now = new Date();
+      const endDate = new Date();
+      endDate.setMonth(endDate.getMonth() + (billingCycle === 'monthly' ? 1 : 12));
+
+      await db.update(organizations)
+        .set({
+          planId: plan.id,
+          stripeSubscriptionId: subscription.id,
+          subscriptionStatus: subscription.status === 'active' ? 'active' : 'pending',
+          billingCycle: billingCycle,
+          subscriptionStartDate: now,
+          subscriptionEndDate: endDate
+        })
+        .where(eq(organizations.id, organizationId));
+
+      return subscription.id;
+    } catch (error) {
+      console.error('Error al crear suscripción en Stripe:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Cancela una suscripción
+   */
+  static async cancelSubscription(organizationId: number): Promise<boolean> {
+    try {
+      if (!this.isConfigured()) {
+        console.error('Stripe no está configurado');
+        return false;
+      }
+
+      // Obtener la organización
+      const [organization] = await db.select()
+        .from(organizations)
+        .where(eq(organizations.id, organizationId));
+
+      if (!organization || !organization.stripeSubscriptionId) {
+        console.error(`No se encontró la suscripción para la organización con ID ${organizationId}`);
+        return false;
+      }
+
+      // Cancelar la suscripción en Stripe
+      await stripe.subscriptions.cancel(organization.stripeSubscriptionId);
+
+      // Actualizar la organización
+      await db.update(organizations)
+        .set({
+          subscriptionStatus: 'canceled',
+          subscriptionEndDate: new Date()
+        })
+        .where(eq(organizations.id, organizationId));
+
+      return true;
+    } catch (error) {
+      console.error('Error al cancelar suscripción en Stripe:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Cambia el plan de una suscripción
+   */
+  static async changePlan(
+    organizationId: number,
+    newPlanId: number,
+    billingCycle?: 'monthly' | 'yearly'
+  ): Promise<boolean> {
+    try {
+      if (!this.isConfigured()) {
+        console.error('Stripe no está configurado');
+        return false;
+      }
+
+      // Obtener la organización
+      const [organization] = await db.select()
+        .from(organizations)
+        .where(eq(organizations.id, organizationId));
+
+      if (!organization) {
+        console.error(`No se encontró la organización con ID ${organizationId}`);
+        return false;
+      }
+
+      // Obtener el nuevo plan
+      const [newPlan] = await db.select()
+        .from(plans)
+        .where(eq(plans.id, newPlanId));
+
+      if (!newPlan) {
+        console.error(`No se encontró el plan con ID ${newPlanId}`);
+        return false;
+      }
+
+      // Usar el ciclo de facturación actual si no se especifica uno nuevo
+      const cycleToUse = billingCycle || organization.billingCycle as 'monthly' | 'yearly';
+
+      // Si no hay suscripción, crear una nueva
+      if (!organization.stripeSubscriptionId) {
+        const subscriptionId = await this.createSubscription(organizationId, newPlanId, cycleToUse);
+        return !!subscriptionId;
+      }
+
+      // Asegurarse de que los precios existen en Stripe
+      const { monthlyPriceId, yearlyPriceId } = await this.createOrUpdatePlanPrices(newPlan);
+      
+      // Seleccionar el precio correcto según el ciclo de facturación
+      const priceId = cycleToUse === 'monthly' 
+        ? monthlyPriceId || newPlan.stripePriceIdMonthly
+        : yearlyPriceId || newPlan.stripePriceIdYearly;
+
+      if (!priceId) {
+        console.error(`No hay precio configurado para el plan ${newPlan.name} y ciclo ${cycleToUse}`);
+        return false;
+      }
+
+      // Obtener la suscripción actual
+      const subscription = await stripe.subscriptions.retrieve(organization.stripeSubscriptionId);
+
+      // Actualizar la suscripción con el nuevo plan
+      await stripe.subscriptions.update(subscription.id, {
+        items: [
+          {
+            id: subscription.items.data[0].id,
+            price: priceId
+          }
+        ],
+        metadata: {
+          ...subscription.metadata,
+          planId: newPlan.id.toString(),
+          billingCycle: cycleToUse
+        }
+      });
+
+      // Actualizar la organización
+      const endDate = new Date();
+      endDate.setMonth(endDate.getMonth() + (cycleToUse === 'monthly' ? 1 : 12));
+
+      await db.update(organizations)
+        .set({
+          planId: newPlan.id,
+          billingCycle: cycleToUse,
+          subscriptionEndDate: endDate
+        })
+        .where(eq(organizations.id, organizationId));
+
+      return true;
+    } catch (error) {
+      console.error('Error al cambiar el plan en Stripe:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Genera un enlace de checkout para un plan
+   */
+  static async createCheckoutSession(
+    organizationId: number,
+    planId: number,
+    billingCycle: 'monthly' | 'yearly',
+    successUrl: string,
+    cancelUrl: string
+  ): Promise<string | null> {
+    try {
+      if (!this.isConfigured()) {
+        console.error('Stripe no está configurado');
+        return null;
+      }
+
+      // Obtener la organización
+      const [organization] = await db.select()
+        .from(organizations)
+        .where(eq(organizations.id, organizationId));
+
+      if (!organization) {
+        console.error(`No se encontró la organización con ID ${organizationId}`);
+        return null;
+      }
+
+      // Obtener el plan
+      const [plan] = await db.select()
+        .from(plans)
+        .where(eq(plans.id, planId));
+
+      if (!plan) {
+        console.error(`No se encontró el plan con ID ${planId}`);
+        return null;
+      }
+
+      // Asegurarse de que el cliente existe en Stripe
+      let stripeCustomerId = organization.stripeCustomerId;
+      if (!stripeCustomerId) {
+        stripeCustomerId = await this.createCustomer(organization);
+        if (!stripeCustomerId) {
+          console.error('No se pudo crear el cliente en Stripe');
+          return null;
+        }
+      }
+
+      // Asegurarse de que los precios existen en Stripe
+      const { monthlyPriceId, yearlyPriceId } = await this.createOrUpdatePlanPrices(plan);
+      
+      // Seleccionar el precio correcto según el ciclo de facturación
+      const priceId = billingCycle === 'monthly' 
+        ? monthlyPriceId || plan.stripePriceIdMonthly
+        : yearlyPriceId || plan.stripePriceIdYearly;
+
+      if (!priceId) {
+        console.error(`No hay precio configurado para el plan ${plan.name} y ciclo ${billingCycle}`);
+        return null;
+      }
+
+      // Crear la sesión de checkout
+      const session = await stripe.checkout.sessions.create({
+        customer: stripeCustomerId,
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price: priceId,
+            quantity: 1
+          }
+        ],
+        mode: 'subscription',
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        metadata: {
+          organizationId: organization.id.toString(),
+          planId: plan.id.toString(),
+          billingCycle
+        }
+      });
+
+      return session.url;
+    } catch (error) {
+      console.error('Error al crear sesión de checkout en Stripe:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Genera una URL de portal de cliente para gestionar la suscripción
+   */
+  static async createCustomerPortalSession(
+    organizationId: number,
+    returnUrl: string
+  ): Promise<string | null> {
+    try {
+      if (!this.isConfigured()) {
+        console.error('Stripe no está configurado');
+        return null;
+      }
+
+      // Obtener la organización
+      const [organization] = await db.select()
+        .from(organizations)
+        .where(eq(organizations.id, organizationId));
+
+      if (!organization || !organization.stripeCustomerId) {
+        console.error(`No se encontró el cliente de Stripe para la organización con ID ${organizationId}`);
+        return null;
+      }
+
+      // Crear sesión de portal de cliente
+      const session = await stripe.billingPortal.sessions.create({
+        customer: organization.stripeCustomerId,
+        return_url: returnUrl
+      });
+
+      return session.url;
+    } catch (error) {
+      console.error('Error al crear sesión de portal de cliente en Stripe:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Webhook para procesar eventos de Stripe
+   */
+  static async handleWebhookEvent(event: any): Promise<void> {
+    try {
+      // Verificar el tipo de evento
+      switch (event.type) {
+        case 'customer.subscription.created':
+        case 'customer.subscription.updated':
+          await this.handleSubscriptionUpdate(event.data.object);
+          break;
+
+        case 'customer.subscription.deleted':
+          await this.handleSubscriptionCancellation(event.data.object);
+          break;
+
+        case 'invoice.payment_succeeded':
+          await this.handlePaymentSuccess(event.data.object);
+          break;
+
+        case 'invoice.payment_failed':
+          await this.handlePaymentFailure(event.data.object);
+          break;
+      }
+    } catch (error) {
+      console.error('Error al procesar evento de webhook de Stripe:', error);
+    }
+  }
+
+  /**
+   * Maneja la actualización de una suscripción
+   */
+  private static async handleSubscriptionUpdate(subscription: any): Promise<void> {
+    const organizationId = subscription.metadata?.organizationId;
+    if (!organizationId) return;
+
+    // Actualizar estado de la suscripción
+    await db.update(organizations)
+      .set({
+        subscriptionStatus: subscription.status,
+        stripeSubscriptionId: subscription.id
+      })
+      .where(eq(organizations.id, parseInt(organizationId)));
+  }
+
+  /**
+   * Maneja la cancelación de una suscripción
+   */
+  private static async handleSubscriptionCancellation(subscription: any): Promise<void> {
+    const organizationId = subscription.metadata?.organizationId;
+    if (!organizationId) return;
+
+    // Actualizar estado de la suscripción
+    await db.update(organizations)
+      .set({
+        subscriptionStatus: 'canceled',
+        subscriptionEndDate: new Date()
+      })
+      .where(eq(organizations.id, parseInt(organizationId)));
+
+    // Cambiar a plan gratuito si está disponible
+    const [freePlan] = await db.select()
+      .from(plans)
+      .where(eq(plans.name, 'Free'));
+
+    if (freePlan) {
+      await db.update(organizations)
+        .set({ planId: freePlan.id })
+        .where(eq(organizations.id, parseInt(organizationId)));
+    }
+  }
+
+  /**
+   * Maneja el pago exitoso de una factura
+   */
+  private static async handlePaymentSuccess(invoice: any): Promise<void> {
+    if (!invoice.subscription) return;
+
+    // Obtener la suscripción
+    const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+    const organizationId = subscription.metadata?.organizationId;
+    if (!organizationId) return;
+
+    // Actualizar fecha de fin de suscripción
+    const endDate = new Date(subscription.current_period_end * 1000);
+
+    await db.update(organizations)
+      .set({
+        subscriptionStatus: 'active',
+        subscriptionEndDate: endDate
+      })
+      .where(eq(organizations.id, parseInt(organizationId)));
+  }
+
+  /**
+   * Maneja el fallo de pago de una factura
+   */
+  private static async handlePaymentFailure(invoice: any): Promise<void> {
+    if (!invoice.subscription) return;
+
+    // Obtener la suscripción
+    const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+    const organizationId = subscription.metadata?.organizationId;
+    if (!organizationId) return;
+
+    // Actualizar estado de la suscripción
+    await db.update(organizations)
+      .set({ subscriptionStatus: 'past_due' })
+      .where(eq(organizations.id, parseInt(organizationId)));
+  }
+}

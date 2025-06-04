@@ -1,0 +1,43 @@
+ste es el cambio más fundamental. Tu aplicación necesita poder manejar múltiples clientes (organizaciones o "tenants") de forma segura y aislada en la misma infraestructura.
+
+Diseño de Multi-Tenancy (Base de Datos):
+
+Añadir Tabla organizations: Crea una nueva tabla en tu base de datos (usando shared/schema.ts y Drizzle migrations). Esta tabla almacenará información sobre cada cliente/tenant.
+TypeScript
+
+// En shared/schema.ts
+export const organizations = pgTable("organizations", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  // Campos relacionados con la suscripción (se detallarán más adelante)
+  planId: integer("plan_id").references(() => plans.id), // Referencia a la tabla de planes
+  subscriptionStatus: text("subscription_status").default('inactive'), // 'active', 'inactive', 'past_due', 'trial'
+  stripeCustomerId: text("stripe_customer_id").unique(), // Si usas Stripe
+  // ... otros campos relevantes para la organización
+});
+Añadir organizationId a Tablas Relevantes: Añade una columna organization_id (o tenant_id) a todas las tablas que contienen datos específicos de un cliente. Esto es crucial para la separación de datos. Basado en tu schema.ts, esto incluye:
+users: Cada usuario pertenecerá a una organización.
+alerts
+incidents
+threatIntel (Si es específica del tenant, si es global no)
+aiInsights
+metrics
+connectors: Cada organización configurará sus propios conectores.
+threatFeeds: Similar a connectors.
+playbooks: Los playbooks podrían ser por organización o compartidos. Decide tu modelo. Si son por organización, añade organization_id.
+playbookExecutions
+agents: Muy importante, cada agente debe pertenecer a una organización.
+Actualizar Claves Foráneas: Asegúrate de que organization_id en estas tablas haga referencia a organizations.id.
+Crear Migración: Usa drizzle-kit push o drizzle-kit generate + drizzle-kit migrate para aplicar estos cambios al esquema de tu base de datos.
+Adaptar Lógica de Acceso a Datos (server/storage.ts):
+
+Modificar Todas las Consultas: Cada función en storage.ts que lee o escribe datos específicos del tenant (casi todas) debe ser modificada para incluir un filtro WHERE organization_id = :orgId.
+Pasar organizationId: Las funciones en storage.ts ahora necesitarán recibir el organizationId del tenant actual como parámetro.
+Ejemplo (antes): getAlert(id: number)
+Ejemplo (después): getAlert(organizationId: number, id: number) y la consulta Drizzle sería db.select().from(alerts).where(and(eq(alerts.id, id), eq(alerts.organizationId, organizationId)))
+Garantizar Aislamiento: Este paso es vital para evitar que un cliente vea o modifique los datos de otro.
+Identificación del Tenant en la Aplicación:
+
+Middleware de Tenant: Crea un middleware en Express (server/routes.ts o un archivo dedicado) que se ejecute después de la autenticación. Este middleware debe identificar la organización (organizationId) del usuario autenticado ( req.user.organizationId) y adjuntarla a req (ej. req.organizationId = user.organizationId).
+Pasar organizationId: Todas las llamadas a las funciones de storage.ts desde tus rutas (server/routes.ts, server/advanced-routes.ts, etc.) deben ahora pasar el req.organizationId obtenido del middleware.

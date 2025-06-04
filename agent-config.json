@@ -1,0 +1,23 @@
+{
+  "serverUrl": "https://soc.example.com",
+  "registrationKey": "",
+  "heartbeatInterval": 60,
+  "dataUploadInterval": 300,
+  "scanInterval": 3600,
+  "registrationEndpoint": "/api/agents/register",
+  "dataEndpoint": "/api/agents/data",
+  "heartbeatEndpoint": "/api/agents/heartbeat",
+  "signMessages": false,
+  "capabilities": {
+    "fileSystemMonitoring": true,
+    "processMonitoring": true,
+    "networkMonitoring": true,
+    "registryMonitoring": false,
+    "securityLogsMonitoring": true,
+    "malwareScanning": true,
+    "vulnerabilityScanning": true
+  },
+  "logFilePath": "/var/log/soc-agent.log",
+  "maxStorageSize": 100,
+  "logLevel": "info"
+}

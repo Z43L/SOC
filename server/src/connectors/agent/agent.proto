@@ -1,0 +1,24 @@
+syntax = "proto3";
+package agent;
+
+service AgentService {
+  rpc StreamEvents(stream AgentRequest) returns (stream AgentResponse);
+}
+
+message AgentRequest {
+  string agentId = 1;
+  string token = 2;
+}
+
+message AgentEvent {
+  string hostName = 1;
+  string os = 2;
+  string agentVersion = 3;
+  int64 timestamp = 4;
+  bytes payload = 5;
+}
+
+message AgentResponse {
+  AgentEvent event = 1;
+  string error = 2;
+}

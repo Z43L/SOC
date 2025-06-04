@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{title}} - {{organization.name}}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #fff;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            border-bottom: 3px solid #2563eb;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2563eb;
+        }
+        
+        .report-info {
+            text-align: right;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        h1 {
+            color: #1f2937;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        h2 {
+            color: #374151;
+            font-size: 22px;
+            margin: 30px 0 15px 0;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 8px;
+        }
+        
+        h3 {
+            color: #4b5563;
+            font-size: 18px;
+            margin: 20px 0 10px 0;
+        }
+        
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .metric-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #1e40af;
+            margin-bottom: 5px;
+        }
+        
+        .metric-label {
+            font-size: 14px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .risk-score {
+            font-size: 36px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        
+        .risk-high { color: #dc2626; }
+        .risk-medium { color: #ea580c; }
+        .risk-low { color: #ca8a04; }
+        .risk-minimal { color: #16a34a; }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 14px;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        th {
+            background-color: #f8fafc;
+            font-weight: 600;
+            color: #374151;
+        }
+        
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+        
+        .severity-critical {
+            background-color: #fef2f2;
+            color: #dc2626;
+            border: 1px solid #fecaca;
+        }
+        
+        .severity-high {
+            background-color: #fef3c7;
+            color: #d97706;
+            border: 1px solid #fed7aa;
+        }
+        
+        .severity-medium {
+            background-color: #fef3c7;
+            color: #ca8a04;
+            border: 1px solid #fed7aa;
+        }
+        
+        .severity-low {
+            background-color: #f0fdf4;
+            color: #16a34a;
+            border: 1px solid #bbf7d0;
+        }
+        
+        .insights-list {
+            background-color: #f0f9ff;
+            border-left: 4px solid #0ea5e9;
+            padding: 15px 20px;
+            margin: 15px 0;
+        }
+        
+        .insights-list ul {
+            list-style-type: none;
+            padding-left: 0;
+        }
+        
+        .insights-list li {
+            margin: 8px 0;
+            padding-left: 20px;
+            position: relative;
+        }
+        
+        .insights-list li:before {
+            content: "→";
+            position: absolute;
+            left: 0;
+            color: #0ea5e9;
+            font-weight: bold;
+        }
+        
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+            text-align: center;
+            font-size: 12px;
+            color: #6b7280;
+        }
+        
+        .chart-placeholder {
+            background-color: #f8fafc;
+            border: 2px dashed #cbd5e1;
+            height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #64748b;
+            margin: 15px 0;
+        }
+        
+        .section {
+            margin-bottom: 30px;
+            page-break-inside: avoid;
+        }
+        
+        @media print {
+            .container {
+                max-width: none;
+                margin: 0;
+                padding: 15px;
+            }
+            
+            .header {
+                page-break-after: avoid;
+            }
+            
+            h2 {
+                page-break-after: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div>
+                <div class="logo">{{organization.name}}</div>
+                {{#if organization.logo}}
+                <img src="{{organization.logo}}" alt="Organization Logo" style="max-height: 40px; margin-top: 10px;">
+                {{/if}}
+            </div>
+            <div class="report-info">
+                <div><strong>{{title}}</strong></div>
+                <div>Period: {{period.description}}</div>
+                <div>Generated: {{formatDate generatedAt 'long'}}</div>
+                {{#if generatedBy}}
+                <div>By: {{generatedBy}}</div>
+                {{/if}}
+            </div>
+        </div>
+
+        <!-- Title -->
+        <h1>{{title}}</h1>
+
+        <!-- Executive Summary (if available) -->
+        {{#if summary}}
+        <div class="section">
+            <h2>Executive Summary</h2>
+            <div class="summary-grid">
+                <div class="metric-card">
+                    <div class="metric-value">{{formatNumber summary.totalAlerts}}</div>
+                    <div class="metric-label">Total Alerts</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">{{formatNumber summary.criticalIncidents}}</div>
+                    <div class="metric-label">Critical Incidents</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value risk-score {{#if (eq (riskLevel summary.riskScore) 'High Risk')}}risk-high{{else}}{{#if (eq (riskLevel summary.riskScore) 'Medium Risk')}}risk-medium{{else}}{{#if (eq (riskLevel summary.riskScore) 'Low Risk')}}risk-low{{else}}risk-minimal{{/if}}{{/if}}{{/if}}">{{summary.riskScore}}</div>
+                    <div class="metric-label">Risk Score</div>
+                </div>
+                {{#if summary.complianceScore}}
+                <div class="metric-card">
+                    <div class="metric-value">{{summary.complianceScore}}%</div>
+                    <div class="metric-label">Compliance Score</div>
+                </div>
+                {{/if}}
+            </div>
+        </div>
+        {{/if}}
+
+        <!-- Report Sections -->
+        {{#each sections}}
+        <div class="section">
+            <h2>{{title}}</h2>
+            {{#if subtitle}}
+            <h3>{{subtitle}}</h3>
+            {{/if}}
+
+            {{#if (eq type 'metrics')}}
+                {{#if content.keyInsights}}
+                <div class="insights-list">
+                    <h3>Key Insights</h3>
+                    <ul>
+                        {{#each content.keyInsights}}
+                        <li>{{this}}</li>
+                        {{/each}}
+                    </ul>
+                </div>
+                {{/if}}
+
+                {{#if content.byStatus}}
+                <h3>Distribution by Status</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Count</th>
+                            <th>Percentage</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{#each content.byStatus}}
+                        <tr>
+                            <td>{{@key}}</td>
+                            <td>{{formatNumber this}}</td>
+                            <td>{{percentage (div this ../content.totalAlerts)}}</td>
+                        </tr>
+                        {{/each}}
+                    </tbody>
+                </table>
+                {{/if}}
+
+                {{#if content.bySeverity}}
+                <h3>Distribution by Severity</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Severity</th>
+                            <th>Count</th>
+                            <th>Percentage</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{#each content.bySeverity}}
+                        <tr>
+                            <td><span class="status-badge severity-{{@key}}">{{@key}}</span></td>
+                            <td>{{formatNumber this}}</td>
+                            <td>{{percentage (div this ../content.totalAlerts)}}</td>
+                        </tr>
+                        {{/each}}
+                    </tbody>
+                </table>
+                {{/if}}
+
+                {{#if content.topAlerts}}
+                <h3>Critical & High Priority Alerts</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Title</th>
+                            <th>Severity</th>
+                            <th>Source</th>
+                            <th>Status</th>
+                            <th>Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{#each content.topAlerts}}
+                        <tr>
+                            <td>{{title}}</td>
+                            <td><span class="status-badge severity-{{severity}}">{{severity}}</span></td>
+                            <td>{{source}}</td>
+                            <td>{{status}}</td>
+                            <td>{{formatDate timestamp 'short'}}</td>
+                        </tr>
+                        {{/each}}
+                    </tbody>
+                </table>
+                {{/if}}
+            {{/if}}
+
+            {{#if (eq type 'incidents')}}
+                {{#if content.total}}
+                <div class="summary-grid">
+                    <div class="metric-card">
+                        <div class="metric-value">{{formatNumber content.total}}</div>
+                        <div class="metric-label">Total Incidents</div>
+                    </div>
+                    {{#if content.avgResolutionTime}}
+                    <div class="metric-card">
+                        <div class="metric-value">{{content.avgResolutionTime}}</div>
+                        <div class="metric-label">Avg Resolution Time (hrs)</div>
+                    </div>
+                    {{/if}}
+                </div>
+                {{/if}}
+
+                {{#if content.incidents}}
+                <h3>Incident Details</h3>
+                {{#each content.incidents}}
+                <div style="margin: 20px 0; padding: 15px; background: #f8fafc; border-radius: 8px;">
+                    <h4 style="margin-bottom: 10px;">{{title}}</h4>
+                    <p><strong>Severity:</strong> <span class="status-badge severity-{{severity}}">{{severity}}</span></p>
+                    <p><strong>Status:</strong> {{status}}</p>
+                    <p><strong>Created:</strong> {{formatDate createdAt 'long'}}</p>
+                    <p><strong>Description:</strong> {{description}}</p>
+                    {{#if timeline}}
+                    <p><strong>Timeline Events:</strong> {{timeline.length}} events recorded</p>
+                    {{/if}}
+                </div>
+                {{/each}}
+                {{/if}}
+            {{/if}}
+
+            {{#if (eq type 'compliance')}}
+                {{#if content.overall}}
+                <div class="metric-card" style="text-align: center; margin: 20px 0;">
+                    <div class="metric-value">{{content.overall}}%</div>
+                    <div class="metric-label">Overall Compliance Score</div>
+                </div>
+                {{/if}}
+
+                {{#if content.frameworks}}
+                <h3>Framework Compliance</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Framework</th>
+                            <th>Status</th>
+                            <th>Score</th>
+                            <th>Last Assessment</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{#each content.frameworks}}
+                        <tr>
+                            <td>{{framework}}</td>
+                            <td>{{status}}</td>
+                            <td>{{score}}%</td>
+                            <td>{{formatDate lastAssessmentDate 'short'}}</td>
+                        </tr>
+                        {{/each}}
+                    </tbody>
+                </table>
+                {{/if}}
+
+                {{#if content.gaps}}
+                <h3>Compliance Gaps</h3>
+                <ul>
+                    {{#each content.gaps}}
+                    <li>{{this}}</li>
+                    {{/each}}
+                </ul>
+                {{/if}}
+
+                {{#if content.recommendations}}
+                <h3>Recommendations</h3>
+                <ul>
+                    {{#each content.recommendations}}
+                    <li>{{this}}</li>
+                    {{/each}}
+                </ul>
+                {{/if}}
+            {{/if}}
+
+            {{#if (eq type 'agents')}}
+                {{#if content.totalAgents}}
+                <div class="summary-grid">
+                    <div class="metric-card">
+                        <div class="metric-value">{{formatNumber content.totalAgents}}</div>
+                        <div class="metric-label">Total Agents</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">{{formatNumber content.activeAgents}}</div>
+                        <div class="metric-label">Active Agents</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">{{formatNumber content.offlineAgents}}</div>
+                        <div class="metric-label">Offline Agents</div>
+                    </div>
+                </div>
+                {{/if}}
+
+                {{#if content.lastHeartbeat}}
+                <h3>Agent Status</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Agent Name</th>
+                            <th>Hostname</th>
+                            <th>Status</th>
+                            <th>Last Heartbeat</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{#each content.lastHeartbeat}}
+                        <tr>
+                            <td>{{name}}</td>
+                            <td>{{hostname}}</td>
+                            <td><span class="status-badge {{#if (eq status 'active')}}severity-low{{else}}severity-high{{/if}}">{{status}}</span></td>
+                            <td>{{#if lastHeartbeat}}{{formatDate lastHeartbeat 'long'}}{{else}}Never{{/if}}</td>
+                        </tr>
+                        {{/each}}
+                    </tbody>
+                </table>
+                {{/if}}
+            {{/if}}
+
+            {{#if (eq type 'performance')}}
+                {{#if content.mttd}}
+                <div class="summary-grid">
+                    <div class="metric-card">
+                        <div class="metric-value">{{content.mttd.value}}</div>
+                        <div class="metric-label">MTTD ({{content.mttd.unit}})</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">{{content.mttr.value}}</div>
+                        <div class="metric-label">MTTR ({{content.mttr.unit}})</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">{{content.falsePositiveRate}}%</div>
+                        <div class="metric-label">False Positive Rate</div>
+                    </div>
+                </div>
+                {{/if}}
+            {{/if}}
+
+            {{#if (eq type 'custom')}}
+                <p>{{content.message}}</p>
+                {{#if content.parameters}}
+                <h3>Report Parameters</h3>
+                <pre style="background: #f8fafc; padding: 15px; border-radius: 4px; overflow-x: auto;">{{json content.parameters}}</pre>
+                {{/if}}
+            {{/if}}
+        </div>
+        {{/each}}
+
+        <!-- Footer -->
+        <div class="footer">
+            <p>This report was generated automatically by the SOC Security Platform</p>
+            <p>Generated on {{formatDate generatedAt 'long'}} | Confidential - Internal Use Only</p>
+            {{#if hashSha256}}
+            <p>Document Hash (SHA-256): {{hashSha256}}</p>
+            {{/if}}
+        </div>
+    </div>
+</body>
+</html>
