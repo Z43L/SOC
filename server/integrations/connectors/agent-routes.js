@@ -18,40 +18,14 @@ const router = express.Router();
  */
 router.post('/register', async (req, res) => {
     try {
-        const { hostname, ipAddress, operatingSystem, version, capabilities, systemInfo, organizationKey, registrationKey } = req.body;
-        
+        const { hostname, ipAddress, operatingSystem, version, capabilities, systemInfo, organizationKey } = req.body;
         // Validate required fields
-        if (!hostname || !ipAddress || !operatingSystem || !version) {
+        if (!hostname || !ipAddress || !operatingSystem || !version || !organizationKey) {
             return res.status(400).json({
                 success: false,
-                message: 'Missing required fields (hostname, ipAddress, operatingSystem, version)'
+                message: 'Missing required fields'
             });
         }
-        
-        // Check if we have either organizationKey or registrationKey
-        if (!organizationKey && !registrationKey) {
-            return res.status(400).json({
-                success: false,
-                message: 'Missing organizationKey or registrationKey'
-            });
-        }
-        
-        // If registrationKey is provided, use the main registration system
-        if (registrationKey) {
-            // Import the main registration function
-            const { registerAgent } = await import('../agents.js');
-            const result = await registerAgent(
-                registrationKey,
-                hostname,
-                ipAddress,
-                operatingSystem,
-                version,
-                capabilities || []
-            );
-            return res.status(result.success ? 201 : 400).json(result);
-        }
-        
-        // Otherwise, use the connector-based approach with organizationKey
         // Find the agent connector for this organization
         const connectors = connectorRegistry.getAllConnectors()
             .filter(connector => connector.type === 'agent' &&
@@ -79,9 +53,7 @@ router.post('/register', async (req, res) => {
         // Generate JWT token for future authentication
         const token = jwt.sign({
             agentId: result.agentId,
-            userId: 0, // System user for agents registered via organization key
-            organizationId: connector.organizationId,
-            type: 'agent'
+            organizationId: connector.organizationId
         }, process.env.JWT_SECRET || 'soc-platform-secret', {
             expiresIn: '1y'
         });
@@ -118,19 +90,12 @@ router.post('/heartbeat', verifyAgentJwt, async (req, res) => {
         const connectors = connectorRegistry.getAllConnectors()
             .filter(connector => connector.type === 'agent' &&
             connector.organizationId === organizationId);
-        
         if (connectors.length === 0) {
-            // Fallback to main agent processing system
-            const { processAgentHeartbeat } = await import('../agents.js');
-            const result = await processAgentHeartbeat(agentId, 'active', {
-                cpu,
-                memory,
-                diskSpace,
-                version
+            return res.status(404).json({
+                success: false,
+                message: 'Agent connector not found for this organization'
             });
-            return res.status(result.success ? 200 : 400).json(result);
         }
-        
         // Use the first matching connector
         const connector = connectors[0];
         // Process heartbeat
@@ -171,20 +136,12 @@ router.post('/data', verifyAgentJwt, async (req, res) => {
         const connectors = connectorRegistry.getAllConnectors()
             .filter(connector => connector.type === 'agent' &&
             connector.organizationId === organizationId);
-        
         if (connectors.length === 0) {
-            // Fallback to main agent processing system
-            const { processAgentData } = await import('../agents.js');
-            const result = await processAgentData(agentId, events);
-            
-            // Update agent's last heartbeat time
-            await db.update(agents)
-                .set({ lastHeartbeat: new Date() })
-                .where(eq(agents.agentIdentifier, agentId));
-            
-            return res.status(result.success ? 200 : 400).json(result);
+            return res.status(404).json({
+                success: false,
+                message: 'Agent connector not found for this organization'
+            });
         }
-        
         // Use the first matching connector
         const connector = connectors[0];
         // Process events
