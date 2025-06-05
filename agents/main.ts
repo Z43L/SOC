@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import {
   loadConfig,
+  saveConfig,
   AgentConfig,
   EventQueue,
   Transport,
@@ -302,7 +303,7 @@ class Agent {
       this.initializeUpdater();
       
       // Guardar configuración actualizada
-      await loadConfig(this.config.configPath);
+      await saveConfig(this.config, this.config.configPath);
       
       this.logger.info(`Agent registered successfully with ID: ${this.config.agentId}`);
       return true;

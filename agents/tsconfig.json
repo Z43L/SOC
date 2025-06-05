@@ -13,7 +13,8 @@
     "declaration": false,
     "sourceMap": false,
     "removeComments": true,
-    "moduleResolution": "node"
+    "moduleResolution": "node",
+    "downlevelIteration": true
   },
   "include": [
     "**/*.ts"

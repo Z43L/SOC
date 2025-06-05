@@ -61,6 +61,8 @@ export class SoarExecutorService {
     // Process a playbook execution job
     async processPlaybookJob(job) {
         const { playbookId, triggerEvent, userId, organizationId, context = {} } = job.data;
+        // Track execution id so we can access the state in the catch block
+        let executionId;
         console.log(`[SoarExecutor] Processing playbook ${playbookId}`);
         try {
             // Get playbook from database
@@ -84,7 +86,7 @@ export class SoarExecutorService {
                 organizationId: parseInt(organizationId),
             })
                 .returning();
-            const executionId = execution[0].id.toString();
+            executionId = execution[0].id.toString();
             // Initialize execution state
             const executionState = {
                 executionId,
@@ -129,10 +131,15 @@ export class SoarExecutorService {
         catch (error) {
             console.error(`[SoarExecutor] Playbook ${playbookId} execution failed:`, error);
             // Update execution state if it exists
-            const executionState = this.executionStates.get(job.data.playbookId);
+            const executionState = executionId
+                ? this.executionStates.get(executionId)
+                : undefined;
             if (executionState) {
                 executionState.status = 'failed';
                 this.log(executionState, `Execution failed: ${error.message}`, 'error');
+            }
+            if (executionId) {
+                await this.updateExecutionStatus(executionId, 'failed');
             }
             throw error;
         }

@@ -3,23 +3,23 @@
   "version": "1.0.0",
   "description": "SOC Intelligent Agent",
   "main": "main-simple.ts",
-  "type": "module",
   "scripts": {
-    "build": "tsc main-simple.ts --outDir dist --target ES2020 --module CommonJS --strict && shx mv dist/main-simple.js dist/main-simple.cjs",
+    "build": "tsc -p . && shx mv dist/main-simple.js dist/main-simple.cjs",
     "clean": "rimraf dist",
-    "build:windows": "tsc main-windows.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop",
-    "build:linux": "tsc main-simple.ts --outDir dist --target ES2020 --module CommonJS --strict",
-    "build:macos": "tsc main-simple.ts --outDir dist --target ES2020 --module CommonJS --strict",
+    "build:windows": "tsc main-windows.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop --downlevelIteration",
+    "build:linux": "tsc main-simple.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop --downlevelIteration && shx mv dist/main-simple.js dist/main-simple.cjs",
+    "build:macos": "tsc main-simple.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop --downlevelIteration && shx mv dist/main-simple.js dist/main-simple.cjs",
     "package": "npm run package:all",
     "package:all": "npm run package:linux && npm run package:windows && npm run package:macos",
-    "package:linux": "shx mkdir -p ../dist/agents && pkg dist/main-simple.js --targets node18-linux-x64,node18-linux-arm64 --output ../dist/agents/soc-agent-linux",
+    "package:linux": "shx mkdir -p ../dist/agents && pkg dist/main-simple.cjs --targets node18-linux-x64,node18-linux-arm64 --output ../dist/agents/soc-agent-linux && cp ../dist/agents/soc-agent-linux-x64 ../dist/agents/soc-agent-linux",
     "package:windows": "shx mkdir -p ../dist/agents && pkg dist/main-windows.js --targets node18-win-x64 --output ../dist/agents/soc-agent-windows.exe",
-    "package:macos": "shx mkdir -p ../dist/agents && pkg dist/main-simple.js --targets node18-macos-x64,node18-macos-arm64 --output ../dist/agents/soc-agent-macos",
+    "package:macos": "shx mkdir -p ../dist/agents && pkg dist/main-simple.cjs --targets node18-macos-x64,node18-macos-arm64 --output ../dist/agents/soc-agent-macos",
     "build:agent": "npm run clean && npm run build:windows && npm run package:windows",
     "build:agent:windows": "npm run clean && npm run build:windows && npm run package:windows",
     "build:agent:linux": "npm run clean && npm run build:linux && npm run package:linux",
     "build:agent:macos": "npm run clean && npm run build:macos && npm run package:macos",
-    "test:windows": "tsc test-windows-collectors.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop && node dist/test-windows-collectors.js"
+    "test:windows": "tsc test-windows-collectors.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop --downlevelIteration && node dist/test-windows-collectors.js",
+    "compile-check": "tsc --noEmit"
   },
   "pkg": {
     "assets": [
@@ -37,7 +37,10 @@
     ]
   },
   "dependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "better-sqlite3": "^11.10.0",
     "js-yaml": "^4.1.0",
+    "shx": "^0.4.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {

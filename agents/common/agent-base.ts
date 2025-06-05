@@ -311,7 +311,7 @@ export abstract class AgentBase {
       logger.error('Error uploading events:', error);
       
       // Devolver eventos a la cola si falló
-      this.pendingEvents = [...this.pendingEvents, ...this.pendingEvents];
+      this.pendingEvents = [...events, ...this.pendingEvents];
       
       // Limitar el tamaño máximo de la cola para evitar desbordamiento de memoria
       if (this.pendingEvents.length > 1000) {

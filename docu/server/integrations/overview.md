@@ -1,40 +1,54 @@
-# Documentación de Integraciones del Servidor
+# Documentación Completa de Integraciones del Servidor
 
 ## Propósito General
 
-El directorio `server/integrations/` contiene todos los servicios de integración que extienden las capacidades principales del SOC. Estos servicios manejan desde inteligencia artificial hasta conectores de datos externos y servicios de terceros.
+El directorio `server/integrations/` contiene todos los servicios de integración que extienden las capacidades principales del SOC. Estos servicios manejan desde inteligencia artificial hasta conectores de datos externos, automatización SOAR, y servicios de terceros.
 
 ## Arquitectura de Integraciones
 
-### Categorías de Integraciones
+### Estructura Organizada por Funcionalidad
 
 ```
 server/integrations/
-├── ai/                     # Servicios de Inteligencia Artificial
-│   ├── ai-parser-service.ts
-│   ├── ai-correlation-engine.ts
-│   ├── ai-processing-queue.ts
-│   └── advanced-correlation-algorithms.ts
-├── connectors/             # Conectores de datos externos
-│   ├── agent.ts
-│   ├── api.ts
-│   ├── syslog.ts
-│   └── implementations.ts
-├── enrichment/             # Servicios de enriquecimiento
-│   ├── alertEnrichment.ts
-│   ├── threatFeeds.ts
-│   └── structured-data-parser.ts
-├── automation/             # Automatización y SOAR
-│   ├── playbook-executor.ts
-│   ├── scheduler.ts
-│   └── ai-alert-listener.ts
-├── external/               # Servicios externos
-│   ├── stripe/
-│   └── llm/
-└── management/             # Gestión y utilidades
-    ├── logger.ts
-    ├── agents.ts
-    └── artifact-manager.ts
+├── ai/                      # Servicios de Inteligencia Artificial
+│   ├── ai-parser-service.ts           # Parseo inteligente de datos
+│   ├── ai-correlation-engine.ts       # Motor de correlación IA
+│   ├── ai-processing-queue.ts         # Cola de procesamiento IA
+│   ├── ai-alert-listener.ts           # Listener de alertas IA
+│   └── advanced-correlation-algorithms.ts  # Algoritmos avanzados
+├── connectors/              # Conectores de datos externos
+│   ├── agent.ts                       # Conector de agentes
+│   ├── api.ts                         # Conectores API genéricos
+│   ├── syslog.ts                      # Conector Syslog
+│   ├── implementations.ts             # Implementaciones específicas
+│   ├── connector-factory.ts           # Factory de conectores
+│   ├── connector-manager.ts           # Gestor de conectores
+│   ├── aws-cloudwatch-connector.ts    # Conector AWS CloudWatch
+│   ├── google-workspace-connector.ts  # Conector Google Workspace
+│   └── real-time-monitor.ts           # Monitor en tiempo real
+├── enrichment/              # Servicios de enriquecimiento
+│   ├── alertEnrichment.ts             # Enriquecimiento de alertas
+│   ├── threatFeeds.ts                 # Feeds de amenazas
+│   └── structured-data-parser.ts      # Parser de datos estructurados
+├── automation/              # Automatización y SOAR
+│   ├── playbook-executor.ts           # Ejecutor de playbooks
+│   ├── scheduler.ts                   # Programador de tareas
+│   └── anomaly-detector.ts            # Detector de anomalías
+├── external/                # Servicios externos
+│   ├── stripe/                        # Integración de facturación
+│   │   ├── stripe-service.ts
+│   │   ├── stripe-routes.ts
+│   │   └── stripe-checkout.ts
+│   └── llm/                           # Proveedores de LLM
+│       ├── anthropic-provider.ts
+│       ├── openai-provider.ts
+│       ├── llm-orchestrator.ts
+│       ├── llm-metrics.ts
+│       └── llm-validation.ts
+└── management/              # Gestión y utilidades
+    ├── logger.ts                      # Sistema de logging
+    ├── agents.ts                      # Gestión de agentes
+    └── artifact-manager.ts            # Gestor de artefactos
 ```
 
 ## Servicios de Inteligencia Artificial
@@ -43,20 +57,7 @@ server/integrations/
 
 **Propósito**: Parseo inteligente de datos con IA para normalizar datos de diversas fuentes.
 
-#### Funcionalidades Principales
-
-```typescript
-/**
- * Servicio de parseo inteligente de datos con IA
- * 
- * Este módulo implementa:
- * 1. Parsers asistidos por IA para normalizar datos de diversas fuentes
- * 2. Extracción de indicadores de compromiso (IoCs) de datos no estructurados
- * 3. Normalización de datos para garantizar consistencia en el almacenamiento
- */
-```
-
-#### Tipos de Datos Soportados
+#### Formatos Soportados
 
 ```typescript
 enum DataFormat {
@@ -72,32 +73,342 @@ enum DataFormat {
 }
 ```
 
-**Formatos Soportados**:
-- **JSON**: Datos estructurados en JSON
-- **XML**: Documentos XML de APIs y servicios
-- **SYSLOG**: Logs estándar de sistema (RFC 3164/5424)
-- **CEF**: Common Event Format de ArcSight
-- **LEEF**: Log Event Extended Format de QRadar
-- **CSV**: Archivos de valores separados por comas
-- **PLAINTEXT**: Logs de texto plano
-- **STIX**: Formato de inteligencia de amenazas
-- **UNKNOWN**: Formato no identificado (requiere IA)
+#### Capacidades Principales
+- **Auto-detection**: Identificación automática de formato de datos
+- **Normalization**: Conversión a formato estándar del SOC
+- **IoC Extraction**: Extracción de indicadores de compromiso
+- **Validation**: Validación de estructura y contenido
+- **Enrichment**: Enriquecimiento con contexto adicional
 
-#### Tipos de Datos Procesados
+### 2. AI Correlation Engine (`ai-correlation-engine.ts`)
+
+**Propósito**: Motor de correlación inteligente para identificar patrones y relaciones entre eventos.
+
+#### Algoritmos de Correlación
+- **Temporal Correlation**: Correlación basada en tiempo
+- **Geographic Correlation**: Correlación basada en ubicación
+- **Behavioral Correlation**: Correlación basada en comportamiento
+- **Threat Actor Correlation**: Correlación basada en actores de amenaza
+
+### 3. AI Processing Queue (`ai-processing-queue.ts`)
+
+**Propósito**: Sistema de colas para procesamiento asíncrono de tareas de IA.
+
+#### Características
+- **Priority Queues**: Colas con prioridad por severidad
+- **Rate Limiting**: Control de velocidad de procesamiento
+- **Retry Logic**: Reintentos con backoff exponencial
+- **Dead Letter Queue**: Manejo de tareas fallidas
+
+## Conectores de Datos Externos
+
+### Tipos de Conectores
+
+#### 1. Conectores de SIEM
+- **Splunk**: Via REST API y HEC (HTTP Event Collector)
+- **QRadar**: Via REST API y LEEF format
+- **ArcSight**: Via CEF format y CORR-Engine
+- **Elastic Stack**: Via Elasticsearch API
+
+#### 2. Conectores Cloud
+- **AWS CloudWatch**: Logs y métricas de AWS
+- **Azure Security Center**: Alertas y recomendaciones
+- **Google Cloud Security**: Logs de auditoría y alertas
+- **Office 365**: Logs de actividad y alertas de seguridad
+
+#### 3. Conectores de Red
+- **Firewall Logs**: Palo Alto, Fortinet, Cisco ASA
+- **IDS/IPS**: Snort, Suricata, Cisco IPS
+- **Network Monitoring**: Nagios, PRTG, SolarWinds
+- **DNS Logs**: BIND, Windows DNS, CloudFlare
+
+#### 4. Conectores de Endpoint
+- **CrowdStrike Falcon**: Via Falcon API
+- **SentinelOne**: Via Management Console API
+- **Microsoft Defender**: Via Graph API
+- **Carbon Black**: Via REST API
+
+### Architecture Pattern
 
 ```typescript
-enum DataType {
-  ALERT = 'alert',
-  LOG = 'log',
-  THREAT_INTEL = 'threat_intel',
-  METRIC = 'metric',
-  NETWORK_TRAFFIC = 'network_traffic',
-  UNKNOWN = 'unknown'
+interface IConnector {
+  id: string;
+  name: string;
+  type: ConnectorType;
+  status: ConnectorStatus;
+  
+  connect(): Promise<boolean>;
+  disconnect(): Promise<void>;
+  pullData(): Promise<any[]>;
+  pushData(data: any): Promise<boolean>;
+  healthCheck(): Promise<ConnectorHealth>;
 }
 ```
 
-**Categorías de Datos**:
-- **ALERT**: Alertas de seguridad
+## Servicios de Enriquecimiento
+
+### 1. Alert Enrichment (`alertEnrichment.ts`)
+
+**Propósito**: Enriquecimiento automático de alertas con contexto adicional.
+
+#### Fuentes de Enriquecimiento
+- **Threat Intelligence**: IoCs conocidos y reputation scores
+- **Geolocation**: Información geográfica de IPs
+- **WHOIS Data**: Información de dominios y IPs
+- **Historical Data**: Datos históricos de la organización
+- **Asset Information**: Información de activos internos
+
+#### Proceso de Enriquecimiento
+1. **Extraction**: Extracción de IoCs de la alerta
+2. **Lookup**: Búsqueda en fuentes de threat intelligence
+3. **Correlation**: Correlación con datos históricos
+4. **Scoring**: Cálculo de risk score
+5. **Enrichment**: Añadir información contextual
+
+### 2. Threat Feeds (`threatFeeds.ts`)
+
+**Propósito**: Gestión de feeds de inteligencia de amenazas.
+
+#### Fuentes Soportadas
+- **Commercial Feeds**: Recorded Future, ThreatConnect, etc.
+- **Open Source**: MISP, OTX, ThreatFox
+- **Government**: US-CERT, EU-CERT, national CERTs
+- **Industry**: FS-ISAC, HC3, sector-specific feeds
+
+#### Formatos de Feed
+- **STIX/TAXII**: Formato estándar de threat intelligence
+- **JSON**: Feeds en formato JSON
+- **CSV**: Archivos CSV con IoCs
+- **XML**: Feeds en formato XML
+
+## Servicios de Automatización
+
+### 1. Playbook Executor (`playbook-executor.ts`)
+
+**Propósito**: Ejecutor de playbooks para automatización SOAR.
+
+#### Tipos de Acciones
+- **Investigation**: Acciones de investigación automática
+- **Containment**: Aislamiento y contención de amenazas
+- **Remediation**: Remediación automática de incidentes
+- **Notification**: Notificaciones y escalamiento
+- **Data Collection**: Recolección de evidencia
+
+#### Triggers de Playbooks
+- **Alert Creation**: Nueva alerta creada
+- **Incident Creation**: Nuevo incidente creado
+- **Threshold Breach**: Umbral de métrica excedido
+- **Manual Trigger**: Ejecución manual por analista
+- **Scheduled**: Ejecución programada
+
+### 2. Scheduler (`scheduler.ts`)
+
+**Propósito**: Programador de tareas automáticas del sistema.
+
+#### Tareas Programadas
+- **Feed Updates**: Actualización de threat feeds
+- **Health Checks**: Verificación de conectores
+- **Cleanup**: Limpieza de datos antiguos
+- **Reports**: Generación de reportes automáticos
+- **Backups**: Respaldos de configuración
+
+## Servicios Externos
+
+### 1. Stripe Integration (`stripe/`)
+
+**Propósito**: Integración completa con Stripe para facturación y pagos.
+
+#### Componentes
+- **stripe-service.ts**: Servicio principal de Stripe
+- **stripe-routes.ts**: Rutas API para pagos
+- **stripe-checkout.ts**: Proceso de checkout
+- **stripe-webhooks.ts**: Manejo de webhooks
+
+#### Funcionalidades
+- **Subscription Management**: Gestión de suscripciones
+- **Payment Processing**: Procesamiento de pagos
+- **Invoice Generation**: Generación de facturas
+- **Usage Tracking**: Seguimiento de uso por organización
+
+### 2. LLM Providers (`llm/`)
+
+**Propósito**: Abstracción de proveedores de Large Language Models.
+
+#### Proveedores Soportados
+- **OpenAI**: GPT-4, GPT-4-turbo, GPT-3.5
+- **Anthropic**: Claude 3 (Opus, Sonnet, Haiku)
+- **Google**: Gemini Pro, Gemini Ultra
+- **Local Models**: Ollama, LocalAI
+
+#### Arquitectura del Orchestrator
+
+```typescript
+interface LLMProvider {
+  name: string;
+  models: string[];
+  
+  complete(request: CompletionRequest): Promise<CompletionResponse>;
+  estimate(request: CompletionRequest): Promise<CostEstimate>;
+  healthCheck(): Promise<boolean>;
+}
+
+class LLMOrchestrator {
+  selectOptimalProvider(request: CompletionRequest): Promise<LLMProvider>;
+  fallbackToAlternative(request: CompletionRequest, failedProvider: string): Promise<CompletionResponse>;
+  trackUsage(provider: string, tokens: number, cost: number): Promise<void>;
+}
+```
+
+## Servicios de Gestión
+
+### 1. Logger (`logger.ts`)
+
+**Propósito**: Sistema de logging centralizado para integraciones.
+
+#### Características
+- **Structured Logging**: Logs estructurados en JSON
+- **Log Levels**: debug, info, warn, error, fatal
+- **Correlation IDs**: Trazabilidad de requests
+- **External Sinks**: Envío a sistemas externos
+- **Performance Metrics**: Métricas embebidas
+
+### 2. Agents Management (`agents.ts`)
+
+**Propósito**: Gestión centralizada de agentes distribuidos.
+
+#### Funcionalidades
+- **Agent Registry**: Registro centralizado de agentes
+- **Health Monitoring**: Monitoreo de salud en tiempo real
+- **Configuration Management**: Gestión de configuración remota
+- **Update Deployment**: Despliegue de actualizaciones
+- **Metrics Collection**: Recolección de métricas
+
+### 3. Artifact Manager (`artifact-manager.ts`)
+
+**Propósito**: Gestión de artefactos y evidencia forense.
+
+#### Tipos de Artefactos
+- **Log Files**: Archivos de logs recolectados
+- **Network Captures**: Capturas de tráfico de red
+- **Memory Dumps**: Volcados de memoria
+- **Disk Images**: Imágenes de disco
+- **Configuration Files**: Archivos de configuración
+
+## Patrones de Diseño Comunes
+
+### 1. **Plugin Architecture**
+- Integraciones como plugins intercambiables
+- Configuración dinámica
+- Carga en tiempo de ejecución
+
+### 2. **Event-Driven Processing**
+- Eventos asíncronos entre servicios
+- Pub/Sub patterns
+- Loose coupling
+
+### 3. **Circuit Breaker Pattern**
+- Protección contra fallos de servicios externos
+- Degradación elegante
+- Auto-recovery
+
+### 4. **Retry with Backoff**
+- Reintentos inteligentes
+- Backoff exponencial
+- Dead letter queues
+
+## Configuración y Deployment
+
+### Variables de Entorno Requeridas
+
+```bash
+# AI Services
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+
+# External Services
+STRIPE_SECRET_KEY=sk_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+
+# Threat Intelligence
+VIRUSTOTAL_API_KEY=...
+MISP_URL=https://misp.example.com
+MISP_AUTH_KEY=...
+
+# Cloud Connectors
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+AZURE_CLIENT_ID=...
+AZURE_CLIENT_SECRET=...
+```
+
+### Configuración de Conectores
+
+```yaml
+# config/connectors.yml
+connectors:
+  - name: "AWS CloudWatch"
+    type: "aws_cloudwatch"
+    enabled: true
+    config:
+      region: "us-east-1"
+      log_groups:
+        - "/aws/lambda/security-function"
+        - "/aws/apigateway/access-logs"
+    
+  - name: "Splunk Enterprise"
+    type: "splunk"
+    enabled: true
+    config:
+      host: "splunk.company.com"
+      port: 8089
+      username: "soc_user"
+      index: "security"
+```
+
+## Monitoreo y Métricas
+
+### Métricas de Integración
+
+- **Connector Health**: Estado de conectores
+- **Data Ingestion Rate**: Velocidad de ingesta de datos
+- **Processing Latency**: Latencia de procesamiento
+- **Error Rates**: Tasas de error por servicio
+- **AI Usage**: Uso de servicios de IA
+- **Cost Tracking**: Seguimiento de costos
+
+### Alertas del Sistema
+
+- **Connector Down**: Conector desconectado
+- **High Error Rate**: Alta tasa de errores
+- **Processing Backlog**: Acumulación de tareas
+- **Budget Exceeded**: Presupuesto de IA excedido
+- **Disk Space Low**: Espacio en disco bajo
+
+## Mejores Prácticas
+
+### 1. **Error Handling**
+- Manejo robusto de errores de red
+- Reintentos con backoff exponencial
+- Logging detallado de errores
+
+### 2. **Security**
+- Encriptación de credenciales en reposo
+- Rotación automática de API keys
+- Validación de entrada de datos
+
+### 3. **Performance**
+- Caching de responses frecuentes
+- Paralelización de tareas independientes
+- Monitoreo de performance
+
+### 4. **Maintainability**
+- Documentación de APIs
+- Tests de integración
+- Versionado de configuraciones
+
+---
+
+Las integraciones están diseñadas para ser modulares, escalables y resilientes, permitiendo extender fácilmente las capacidades del SOC con nuevas fuentes de datos y servicios.
 - **LOG**: Logs de sistema y aplicaciones
 - **THREAT_INTEL**: Inteligencia de amenazas
 - **METRIC**: Métricas de performance y estado
