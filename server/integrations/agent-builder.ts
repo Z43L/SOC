@@ -70,34 +70,15 @@ export interface AgentBuildResult {
 export class AgentBuilder {
   private readonly buildDir: string;
   private readonly outputDir: string;
-  private readonly templatesDir: string;
   
   constructor() {
     // Directorios de trabajo
     this.buildDir = path.join(os.tmpdir(), 'soc-agent-builder');
     this.outputDir = path.join(process.cwd(), 'public', 'downloads'); // <-- fix here
-    this.templatesDir = path.join(process.cwd(), 'agents');
     // Crear directorios si no existen
     this.ensureDirectories();
   }
 
-  /**
-   * Asegura que las dependencias del agente estén instaladas
-   */
-  private async ensureAgentDependencies() {
-    const agentsPath = path.join(process.cwd(), 'agents');
-    const nodeModulesPath = path.join(agentsPath, 'node_modules');
-    if (!fs.existsSync(nodeModulesPath)) {
-      console.log('Installing agent dependencies...');
-      try {
-        await exec('npm install', { cwd: agentsPath });
-      } catch (error) {
-        console.error('Error installing agent dependencies:', error);
-        throw new Error('Failed to install agent dependencies');
-      }
-    }
-  }
-  
   /**
    * Asegura que los directorios necesarios existan
    */
@@ -127,8 +108,6 @@ export class AgentBuilder {
       const buildPath = path.join(this.buildDir, agentId);
       await mkdir(buildPath, { recursive: true });
 
-      // Asegurar dependencias necesarias para construir el agente
-      await this.ensureAgentDependencies();
       
       // Generar configuración del agente
       const agentConfig = this.generateAgentConfig(config, agentId);
@@ -259,17 +238,14 @@ export class AgentBuilder {
     downloadUrl?: string;
   }> {
     try {
-      let outputFilePath: string; // Declare before switch
+      let outputFilePath: string;
       let outputFileName: string;
-      // Lanzar build automatizado antes de empaquetar el binario
-      const { stdout, stderr } = await exec(`npm run build:agent:${os}`, { cwd: path.join(process.cwd(), 'agents') });
-      console.log('BUILD STDOUT:', stdout);
-      console.error('BUILD STDERR:', stderr);
+      const agentDir = path.join(buildPath, 'agent');
+      const binaryName = this.getPrebuiltFileName(os);
+      const buildOutput = path.join(agentDir, binaryName);
       // Crear archivos necesarios para cada SO
       switch (os) {
         case AgentOS.WINDOWS: {
-          // Correct output path: dist/agents/soc-agent-windows.exe (relative to project root)
-          const buildOutput = path.join(process.cwd(), 'dist', 'agents', 'soc-agent-windows.exe');
           const exeName = `soc-agent-windows-${agentId}.exe`;
           outputFilePath = path.join(this.outputDir, exeName);
           outputFileName = exeName;
@@ -277,7 +253,6 @@ export class AgentBuilder {
           break;
         }
         case AgentOS.MACOS: {
-          const buildOutput = path.join(process.cwd(), 'dist', 'agents', 'soc-agent-macos');
           const exeName = `soc-agent-macos-${agentId}`;
           outputFilePath = path.join(this.outputDir, exeName);
           outputFileName = exeName;
@@ -285,7 +260,6 @@ export class AgentBuilder {
           break;
         }
         case AgentOS.LINUX: {
-          const buildOutput = path.join(process.cwd(), 'dist', 'agents', 'soc-agent-linux');
           const exeName = `soc-agent-linux-${agentId}`;
           outputFilePath = path.join(this.outputDir, exeName);
           outputFileName = exeName;
@@ -362,48 +336,10 @@ if ($serviceExists) {
     Start-Sleep -Seconds 2
 }
 
-# Detectar Node.js en el sistema
-Write-Host "Detectando Node.js..."
-$nodePath = $null
-
-# Intentar encontrar node.exe en el PATH
-try {
-    $nodeCommand = Get-Command node -ErrorAction Stop
-    $nodePath = $nodeCommand.Source
-    Write-Host "Node.js encontrado en: $nodePath" -ForegroundColor Green
-} catch {
-    # Buscar en ubicaciones comunes de Node.js
-    $commonPaths = @(
-        "$env:ProgramFiles\\nodejs\\node.exe",
-        "$env:ProgramFiles(x86)\\nodejs\\node.exe",
-        "$env:LOCALAPPDATA\\Programs\\Microsoft VS Code\\node.exe",
-        "$env:APPDATA\\npm\\node.exe"
-    )
-    
-    foreach ($path in $commonPaths) {
-        if (Test-Path $path) {
-            $nodePath = $path
-            Write-Host "Node.js encontrado en: $nodePath" -ForegroundColor Green
-            break
-        }
-    }
-}
-
-if (-not $nodePath) {
-    Write-Host "Error: Node.js no encontrado en el sistema." -ForegroundColor Red
-    Write-Host "Por favor, instale Node.js desde https://nodejs.org antes de continuar." -ForegroundColor Yellow
-    exit 1
-}
-
-# Verificar que el archivo agent-windows.js existe
-$agentScript = "$installDir\\agent-windows.js"
-if (-not (Test-Path $agentScript)) {
-    Write-Host "Error: Archivo del agente no encontrado en $agentScript" -ForegroundColor Red
-    exit 1
-}
 
 # Usar NSSM para crear/actualizar el servicio
 $nssmPath = "$installDir\\nssm.exe"
+$agentExe = "$installDir\\soc-agent-windows.exe"
 
 if (-not (Test-Path $nssmPath)) {
     Write-Host "Error: NSSM no encontrado en $nssmPath" -ForegroundColor Red
@@ -412,8 +348,7 @@ if (-not (Test-Path $nssmPath)) {
 
 if ($serviceExists) {
     # Actualizar servicio existente
-    & $nssmPath set $serviceName Application "$nodePath"
-    & $nssmPath set $serviceName AppParameters "$agentScript"
+    & $nssmPath set $serviceName Application "$agentExe"
     & $nssmPath set $serviceName AppDirectory "$installDir"
     & $nssmPath set $serviceName DisplayName "SOC Intelligent Security Agent"
     & $nssmPath set $serviceName Description "Monitoriza el sistema y envía datos de seguridad a la plataforma SOC-Inteligente"
@@ -423,7 +358,7 @@ if ($serviceExists) {
     & $nssmPath set $serviceName AppStderr "$dataDir\\agent-stderr.log"
 } else {
     # Crear nuevo servicio
-    & $nssmPath install $serviceName "$nodePath" "$agentScript"
+    & $nssmPath install $serviceName "$agentExe"
     & $nssmPath set $serviceName DisplayName "SOC Intelligent Security Agent"
     & $nssmPath set $serviceName Description "Monitoriza el sistema y envía datos de seguridad a la plataforma SOC-Inteligente"
     & $nssmPath set $serviceName Start SERVICE_AUTO_START
@@ -464,8 +399,7 @@ try {
     Write-Host "El servicio fue instalado pero falló al iniciar." -ForegroundColor Yellow
     Write-Host "" -ForegroundColor Yellow
     Write-Host "Posibles causas:" -ForegroundColor Yellow
-    Write-Host "1. Verifique que Node.js esté funcionando: $nodePath --version" -ForegroundColor Yellow
-    Write-Host "2. Verifique el archivo del agente: $agentScript" -ForegroundColor Yellow
+    Write-Host "1. Verifique el archivo del agente: $agentExe" -ForegroundColor Yellow
     Write-Host "3. Revise los logs de error en: $dataDir\\agent-stderr.log" -ForegroundColor Yellow
     Write-Host "4. Intente iniciar el servicio manualmente: Start-Service -Name $serviceName" -ForegroundColor Yellow
     Write-Host "" -ForegroundColor Yellow
@@ -944,127 +878,60 @@ echo "Desinstalación completada."
    */
   private async compileAgent(outputDir: string, os: AgentOS): Promise<void> {
     try {
-      // Nombre del archivo principal según SO
-      const mainFile = this.getAgentMainFile(os);
-      
-      // Copiar código fuente necesario
-      await exec(`cp -r ${path.join(this.templatesDir, 'common')} ${outputDir}/`);
-      await exec(`cp -r ${path.join(this.templatesDir, os.toString())} ${outputDir}/`);
-      
-      // Crear archivo de punto de entrada
-      const agentEntryPoint = `
-import path from 'path';
-const mainModulePath = path.join(__dirname, '${os.toString()}', '${mainFile}');
-import { ${this.getAgentClassName(os)} as AgentClass } from mainModulePath;
-const { AgentConfig, loadConfig } = require('./common/agent-config');
-
-// Para ser autosuficiente, exportamos las clases necesarias
-exports.${this.getAgentClassName(os)} = AgentClass;
-exports.AgentConfig = AgentConfig;
-exports.loadConfig = loadConfig;
-`;
-      
-      await writeFile(path.join(outputDir, 'agent-core.js'), agentEntryPoint, 'utf-8');
-      
-      // Crear ejecutable según SO
-      switch (os) {
-        case AgentOS.WINDOWS:
-          // Para Windows, basta con el archivo .js
-          break;
-          
-        case AgentOS.MACOS:
-        case AgentOS.LINUX:
-          // Para macOS y Linux, crear un pequeño script ejecutable
-          const unixScript = `#!/usr/bin/env node
-require('./agent-core');
-
-const { ${this.getAgentClassName(os)} } = require('./agent-core');
-const configPath = '${this.getDefaultConfigPath(os)}';
-
-// Iniciar el agente
-const agent = new ${this.getAgentClassName(os)}(configPath);
-
-async function main() {
-  try {
-    const initialized = await agent.initialize();
-    if (!initialized) {
-      console.error('Failed to initialize agent, exiting');
-      process.exit(1);
-    }
-    
-    const started = await agent.start();
-    if (!started) {
-      console.error('Failed to start agent, exiting');
-      process.exit(1);
-    }
-    
-    console.log('Agent started successfully');
-    
-    // Manejar señales para cierre limpio
-    process.on('SIGINT', async () => {
-      console.log('Received SIGINT, shutting down...');
-      await agent.stop();
-      process.exit(0);
-    });
-    
-    process.on('SIGTERM', async () => {
-      console.log('Received SIGTERM, shutting down...');
-      await agent.stop();
-      process.exit(0);
-    });
-  } catch (error) {
-    console.error('Unhandled error in agent:', error);
-    process.exit(1);
-  }
-}
-
-// Iniciar agente
-main().catch(error => {
-  console.error('Fatal error:', error);
-  process.exit(1);
-});
-`;
-          
-          const executableName = os === AgentOS.MACOS ? 'agent-macos' : 'agent-linux';
-          await writeFile(path.join(outputDir, executableName), unixScript, 'utf-8');
-          await exec(`chmod +x ${path.join(outputDir, executableName)}`);
-          break;
-      }
+      const version = await this.getLatestAgentVersion();
+      await this.downloadAgentBinary(os, outputDir, version);
     } catch (error) {
-      console.error(`Error compiling agent for ${os}:`, error);
+      console.error(`Error retrieving agent binary for ${os}:`, error);
       throw error;
     }
   }
   
+
+
   /**
-   * Obtiene el nombre del archivo principal del agente según el SO
+   * Obtiene la última versión publicada del agente desde GitHub
    */
-  private getAgentMainFile(os: AgentOS): string {
+  private async getLatestAgentVersion(): Promise<string> {
+    const repo = process.env.AGENT_REPO || 'Z43L/SOC';
+    const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch latest release');
+    }
+    const data = await res.json();
+    return data.tag_name as string;
+  }
+
+  /**
+   * Devuelve el nombre de archivo del binario precompilado
+   */
+  private getPrebuiltFileName(os: AgentOS): string {
     switch (os) {
       case AgentOS.WINDOWS:
-        return 'windows-agent.ts';
+        return 'soc-agent-windows.exe';
       case AgentOS.MACOS:
-        return 'macos-agent.ts';
+        return 'soc-agent-macos';
       case AgentOS.LINUX:
-        return 'linux-agent.ts';
+        return 'soc-agent-linux';
       default:
         throw new Error(`Unsupported OS: ${os}`);
     }
   }
-  
+
   /**
-   * Obtiene el nombre de la clase del agente según el SO
+   * Descarga el binario precompilado del agente
    */
-  private getAgentClassName(os: AgentOS): string {
-    switch (os) {
-      case AgentOS.WINDOWS:
-        return 'WindowsAgent';
-      case AgentOS.MACOS:
-        return 'MacOSAgent';
-      case AgentOS.LINUX:
-        return 'LinuxAgent';
-      default:
-        throw new Error(`Unsupported OS: ${os}`);
+  private async downloadAgentBinary(os: AgentOS, outputDir: string, version: string): Promise<void> {
+    const repo = process.env.AGENT_REPO || 'Z43L/SOC';
+    const fileName = this.getPrebuiltFileName(os);
+    const url = `https://github.com/${repo}/releases/download/${version}/${fileName}`;
+    const dest = path.join(outputDir, fileName);
+    await this.downloadFile(url, dest);
+    await exec(`chmod +x ${dest}`).catch(() => {});
+    // Copia con nombre esperado por los scripts de instalación
+    if (os === AgentOS.LINUX) {
+      await fs.promises.copyFile(dest, path.join(outputDir, 'agent-linux'));
+    } else if (os === AgentOS.MACOS) {
+      await fs.promises.copyFile(dest, path.join(outputDir, 'agent-macos'));
     }
   }
   

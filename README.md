@@ -32,6 +32,10 @@ El proyecto está organizado en varios directorios principales, cada uno con un 
 *   **`shared/`:** Incluye código que es compartido tanto por el `server` como potencialmente por el `client` u otros componentes. Un ejemplo clave es `shared/schema.ts`, que define el esquema de la base de datos y los tipos de datos comunes.
     *   *Referencia:* `shared/schema.ts`
 
+## Compilación Automática de Agentes
+
+Los binarios de los agentes se generan de forma automática mediante un workflow de **GitHub Actions** definido en `.github/workflows/build-agents.yml`. Al crear un tag de versión se ejecuta la compilación para Linux, Windows y macOS y se publica una nueva *release* con los ejecutables resultantes. Estos artefactos se descargan desde la aplicación para personalizarlos con la configuración de cada organización.
+
 ## Componentes del Servidor (`server/`)
 
 El directorio `server/` contiene el corazón de la lógica de backend de la plataforma SOC Inteligente SaaS. Está desarrollado en Node.js utilizando TypeScript, lo que proporciona un tipado estático para un desarrollo más robusto y mantenible. A continuación, se describen sus subcomponentes principales:
