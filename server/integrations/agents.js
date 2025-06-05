@@ -25,17 +25,11 @@ const pushNotificationConfig = {
 };
 async function pushConfigurationUpdate(agentId, config) {
     try {
-        // Get agent to find organizationId
-        const agent = await storage.getAgent(agentId);
-        if (!agent) {
-            throw new Error('Agent not found');
-        }
-        
         const response = await fetch(pushNotificationConfig.endpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${generateAgentToken(agentId.toString(), agent.userId || 0, agent.organizationId)}`
+                'Authorization': `Bearer ${generateAgentToken(agentId, 0)}`
             },
             body: JSON.stringify(config)
         });
@@ -139,7 +133,7 @@ export async function registerAgent(registrationKey, hostname, ipAddress, operat
             };
         }
         // Generar token JWT para este agente
-        const token = generateAgentToken(newAgent.agentIdentifier, userId, user.organizationId);
+        const token = generateAgentToken(newAgent.id.toString(), userId);
         // Configuración a devolver al agente
         const agentConfig = {
             heartbeatInterval: 60, // cada minuto
@@ -150,7 +144,7 @@ export async function registerAgent(registrationKey, hostname, ipAddress, operat
         };
         return {
             success: true,
-            agentId: newAgent.agentIdentifier, // Use agentIdentifier instead of numeric id
+            agentId: newAgent.id.toString(),
             token,
             config: agentConfig
         };
