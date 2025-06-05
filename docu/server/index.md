@@ -260,6 +260,32 @@ POST /api/alerts 201 in 123ms :: {"id":42,"status":"created"}
 
 **Nota**: `initializeDatabase()` está comentado - se ejecuta manualmente o en deployment
 
+#### Detalles de cada paso:
+
+**a) Servidor HTTP Base**:
+```typescript
+const httpServer = http.createServer(app);
+```
+- Crea servidor HTTP que sirve de base para Express y WebSockets
+- Permite compartir el mismo puerto para HTTP y WebSocket connections
+- Necesario para Socket.io que requiere upgrade de HTTP a WebSocket
+
+**b) Registro de Rutas**:
+```typescript
+await registerRoutes(app);
+```
+- Función asíncrona que registra todas las rutas API
+- Incluye rutas para: usuarios, alertas, agentes, configuración, etc.
+- Se ejecuta antes de inicializar WebSockets para asegurar que las rutas estén disponibles
+
+**c) Inicialización WebSocket**:
+```typescript
+initWebSocket(httpServer);
+```
+- Configura Socket.io para comunicación bidireccional en tiempo real
+- Permite notificaciones push al frontend
+- Usado para actualizaciones de alertas, estado de agentes, etc.
+
 ### 2. Inicialización de SOAR WebSocket
 
 ```typescript
@@ -277,6 +303,11 @@ try {
 - **WebSocket Service**: Comunicación en tiempo real para playbooks automatizados
 - **Error Handling**: Captura errores sin detener el servidor
 
+#### Detalles técnicos:
+- **Dynamic Import**: Carga el módulo solo cuando es necesario (lazy loading)
+- **Graceful Degradation**: Si falla SOAR, el servidor continúa funcionando
+- **Logging**: Registra éxito/fallo para debugging
+
 ### 3. Error Handler Global
 
 ```typescript
@@ -292,12 +323,22 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 **Funcionalidad**:
 - **Error Normalization**: Normaliza diferentes formatos de error
 - **HTTP Status**: Extrae código de estado HTTP (default: 500)
-- **JSON Response**: Responde con formato JSON consistente
-- **Error Propagation**: Re-lanza el error para logging adicional
+- **JSON Response**: Respuesta estructurada para el cliente
+- **Re-throw**: Propaga el error para logging adicional
+
+#### Ejemplo de respuesta de error:
+```json
+{
+  "message": "User not found"
+}
+```
 
 ### 4. Configuración de Entorno
 
 ```typescript
+// importantly only setup vite in development and after
+// setting up all the other routes so the catch-all route
+// doesn't interfere with the other routes
 if (app.get("env") === "development") {
   await setupVite(app, httpServer as any);
 } else {
@@ -305,13 +346,19 @@ if (app.get("env") === "development") {
 }
 ```
 
-**Entornos**:
-- **Development**: Configura Vite dev server con HMR (Hot Module Replacement)
-- **Production**: Sirve archivos estáticos compilados
+**Lógica Condicional**:
+- **Development**: Usa Vite dev server con HMR (Hot Module Replacement)
+- **Production**: Sirve archivos estáticos pre-compilados
+
+#### ¿Por qué esta secuencia?
+1. **Orden importa**: Vite debe ir AL FINAL para que su catch-all route no interfiera
+2. **Development Experience**: HMR permite cambios inmediatos sin recargar
+3. **Production Optimization**: Archivos estáticos optimizados y minificados
 
 ### 5. Inicialización del Servidor
 
 ```typescript
+// ALWAYS serve the app on port 5000
 const port = 5000;
 httpServer.listen({
   port,
@@ -319,16 +366,20 @@ httpServer.listen({
   reusePort: true,
 }, async () => {
   log(`serving on port ${port}`);
+  // Callback ejecutado cuando el servidor está listo
+});
 ```
 
-**Configuración de Red**:
-- **port**: 5000 (fijo para el proyecto)
-- **host**: "0.0.0.0" (acepta conexiones desde cualquier IP)
-- **reusePort**: true (permite reiniciar servidor sin esperar timeout)
+**Configuración del Servidor**:
+- **Puerto fijo**: 5000 (hardcoded para consistencia)
+- **Host 0.0.0.0**: Permite conexiones desde cualquier IP
+- **reusePort**: Permite reinicio rápido sin esperar TIME_WAIT
 
 ### 6. Servicios Post-Inicio
 
-#### A) Worker de Procesamiento de Alertas
+Una vez que el servidor está escuchando, se inicializan varios servicios en background:
+
+#### A) Procesamiento de Alertas
 
 ```typescript
 // Start the enrichment worker immediately
@@ -337,9 +388,14 @@ processAlerts().catch(err => console.error('Error processing alerts:', err));
 startAnalyticsRollupWorker();
 ```
 
-**Servicios**:
-- **processAlerts()**: Worker que procesa y enriquece alertas
-- **startAnalyticsRollupWorker()**: Worker que agrega datos de analíticas
+**Worker de Alertas**:
+- **processAlerts()**: Procesa alertas en cola de forma asíncrona
+- **Error Handling**: Captura errores sin detener el servidor
+- **Immediate Start**: Se ejecuta inmediatamente al arrancar
+
+**Analytics Rollup**:
+- **Agregación de métricas**: Procesa datos para dashboards
+- **Background Processing**: No bloquea peticiones HTTP
 
 #### B) Configuración de Polling Periódico
 
@@ -361,12 +417,12 @@ try {
 }
 ```
 
-**Configuración**:
-- **enrichersPath**: Ruta al archivo de configuración YAML
+**Configuración YAML**:
+- **enrichers.yaml**: Archivo de configuración para intervalos de polling
 - **pollInterval**: Intervalo de polling (default: 60000ms = 1 minuto)
 - **Fallback**: Si falla la lectura del config, usa 60 segundos por defecto
 
-#### C) Inicialización de SOAR PlaybookExecutor
+#### C) Inicialización SOAR PlaybookExecutor
 
 ```typescript
 try {
@@ -377,7 +433,9 @@ try {
 }
 ```
 
-**Propósito**: Ejecutor de playbooks de seguridad automatizados
+**PlaybookExecutor**:
+- **Automatización SOAR**: Ejecuta playbooks de respuesta automática
+- **Event-Driven**: Responde a eventos de alertas y incidentes
 
 #### D) AI Alert Listener
 
@@ -391,7 +449,9 @@ try {
 }
 ```
 
-**Propósito**: Listener que procesa alertas con inteligencia artificial
+**AI Alert Listener**:
+- **Machine Learning**: Procesamiento inteligente de alertas
+- **Event Subscription**: Se suscribe a eventos del sistema
 
 #### E) PlaybookTriggerEngine
 
@@ -404,7 +464,9 @@ try {
 }
 ```
 
-**Propósito**: Motor que detecta condiciones para trigger automático de playbooks
+**Trigger Engine**:
+- **Automatic SOAR**: Activación automática de playbooks
+- **Rule-Based**: Basado en reglas configurables
 
 ## Variables de Entorno Utilizadas
 
