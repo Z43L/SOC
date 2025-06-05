@@ -4,7 +4,7 @@
   "description": "SOC Intelligent Agent",
   "main": "main-simple.ts",
   "scripts": {
-    "build": "tsc -p . && shx mv dist/main-simple.js dist/main-simple.cjs",
+    "build": "tsc -p . && shx cp dist/main-simple.js dist/main-simple.cjs",
     "clean": "rimraf dist",
     "build:windows": "tsc main-windows.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop --downlevelIteration",
     "build:linux": "tsc main-simple.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop --downlevelIteration",
