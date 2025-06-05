@@ -80,6 +80,23 @@ export class AgentBuilder {
     // Crear directorios si no existen
     this.ensureDirectories();
   }
+
+  /**
+   * Asegura que las dependencias del agente estén instaladas
+   */
+  private async ensureAgentDependencies() {
+    const agentsPath = path.join(process.cwd(), 'agents');
+    const nodeModulesPath = path.join(agentsPath, 'node_modules');
+    if (!fs.existsSync(nodeModulesPath)) {
+      console.log('Installing agent dependencies...');
+      try {
+        await exec('npm install', { cwd: agentsPath });
+      } catch (error) {
+        console.error('Error installing agent dependencies:', error);
+        throw new Error('Failed to install agent dependencies');
+      }
+    }
+  }
   
   /**
    * Asegura que los directorios necesarios existan
@@ -109,6 +126,9 @@ export class AgentBuilder {
       // Crear directorio de construcción único para este agente
       const buildPath = path.join(this.buildDir, agentId);
       await mkdir(buildPath, { recursive: true });
+
+      // Asegurar dependencias necesarias para construir el agente
+      await this.ensureAgentDependencies();
       
       // Generar configuración del agente
       const agentConfig = this.generateAgentConfig(config, agentId);
