@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm';
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
+import { setTimeout as wait } from 'timers/promises';
 
 // Crear directorio de descargas si no existe
 const downloadsDir = path.join(process.cwd(), 'public', 'downloads');
@@ -523,6 +524,76 @@ export async function generateAgentRegistrationKey(userId: number): Promise<stri
 }
 
 /**
+ * Lanza el flujo de GitHub Actions para compilar el agente
+ */
+async function triggerGithubAgentBuild(os: string): Promise<{ success: boolean; message: string; downloadUrl?: string }> {
+  const token = process.env.GITHUB_TOKEN;
+  const repo = process.env.AGENT_REPO || 'Z43L/SOC';
+  const workflow = process.env.AGENT_BUILD_WORKFLOW || 'build-agents.yml';
+
+  if (!token) {
+    return { success: false, message: 'GITHUB_TOKEN not configured' };
+  }
+
+  const headers = {
+    'Accept': 'application/vnd.github+json',
+    'Authorization': `Bearer ${token}`
+  } as any;
+
+  const dispatchRes = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/${workflow}/dispatches`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ ref: 'main', inputs: { os } })
+  });
+
+  if (!dispatchRes.ok) {
+    const text = await dispatchRes.text();
+    return { success: false, message: `Failed to dispatch workflow: ${text}` };
+  }
+
+  // Poll workflow runs to find the most recent run
+  const start = Date.now();
+  let runId: number | null = null;
+
+  while (Date.now() - start < 10 * 60 * 1000) { // up to 10 minutes
+    const runsRes = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/${workflow}/runs?per_page=1`, { headers });
+    if (runsRes.ok) {
+      const data = await runsRes.json();
+      const run = data.workflow_runs?.[0];
+      if (run && new Date(run.created_at).getTime() >= start) {
+        runId = run.id;
+        if (run.status === 'completed') {
+          if (run.conclusion !== 'success') {
+            return { success: false, message: 'Workflow failed' };
+          }
+          break;
+        }
+      }
+    }
+    await wait(15000);
+  }
+
+  if (!runId) {
+    return { success: false, message: 'Build run not found' };
+  }
+
+  // Retrieve artifacts
+  const artRes = await fetch(`https://api.github.com/repos/${repo}/actions/runs/${runId}/artifacts`, { headers });
+  if (!artRes.ok) {
+    const text = await artRes.text();
+    return { success: false, message: `Failed to get artifacts: ${text}` };
+  }
+  const arts = await artRes.json();
+  if (!arts.artifacts || arts.artifacts.length === 0) {
+    return { success: false, message: 'No artifacts found' };
+  }
+
+  const artifact = arts.artifacts.find((a: any) => a.name.includes(os)) || arts.artifacts[0];
+
+  return { success: true, message: 'Build completed', downloadUrl: artifact.archive_download_url };
+}
+
+/**
  * Construye un paquete de agente para descarga
  */
 export async function buildAgentPackage(
@@ -646,18 +717,25 @@ export async function buildAgentPackage(
       agentRecord = await storage.createAgent(agentData);
     }
     
-    // Configurar la construcción del agente
-    const config: AgentBuildConfig = {
-      os: agentOS,
-      serverUrl,
-      registrationKey,
-      userId,
-      customName,
-      capabilities
-    };
-    
     // Construir el agente
-    const result = await agentBuilder.buildAgent(config);
+    let result: { success: boolean; message: string; downloadUrl?: string; agentId?: string };
+    if (process.env.USE_GITHUB_FLOW === 'true') {
+      result = await triggerGithubAgentBuild(operatingSystem.toLowerCase());
+      // Adjuntar ID registrado
+      if (result.success && agentRecord) {
+        result.agentId = agentRecord.id.toString();
+      }
+    } else {
+      const config: AgentBuildConfig = {
+        os: agentOS,
+        serverUrl,
+        registrationKey,
+        userId,
+        customName,
+        capabilities
+      };
+      result = await agentBuilder.buildAgent(config);
+    }
     
     return {
       success: result.success,

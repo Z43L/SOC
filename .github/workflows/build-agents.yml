@@ -6,6 +6,11 @@ on:
     tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      os:
+        description: "Target OS"
+        required: false
 
 jobs:
   build-linux:

@@ -203,6 +203,11 @@ SERVER_URL=https://your-soc-server.com
 MAX_CONCURRENT_BUILDS=2
 BUILD_TOKEN_VALIDITY_HOURS=24
 
+# GitHub Actions integration
+USE_GITHUB_FLOW=true
+GITHUB_TOKEN=ghp_yourtoken
+AGENT_BUILD_WORKFLOW=build-agents.yml
+
 # Signing Certificates (see Security section above)
 ```
 
