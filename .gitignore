@@ -9,3 +9,6 @@ vite.config.ts.*
 *.log
 *.local
 *.local.*
+
+# Agent build artifacts
+public/downloads/*.zip
