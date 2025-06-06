@@ -264,11 +264,13 @@ class Agent {
       const response = await this.transport.request({
         endpoint: this.config.registrationEndpoint,
         method: 'POST',
+        headers: {
+          'x-registration-token': this.config.organizationKey
+        },
         data: {
           hostname,
           os: platform,
           arch,
-          organizationKey: this.config.organizationKey,
           version: AGENT_VERSION
         }
       });
@@ -283,7 +285,7 @@ class Agent {
       // Actualizar transporte con el nuevo token
       this.transport = new Transport({
         serverUrl: this.config.serverUrl,
-        token: (response.data as any).jwtAgent,
+        token: (response.data as any).authToken,
         serverCA: (response.data as any).serverRootCA,
         enableCompression: this.config.compressionEnabled
       }, this.config);

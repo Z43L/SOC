@@ -73,6 +73,9 @@ export function initWebSocket(server) {
         else if (pathname === '/api/ws/connectors') {
             handleConnectorsConnection(ws, clientIP);
         }
+        else if (pathname === '/api/ws/agents') {
+            handleAgentsConnection(ws, clientIP, req);
+        }
         else {
             console.log(`[WebSocket] Unknown endpoint: ${pathname}`);
             removeConnection(clientIP);
@@ -220,6 +223,304 @@ function handleConnectorsConnection(ws, clientIP) {
         removeConnection(clientIP);
     });
 }
+
+function handleAgentsConnection(ws, clientIP, req) {
+    console.log('[WebSocket] Agent client connected');
+    let messageCount = 0;
+    const maxMessageSize = 1024 * 100; // 100KB max for agent messages (logs can be large)
+    
+    // Extract agent token from query params for authentication
+    const query = url.parse(req.url, true).query;
+    const token = query.token;
+    
+    // Validate token
+    if (!token) {
+        console.warn(`[WebSocket] Agent connection without token from ${clientIP}`);
+        ws.close(1008, 'Authentication token required');
+        removeConnection(clientIP);
+        return;
+    }
+    
+    console.log(`[WebSocket] Agent authenticated with token: ${token.substring(0, 8)}...`);
+    
+    ws.on('message', async (data) => {
+        try {
+            // Rate limiting
+            if (!checkMessageRateLimit(clientIP)) {
+                ws.close(1008, 'Rate limit exceeded');
+                return;
+            }
+            
+            // Message size validation
+            if (data.length > maxMessageSize) {
+                console.warn(`[WebSocket] Agent message too large from ${clientIP}: ${data.length} bytes`);
+                ws.close(1009, 'Message too large');
+                return;
+            }
+            
+            const message = JSON.parse(data.toString());
+            
+            // Basic message validation
+            if (typeof message !== 'object' || message === null) {
+                console.warn(`[WebSocket] Invalid agent message format from ${clientIP}`);
+                ws.send(JSON.stringify({
+                    type: 'error',
+                    message: 'Invalid message format'
+                }));
+                return;
+            }
+            
+            console.log('[WebSocket] Agent message:', {
+                type: message.type,
+                agentId: message.agentId,
+                from: clientIP,
+                messageId: ++messageCount
+            });
+            
+            // Handle different message types from agents
+            await handleAgentMessage(message, ws, clientIP, token);
+            
+        } catch (error) {
+            console.error(`[WebSocket] Error parsing agent message from ${clientIP}:`, {
+                error: error instanceof Error ? error.message : 'Unknown error',
+                dataLength: data.length,
+                messageCount
+            });
+            
+            // Send error response if connection is still open
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'error',
+                    message: 'Message parsing failed'
+                }));
+            }
+        }
+    });
+    
+    ws.on('close', (code, reason) => {
+        console.log(`[WebSocket] Agent client disconnected: ${code} ${reason}`);
+        removeConnection(clientIP);
+    });
+    
+    ws.on('error', (error) => {
+        console.error(`[WebSocket] Agent connection error from ${clientIP}:`, error);
+        removeConnection(clientIP);
+    });
+    
+    // Send welcome message to agent
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'welcome',
+            message: 'WebSocket connection established',
+            timestamp: new Date().toISOString()
+        }));
+    }
+}
+
+async function handleAgentMessage(message, ws, clientIP, token) {
+    try {
+        switch (message.type) {
+            case 'heartbeat':
+                await handleAgentHeartbeat(message, ws, clientIP, token);
+                break;
+            case 'log_batch':
+            case 'events':
+                await handleAgentLogBatch(message, ws, clientIP, token);
+                break;
+            case 'status_update':
+                await handleAgentStatusUpdate(message, ws, clientIP, token);
+                break;
+            case 'metrics':
+                await handleAgentMetrics(message, ws, clientIP, token);
+                break;
+            default:
+                console.warn(`[WebSocket] Unknown agent message type: ${message.type} from ${clientIP}`);
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'error',
+                        message: `Unknown message type: ${message.type}`
+                    }));
+                }
+        }
+    } catch (error) {
+        console.error(`[WebSocket] Error handling agent message:`, error);
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'error',
+                message: 'Internal server error'
+            }));
+        }
+    }
+}
+
+async function handleAgentHeartbeat(message, ws, clientIP, token) {
+    console.log(`[WebSocket] Heartbeat from agent ${message.agentId || 'unknown'}`);
+    
+    try {
+        // Import storage dynamically to avoid circular dependencies
+        const { storage } = await import('./storage.js');
+        
+        // Find agent in connectors and update heartbeat
+        const connectors = await storage.getConnectors();
+        const agentConnector = connectors.find(c => c.type === 'agent');
+        
+        if (agentConnector && agentConnector.configuration.agents) {
+            const agent = agentConnector.configuration.agents[message.agentId];
+            if (agent) {
+                agent.lastHeartbeat = new Date().toISOString();
+                agent.status = 'active';
+                
+                // Update metrics if provided
+                if (message.metrics) {
+                    agent.metrics = message.metrics;
+                }
+                
+                // Update connector configuration
+                await storage.updateConnector(agentConnector.id, {
+                    configuration: agentConnector.configuration
+                });
+                
+                console.log(`[WebSocket] Updated agent ${message.agentId} heartbeat`);
+            }
+        }
+    } catch (error) {
+        console.error(`[WebSocket] Error updating agent heartbeat:`, error);
+    }
+    
+    // Send heartbeat acknowledgment
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'heartbeat_ack',
+            timestamp: new Date().toISOString(),
+            status: 'ok'
+        }));
+    }
+}
+
+async function handleAgentLogBatch(message, ws, clientIP, token) {
+    console.log(`[WebSocket] Log batch from agent ${message.agentId || 'unknown'}: ${message.events?.length || 0} events`);
+    
+    try {
+        // Import needed modules
+        const { storage } = await import('./storage.js');
+        const { AgentConnector } = await import('./integrations/connectors/agent.js');
+        
+        // Find the agent connector
+        const connectors = await storage.getConnectors();
+        const agentConnectorConfig = connectors.find(c => c.type === 'agent');
+        
+        if (agentConnectorConfig && message.events && message.events.length > 0) {
+            // Create a temporary AgentConnector instance to process events
+            const connector = new AgentConnector(agentConnectorConfig);
+            
+            // Add events to pending queue and process them
+            for (const event of message.events) {
+                // Ensure event has required fields
+                if (!event.agentId) {
+                    event.agentId = message.agentId;
+                }
+                if (!event.timestamp) {
+                    event.timestamp = new Date().toISOString();
+                }
+                
+                connector.pendingEvents.push(event);
+            }
+            
+            // Process the events immediately
+            await connector.processAgentEvents();
+            
+            console.log(`[WebSocket] Processed ${message.events.length} events from agent ${message.agentId}`);
+        }
+    } catch (error) {
+        console.error(`[WebSocket] Error processing agent log batch:`, error);
+    }
+    
+    // Send acknowledgment
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'log_batch_ack',
+            processed: message.events?.length || 0,
+            timestamp: new Date().toISOString()
+        }));
+    }
+}
+
+async function handleAgentStatusUpdate(message, ws, clientIP, token) {
+    console.log(`[WebSocket] Status update from agent ${message.agentId || 'unknown'}: ${message.status}`);
+    
+    try {
+        // Import storage
+        const { storage } = await import('./storage.js');
+        
+        // Find agent in connectors and update status
+        const connectors = await storage.getConnectors();
+        const agentConnector = connectors.find(c => c.type === 'agent');
+        
+        if (agentConnector && agentConnector.configuration.agents) {
+            const agent = agentConnector.configuration.agents[message.agentId];
+            if (agent) {
+                agent.status = message.status;
+                agent.lastHeartbeat = new Date().toISOString();
+                
+                // Update connector configuration
+                await storage.updateConnector(agentConnector.id, {
+                    configuration: agentConnector.configuration
+                });
+                
+                console.log(`[WebSocket] Updated agent ${message.agentId} status to ${message.status}`);
+            }
+        }
+    } catch (error) {
+        console.error(`[WebSocket] Error updating agent status:`, error);
+    }
+    
+    // Acknowledge status update
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'status_ack',
+            timestamp: new Date().toISOString()
+        }));
+    }
+}
+
+async function handleAgentMetrics(message, ws, clientIP, token) {
+    console.log(`[WebSocket] Metrics from agent ${message.agentId || 'unknown'}`);
+    
+    try {
+        // Import storage
+        const { storage } = await import('./storage.js');
+        
+        // Find agent in connectors and update metrics
+        const connectors = await storage.getConnectors();
+        const agentConnector = connectors.find(c => c.type === 'agent');
+        
+        if (agentConnector && agentConnector.configuration.agents) {
+            const agent = agentConnector.configuration.agents[message.agentId];
+            if (agent) {
+                agent.metrics = message.metrics;
+                agent.lastHeartbeat = new Date().toISOString();
+                
+                // Update connector configuration
+                await storage.updateConnector(agentConnector.id, {
+                    configuration: agentConnector.configuration
+                });
+                
+                console.log(`[WebSocket] Updated agent ${message.agentId} metrics`);
+            }
+        }
+    } catch (error) {
+        console.error(`[WebSocket] Error storing agent metrics:`, error);
+    }
+    
+    // Acknowledge metrics
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'metrics_ack',
+            timestamp: new Date().toISOString()
+        }));
+    }
+}
+
 export function getIo() {
     if (!io)
         throw new Error('Socket.io not initialized');
