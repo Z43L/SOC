@@ -17,6 +17,7 @@ const __dirname = dirname(__filename);
 import * as os from 'os';
 import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
+import * as yaml from 'js-yaml';
 import { AgentConfig } from '../../agents/common/agent-config';
 
 const exec = util.promisify(child_process.exec);
@@ -251,6 +252,9 @@ export class AgentBuilder {
         JSON.stringify(config, null, 2),
         'utf-8'
       );
+
+      // Generar archivo YAML de configuración
+      await this.generateAgentYamlConfig(sourceDir, config);
 
       const archiveName = `soc-agent-source-${os}-${agentId}.tar.gz`;
       const archivePath = path.join(this.outputDir, archiveName);
@@ -1052,6 +1056,31 @@ main().catch(error => {
     const stat = await util.promisify(fs.stat)(outputPath).catch(() => null);
     if (!stat || stat.size === 0) {
       throw new Error(`Error creando el archivo tar.gz: el archivo resultante está vacío o no existe (${outputPath})`);
+    }
+  }
+  
+  /**
+   * Genera el archivo agent.yaml con la configuración del agente
+   */
+  private async generateAgentYamlConfig(packageDir: string, config: AgentConfig): Promise<void> {
+    try {
+      // Convertir la configuración a YAML
+      const yamlContent = yaml.dump(config, {
+        indent: 2,
+        lineWidth: 120,
+        noRefs: true,
+        sortKeys: false
+      });
+      
+      // Escribir el archivo YAML
+      const yamlPath = path.join(packageDir, 'agent.yaml');
+      await writeFile(yamlPath, yamlContent, 'utf-8');
+      
+      console.log('agent.yaml configuration file generated successfully');
+    } catch (error) {
+      console.error('Error generating agent.yaml:', error);
+      // No fallar el proceso completo si solo falla la generación de YAML
+      // El archivo JSON seguirá disponible
     }
   }
   
