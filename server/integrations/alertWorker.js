@@ -52,7 +52,7 @@ export async function processAlerts() {
     }
     // Fetch raw alerts
     const rawAlerts = await db.select().from(alerts)
-        .where(alerts.status.eq('raw'), alerts.retryCount.lt(config.maxRetries || 3));
+        .where(db.eq(alerts.status, 'raw'), db.lt(alerts.retryCount, config.maxRetries || 3));
     for (const alert of rawAlerts) {
         queue.add(() => handleAlert(alert));
     }
@@ -84,11 +84,17 @@ async function handleAlert(alert) {
     // Update alert
     await db.update(alerts)
         .set({ status: anyEnriched ? 'enriched' : 'raw', retryCount: alert.retryCount + 1 })
-        .where(alerts.id.eq(alert.id))
+        .where(db.eq(alerts.id, alert.id))
         .returning();
     // Emit WebSocket event with enriched data
-    const [updatedAlert] = await db.select().from(alerts).where(alerts.id.eq(alert.id));
-    const enrichmentRows = await db.select().from(enrichments).where(enrichments.alertId.eq(alert.id));
+    const [updatedAlert] = await db
+        .select()
+        .from(alerts)
+        .where(db.eq(alerts.id, alert.id));
+    const enrichmentRows = await db
+        .select()
+        .from(enrichments)
+        .where(db.eq(enrichments.alertId, alert.id));
     getIo().emit('alertEnriched', { alert: updatedAlert, enrichments: enrichmentRows });
     return;
 }
