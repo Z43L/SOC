@@ -376,15 +376,29 @@ class Agent {
       
       this.logger.info(`Uploading ${events.length} events to server`);
       
-      // Enviar eventos
-      const response = await this.transport.request({
-        endpoint: this.config.dataEndpoint,
-        method: 'POST',
-        data: { events }
-      });
+      // Try WebSocket first, fallback to HTTP
+      let success = false;
       
-      if (!response.success) {
-        throw new Error(`Failed to upload events: ${response.error || 'Unknown error'}`);
+      if (this.config.transport === 'websocket' && this.transport.isConnected()) {
+        success = await this.transport.sendWsMessage({
+          type: 'log_batch',
+          agentId: this.config.agentId,
+          events: events,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      if (!success) {
+        // Fallback to HTTP
+        const response = await this.transport.request({
+          endpoint: this.config.dataEndpoint,
+          method: 'POST',
+          data: { events }
+        });
+        
+        if (!response.success) {
+          throw new Error(`Failed to upload events: ${response.error || 'Unknown error'}`);
+        }
       }
       
       // Actualizar métrica de cola

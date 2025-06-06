@@ -145,6 +145,34 @@ export class HeartbeatManager {
     }
 
     try {
+      // Try WebSocket first, fallback to HTTP
+      let success = false;
+      
+      if (this.transport.isConnected()) {
+        success = await this.transport.sendWsMessage({
+          type: 'heartbeat',
+          agentId: this.options.agentId,
+          timestamp: heartbeatData.timestamp,
+          status: 'active',
+          metrics: heartbeatData.metrics,
+          version: heartbeatData.version,
+          platform: heartbeatData.platform,
+          arch: heartbeatData.arch,
+          uptime: heartbeatData.uptime,
+          lastError: this.lastError
+        });
+        
+        if (success) {
+          console.log('Heartbeat sent via WebSocket');
+          // Clear error after successful WebSocket send
+          if (this.lastError) {
+            this.lastError = null;
+          }
+          return true;
+        }
+      }
+      
+      // Fallback to HTTP
       const response = await this.transport.request({
         endpoint: this.options.endpoint,
         method: 'POST',
@@ -156,7 +184,7 @@ export class HeartbeatManager {
         return false;
       }
 
-      console.log('Heartbeat sent successfully');
+      console.log('Heartbeat sent via HTTP');
       return true;
     } catch (error) {
       console.error('Error sending heartbeat:', error);
