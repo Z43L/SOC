@@ -47,11 +47,11 @@ class EnhancedAgent {
   private getLogPath(): string {
     switch (this.platform) {
       case 'win32':
-        return path.join(process.env.TEMP || 'C:\\temp', 'soc-agent.log');
+        return 'C:\\ProgramData\\SOCIntelligent\\agent.log';
       case 'darwin':
-        return '/tmp/soc-agent.log';
+        return '/var/log/soc-intelligent/agent.log';
       default: // linux
-        return '/tmp/soc-agent.log';
+        return '/var/log/soc-intelligent/agent.log';
     }
   }
 

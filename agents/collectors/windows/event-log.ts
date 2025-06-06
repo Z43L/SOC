@@ -1,12 +1,13 @@
 /**
- * Colector del Registro de Eventos de Windows
+ * Colector del Registro de Eventos de Windows usando PowerShell
  */
 
 import { Collector, CollectorConfig } from '../types';
 import { Logger } from '../../core/logger';
+import * as child_process from 'child_process';
+import { promisify } from 'util';
 
-// Módulo para acceder al Registro de Eventos de Windows
-let eventlog: any = null;
+const exec = promisify(child_process.exec);
 
 // Canales de registro a monitorear
 const EVENT_CHANNELS = [
@@ -16,18 +17,19 @@ const EVENT_CHANNELS = [
   'Microsoft-Windows-PowerShell/Operational'
 ];
 
-// Manejadores de eventos para cada canal
-const eventHandlers: any[] = [];
-
 // Callback para procesar eventos
 let eventCallback: ((event: any) => void) | null = null;
 
 // Logger instance
 let logger: Logger | null = null;
 
+// Control de monitoreo
+let isMonitoring = false;
+let monitoringInterval: NodeJS.Timeout | null = null;
+
 export const eventLogCollector: Collector = {
   name: 'windows-eventlog',
-  description: 'Monitorea eventos de seguridad en el Registro de Eventos de Windows',
+  description: 'Monitorea eventos de seguridad en el Registro de Eventos de Windows usando PowerShell',
   compatibleSystems: ['win32'],
   
   /**
@@ -43,57 +45,42 @@ export const eventLogCollector: Collector = {
    */
   async start(): Promise<boolean> {
     try {
-      // Intentar cargar el módulo node-windows-eventlog
+      if (isMonitoring) {
+        if (logger) {
+          logger.warn('Event log collector is already running');
+        }
+        return true;
+      }
+
+      // Verificar que PowerShell esté disponible
       try {
-        eventlog = require('node-windows-eventlog');
+        await exec('powershell -Command "Get-Command Get-WinEvent"');
       } catch (error) {
         if (logger) {
-          logger.error('Módulo node-windows-eventlog no encontrado. Por favor, instálelo manualmente: npm install node-windows-eventlog');
-          logger.error('El colector del Registro de Eventos requiere dependencias adicionales para funcionar en Windows');
+          logger.error('PowerShell o cmdlet Get-WinEvent no disponible. Se requiere PowerShell para el colector de eventos.');
         }
         return false;
-      }
-      
-      // Verificar que el módulo tiene las funciones necesarias
-      if (!eventlog.EventLogMonitor || typeof eventlog.EventLogMonitor !== 'function') {
-        if (logger) {
-          logger.error('El módulo node-windows-eventlog no tiene la clase EventLogMonitor requerida');
-        }
-        return false;
-      }
-      
-      // Iniciar monitoreo para cada canal con mejor manejo de errores
-      const startResults: boolean[] = [];
-      for (const channel of EVENT_CHANNELS) {
-        try {
-          await startEventLogMonitoring(channel);
-          startResults.push(true);
-        } catch (error) {
-          if (logger) {
-            logger.error(`Fallo al iniciar monitoreo para canal ${channel}:`, error);
-          }
-          startResults.push(false);
-        }
-      }
-      
-      // Verificar si al menos un canal se inició correctamente
-      const successfulChannels = startResults.filter(result => result).length;
-      
-      if (successfulChannels === 0) {
-        if (logger) {
-          logger.error('No se pudo iniciar monitoreo para ningún canal del Registro de Eventos');
-        }
-        return false;
-      }
-      
-      if (successfulChannels < EVENT_CHANNELS.length) {
-        if (logger) {
-          logger.warn(`Se iniciaron ${successfulChannels} de ${EVENT_CHANNELS.length} canales del Registro de Eventos`);
-        }
       }
       
       if (logger) {
-        logger.info('Colector del Registro de Eventos iniciado');
+        logger.info('Iniciando colector del Registro de Eventos con PowerShell...');
+      }
+
+      // Iniciar monitoreo periódico
+      isMonitoring = true;
+      monitoringInterval = setInterval(() => {
+        collectRecentEvents().catch(error => {
+          if (logger) {
+            logger.error('Error en recolección periódica de eventos:', error);
+          }
+        });
+      }, 60000); // Cada minuto
+
+      // Realizar recolección inicial
+      await collectRecentEvents();
+      
+      if (logger) {
+        logger.info('Colector del Registro de Eventos iniciado exitosamente');
       }
       return true;
     } catch (error) {
@@ -109,61 +96,23 @@ export const eventLogCollector: Collector = {
    */
   async stop(): Promise<boolean> {
     try {
-      if (eventHandlers.length === 0) {
+      if (!isMonitoring) {
         if (logger) {
-          logger.info('No hay manejadores de eventos activos para detener');
+          logger.info('Event log collector is not running');
         }
         return true;
       }
+
+      if (monitoringInterval) {
+        clearInterval(monitoringInterval);
+        monitoringInterval = null;
+      }
+
+      isMonitoring = false;
       
       if (logger) {
-        logger.info(`Deteniendo ${eventHandlers.length} manejadores de eventos...`);
+        logger.info('Colector del Registro de Eventos detenido');
       }
-      
-      // Detener todos los manejadores de eventos con validación
-      const stopPromises = eventHandlers.map(async (handler, index) => {
-        try {
-          if (!handler) {
-            if (logger) {
-              logger.warn(`Manejador en índice ${index} es nulo`);
-            }
-            return false;
-          }
-          
-          // Intentar diferentes métodos para detener el handler
-          if (typeof handler.stop === 'function') {
-            await handler.stop();
-          } else if (typeof handler.close === 'function') {
-            await handler.close();
-          } else if (typeof handler.removeAllListeners === 'function') {
-            handler.removeAllListeners();
-          }
-          
-          return true;
-        } catch (error) {
-          if (logger) {
-            logger.error(`Error deteniendo manejador en índice ${index}:`, error);
-          }
-          return false;
-        }
-      });
-      
-      // Esperar a que todos los handlers se detengan
-      const stopResults = await Promise.allSettled(stopPromises);
-      const successfulStops = stopResults.filter(result => 
-        result.status === 'fulfilled' && result.value === true
-      ).length;
-      
-      // Limpiar la lista de manejadores
-      eventHandlers.length = 0;
-      
-      // Reset el módulo eventlog
-      eventlog = null;
-      
-      if (logger) {
-        logger.info(`Colector del Registro de Eventos detenido (${successfulStops}/${stopResults.length} manejadores detenidos correctamente)`);
-      }
-      
       return true;
     } catch (error) {
       if (logger) {
@@ -175,87 +124,85 @@ export const eventLogCollector: Collector = {
 };
 
 /**
- * Inicia el monitoreo para un canal específico del Registro de Eventos
+ * Recolecta eventos recientes de todos los canales configurados
  */
-async function startEventLogMonitoring(channel: string): Promise<void> {
-  try {
-    if (!eventlog) {
-      throw new Error('Módulo node-windows-eventlog no inicializado');
-    }
-    
-    // Validar que el canal sea uno de los permitidos
-    if (!EVENT_CHANNELS.includes(channel)) {
-      throw new Error(`Canal no válido: ${channel}`);
-    }
-    
-    if (logger) {
-      logger.info(`Iniciando monitoreo para canal: ${channel}`);
-    }
-    
-    // Verificar que la clase EventLogMonitor exista
-    if (!eventlog.EventLogMonitor || typeof eventlog.EventLogMonitor !== 'function') {
-      throw new Error('EventLogMonitor no está disponible en el módulo node-windows-eventlog');
-    }
-    
-    // Crear manejador para el canal
-    const handler = new eventlog.EventLogMonitor(channel);
-    
-    // Validar que el handler se creó correctamente
-    if (!handler) {
-      throw new Error(`No se pudo crear manejador para el canal: ${channel}`);
-    }
-    
-    // Registrar el manejador
-    eventHandlers.push(handler);
-    
-    // Configurar manejador de eventos con validación
-    handler.on('eventlog', (eventData: any) => {
-      try {
-        // Validar datos del evento antes de procesar
-        if (!eventData || typeof eventData !== 'object') {
-          if (logger) {
-            logger.warn(`Datos de evento inválidos recibidos del canal ${channel}`);
-          }
-          return;
-        }
-        
-        // Procesar el evento
-        processEventLogEntry(channel, eventData);
-      } catch (error) {
-        if (logger) {
-          logger.error(`Error procesando evento del canal ${channel}:`, error);
-        }
-      }
-    });
-    
-    // Manejar errores del handler
-    handler.on('error', (error: any) => {
-      if (logger) {
-        logger.error(`Error en el manejador del canal ${channel}:`, error);
-      }
-    });
-    
-    // Iniciar el monitoreo con validación
+async function collectRecentEvents(): Promise<void> {
+  if (!eventCallback) {
+    return;
+  }
+
+  const now = new Date();
+  const oneMinuteAgo = new Date(now.getTime() - 60000); // Últimos 60 segundos
+  
+  for (const channel of EVENT_CHANNELS) {
     try {
-      handler.start();
-    } catch (startError) {
-      throw new Error(`Error al iniciar monitoreo para ${channel}: ${startError}`);
+      await collectChannelEvents(channel, oneMinuteAgo);
+    } catch (error) {
+      if (logger) {
+        logger.error(`Error recolectando eventos del canal ${channel}:`, error);
+      }
     }
-    
-    if (logger) {
-      logger.info(`Monitoreo iniciado para canal: ${channel}`);
-    }
-  } catch (error) {
-    if (logger) {
-      logger.error(`Error iniciando monitoreo para canal ${channel}:`, error);
-    }
-    // Propagar el error para que el caller pueda manejar fallos
-    throw error;
   }
 }
 
 /**
- * Procesa una entrada del Registro de Eventos
+ * Recolecta eventos de un canal específico
+ */
+async function collectChannelEvents(channel: string, since: Date): Promise<void> {
+  try {
+    const startTimeString = since.toISOString().replace(/\.\d{3}Z$/, 'Z');
+    
+    // Comando PowerShell para obtener eventos recientes
+    const command = `powershell -Command "Get-WinEvent -FilterHashtable @{LogName='${channel}'; StartTime='${startTimeString}'} -MaxEvents 50 -ErrorAction SilentlyContinue | Select-Object Id, LevelDisplayName, TimeCreated, Message, ProviderName, MachineName, UserId, @{Name='Properties';Expression={$_.Properties.Value}} | ConvertTo-Json -Depth 3"`;
+    
+    const { stdout, stderr } = await exec(command, { 
+      timeout: 30000,
+      maxBuffer: 1024 * 1024 // 1MB buffer
+    });
+    
+    if (stderr && stderr.trim()) {
+      if (logger) {
+        logger.debug(`PowerShell stderr for channel ${channel}: ${stderr.trim()}`);
+      }
+    }
+    
+    if (!stdout || stdout.trim() === '') {
+      // No hay eventos nuevos
+      return;
+    }
+    
+    try {
+      const events = JSON.parse(stdout);
+      const eventArray = Array.isArray(events) ? events : [events];
+      
+      for (const event of eventArray) {
+        processEventLogEntry(channel, event);
+      }
+      
+      if (logger && eventArray.length > 0) {
+        logger.debug(`Procesados ${eventArray.length} eventos del canal ${channel}`);
+      }
+    } catch (parseError) {
+      if (logger) {
+        logger.error(`Error parseando JSON de eventos del canal ${channel}:`, parseError);
+        logger.debug(`Raw output: ${stdout.substring(0, 500)}...`);
+      }
+    }
+  } catch (error: any) {
+    // Filtrar errores comunes y no críticos
+    if (error.message && error.message.includes('No events were found')) {
+      // Es normal no tener eventos en algunos canales
+      return;
+    }
+    
+    if (logger) {
+      logger.warn(`Error recolectando eventos del canal ${channel}: ${error.message}`);
+    }
+  }
+}
+
+/**
+ * Procesa una entrada del Registro de Eventos desde PowerShell
  */
 function processEventLogEntry(channel: string, eventData: any): void {
   try {
@@ -267,19 +214,23 @@ function processEventLogEntry(channel: string, eventData: any): void {
       return;
     }
     
-    // Validar campos mínimos requeridos
-    const eventId = eventData.eventId || eventData.id || 0;
-    const level = eventData.level || eventData.severity || 'Unknown';
-    const timeCreated = eventData.timeCreated || eventData.timestamp || new Date().toISOString();
-    const message = eventData.message || eventData.description || `Evento ${eventId} en ${channel}`;
+    // Extraer campos del evento de PowerShell
+    const eventId = eventData.Id || 0;
+    const level = eventData.LevelDisplayName || 'Unknown';
+    const timeCreated = eventData.TimeCreated || new Date().toISOString();
+    const message = eventData.Message || `Evento ${eventId} en ${channel}`;
+    const provider = eventData.ProviderName || 'Unknown';
+    const computer = eventData.MachineName || 'Unknown';
+    const userId = eventData.UserId || undefined;
+    const properties = eventData.Properties || [];
     
-    // Mapear nivel de evento a severidad con validación
+    // Mapear nivel de evento a severidad
     let severity = 'info';
     if (typeof level === 'string') {
       const lowerLevel = level.toLowerCase();
       if (lowerLevel === 'error' || lowerLevel === 'critical') {
         severity = 'high';
-      } else if (lowerLevel === 'warning' || lowerLevel === 'warn') {
+      } else if (lowerLevel === 'warning') {
         severity = 'medium';
       }
     }
@@ -300,7 +251,7 @@ function processEventLogEntry(channel: string, eventData: any): void {
       timestamp = new Date();
     }
     
-    // Crear evento normalizado con validación
+    // Crear evento normalizado
     const normalizedEvent = {
       source: 'windows-eventlog',
       channel: String(channel),
@@ -311,10 +262,10 @@ function processEventLogEntry(channel: string, eventData: any): void {
       details: {
         eventId: Number(eventId) || 0,
         level: String(level),
-        provider: String(eventData.providerName || eventData.provider || 'Unknown'),
-        computer: String(eventData.computerName || eventData.computer || 'Unknown'),
-        userId: eventData.userId ? String(eventData.userId) : undefined,
-        properties: eventData.properties || {}
+        provider: String(provider),
+        computer: String(computer),
+        userId: userId ? String(userId) : undefined,
+        properties: Array.isArray(properties) ? properties : []
       }
     };
     
@@ -326,7 +277,7 @@ function processEventLogEntry(channel: string, eventData: any): void {
       return;
     }
     
-    // Enviar evento a través del callback si está registrado
+    // Enviar evento a través del callback
     if (eventCallback && typeof eventCallback === 'function') {
       try {
         eventCallback(normalizedEvent);
@@ -335,8 +286,6 @@ function processEventLogEntry(channel: string, eventData: any): void {
           logger.error(`Error en callback de evento para canal ${channel}:`, error);
         }
       }
-    } else if (logger) {
-      logger.debug(`No hay callback registrado para procesar evento del canal ${channel}`);
     }
   } catch (error) {
     if (logger) {
@@ -414,8 +363,6 @@ function isSecurityCriticalEvent(channel: string, eventId: number): boolean {
   
   return false;
 }
-
-
 
 /**
  * Registra un callback para procesar eventos
