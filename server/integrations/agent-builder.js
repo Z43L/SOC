@@ -172,48 +172,72 @@ export class AgentBuilder {
      */
     async packageAgent(os, buildPath, config, agentId) {
         try {
-            let outputFilePath; // Declare before switch
-            let outputFileName;
             // Lanzar build automatizado antes de empaquetar el binario
             const { stdout, stderr } = await exec(`npm run build:agent:${os}`, { cwd: path.join(process.cwd(), 'agents') });
             console.log('BUILD STDOUT:', stdout);
             console.error('BUILD STDERR:', stderr);
-            // Crear archivos necesarios para cada SO
+            
+            // Crear directorio temporal para el paquete ZIP
+            const packageDir = path.join(buildPath, 'package');
+            await mkdir(packageDir, { recursive: true });
+            
+            // Copiar binario compilado al directorio del paquete
+            let binaryName;
             switch (os) {
                 case AgentOS.WINDOWS: {
-                    // Correct output path: dist/agents/soc-agent-windows.exe (relative to project root)
                     const buildOutput = path.join(process.cwd(), 'dist', 'agents', 'soc-agent-windows.exe');
-                    const exeName = `soc-agent-windows-${agentId}.exe`;
-                    outputFilePath = path.join(this.outputDir, exeName);
-                    outputFileName = exeName;
-                    await fs.promises.copyFile(buildOutput, outputFilePath);
+                    binaryName = 'soc-agent-windows.exe';
+                    await fs.promises.copyFile(buildOutput, path.join(packageDir, binaryName));
+                    // Crear archivos específicos de Windows
+                    await this.createWindowsAgentFiles(packageDir, config);
                     break;
                 }
                 case AgentOS.MACOS: {
-                    const buildOutput = path.join(process.cwd(), 'dist', 'agents', 'soc-agent-macos');
-                    const exeName = `soc-agent-macos-${agentId}`;
-                    outputFilePath = path.join(this.outputDir, exeName);
-                    outputFileName = exeName;
-                    await fs.promises.copyFile(buildOutput, outputFilePath);
+                    const buildOutput = path.join(process.cwd(), 'dist', 'agents', 'soc-agent-macos-x64');
+                    binaryName = 'soc-agent-macos';
+                    await fs.promises.copyFile(buildOutput, path.join(packageDir, binaryName));
+                    // Hacer ejecutable
+                    await exec(`chmod +x "${path.join(packageDir, binaryName)}"`);
+                    // Crear archivos específicos de macOS
+                    await this.createMacOSAgentFiles(packageDir, config);
                     break;
                 }
                 case AgentOS.LINUX: {
                     const buildOutput = path.join(process.cwd(), 'dist', 'agents', 'soc-agent-linux');
-                    const exeName = `soc-agent-linux-${agentId}`;
-                    outputFilePath = path.join(this.outputDir, exeName);
-                    outputFileName = exeName;
-                    await fs.promises.copyFile(buildOutput, outputFilePath);
+                    binaryName = 'soc-agent-linux';
+                    await fs.promises.copyFile(buildOutput, path.join(packageDir, binaryName));
+                    // Hacer ejecutable
+                    await exec(`chmod +x "${path.join(packageDir, binaryName)}"`);
+                    // Crear archivos específicos de Linux
+                    await this.createLinuxAgentFiles(packageDir, config);
                     break;
                 }
                 default:
                     throw new Error(`Unsupported OS: ${os}`);
             }
+            
+            // Copiar archivo de configuración
+            const configPath = path.join(buildPath, 'agent-config.json');
+            await fs.promises.copyFile(configPath, path.join(packageDir, 'agent-config.json'));
+            
+            // Crear script de verificación de WebSocket
+            await this.createWebSocketTestScript(packageDir, config, os);
+            
+            // Crear README con instrucciones
+            await this.createReadmeFile(packageDir, config, os);
+            
+            // Crear archivo ZIP
+            const zipFileName = `soc-agent-${os}-${agentId}.zip`;
+            const zipFilePath = path.join(this.outputDir, zipFileName);
+            await this.createZipArchive(packageDir, zipFilePath);
+            
             // Calcular URL de descarga relativa
-            const downloadUrl = `/downloads/${outputFileName}`;
+            const downloadUrl = `/downloads/${zipFileName}`;
+            
             return {
                 success: true,
-                message: `Agent binary created successfully`,
-                filePath: outputFilePath,
+                message: `Agent package created successfully`,
+                filePath: zipFilePath,
                 downloadUrl
             };
         }
@@ -252,7 +276,7 @@ if (-not (Test-Path $dataDir)) {
 
 # Copiar archivos
 Write-Host "Instalando archivos del agente..."
-Copy-Item -Path ".\\agent\\*" -Destination $installDir -Recurse -Force
+Copy-Item -Path ".\\soc-agent-windows.exe" -Destination "$installDir\\soc-agent-windows.exe" -Force
 
 # Guardar configuración
 Write-Host "Configurando agente..."
@@ -273,75 +297,29 @@ if ($serviceExists) {
     Start-Sleep -Seconds 2
 }
 
-# Detectar Node.js en el sistema
-Write-Host "Detectando Node.js..."
-$nodePath = $null
-
-# Intentar encontrar node.exe en el PATH
-try {
-    $nodeCommand = Get-Command node -ErrorAction Stop
-    $nodePath = $nodeCommand.Source
-    Write-Host "Node.js encontrado en: $nodePath" -ForegroundColor Green
-} catch {
-    # Buscar en ubicaciones comunes de Node.js
-    $commonPaths = @(
-        "$env:ProgramFiles\\nodejs\\node.exe",
-        "$env:ProgramFiles(x86)\\nodejs\\node.exe",
-        "$env:LOCALAPPDATA\\Programs\\Microsoft VS Code\\node.exe",
-        "$env:APPDATA\\npm\\node.exe"
-    )
-    
-    foreach ($path in $commonPaths) {
-        if (Test-Path $path) {
-            $nodePath = $path
-            Write-Host "Node.js encontrado en: $nodePath" -ForegroundColor Green
-            break
-        }
-    }
-}
-
-if (-not $nodePath) {
-    Write-Host "Error: Node.js no encontrado en el sistema." -ForegroundColor Red
-    Write-Host "Por favor, instale Node.js desde https://nodejs.org antes de continuar." -ForegroundColor Yellow
-    exit 1
-}
-
-# Verificar que el archivo agent-windows.js existe
-$agentScript = "$installDir\\agent-windows.js"
+# Verificar que el archivo del agente existe
+$agentScript = "$installDir\\soc-agent-windows.exe"
 if (-not (Test-Path $agentScript)) {
     Write-Host "Error: Archivo del agente no encontrado en $agentScript" -ForegroundColor Red
     exit 1
 }
 
-# Usar NSSM para crear/actualizar el servicio
-$nssmPath = "$installDir\\nssm.exe"
-
-if (-not (Test-Path $nssmPath)) {
-    Write-Host "Error: NSSM no encontrado en $nssmPath" -ForegroundColor Red
-    exit 1
-}
+# Usar comando SC para crear/actualizar el servicio
+Write-Host "Configurando servicio de Windows..."
 
 if ($serviceExists) {
-    # Actualizar servicio existente
-    & $nssmPath set $serviceName Application "$nodePath"
-    & $nssmPath set $serviceName AppParameters "$agentScript"
-    & $nssmPath set $serviceName AppDirectory "$installDir"
-    & $nssmPath set $serviceName DisplayName "SOC Intelligent Security Agent"
-    & $nssmPath set $serviceName Description "Monitoriza el sistema y envía datos de seguridad a la plataforma SOC-Inteligente"
-    & $nssmPath set $serviceName Start SERVICE_AUTO_START
-    & $nssmPath set $serviceName ObjectName LocalSystem
-    & $nssmPath set $serviceName AppStdout "$dataDir\\agent-stdout.log"
-    & $nssmPath set $serviceName AppStderr "$dataDir\\agent-stderr.log"
-} else {
-    # Crear nuevo servicio
-    & $nssmPath install $serviceName "$nodePath" "$agentScript"
-    & $nssmPath set $serviceName DisplayName "SOC Intelligent Security Agent"
-    & $nssmPath set $serviceName Description "Monitoriza el sistema y envía datos de seguridad a la plataforma SOC-Inteligente"
-    & $nssmPath set $serviceName Start SERVICE_AUTO_START
-    & $nssmPath set $serviceName ObjectName LocalSystem
-    & $nssmPath set $serviceName AppStdout "$dataDir\\agent-stdout.log"
-    & $nssmPath set $serviceName AppStderr "$dataDir\\agent-stderr.log"
+    # Detener y eliminar servicio existente para recrearlo
+    Write-Host "Actualizando servicio existente..."
+    sc stop $serviceName
+    Start-Sleep -Seconds 3
+    sc delete $serviceName
+    Start-Sleep -Seconds 2
 }
+
+# Crear nuevo servicio con SC
+Write-Host "Creando servicio de Windows..."
+sc create $serviceName binPath= "\`"$agentScript\`"" start= auto
+sc config $serviceName DisplayName= "SOC Intelligent Security Agent"
 
 # Verificar que el servicio se configuró correctamente
 Write-Host "Verificando configuración del servicio..."
@@ -394,20 +372,14 @@ $ErrorActionPreference = "Stop"
 $serviceName = "SOCIntelligentAgent"
 $installDir = "C:\\Program Files\\SOCIntelligent"
 $dataDir = "C:\\ProgramData\\SOCIntelligent"
-$nssmPath = "$installDir\\nssm.exe"
 
 # Detener y eliminar servicio
 if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
     Write-Host "Deteniendo servicio..."
     Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
     
-    if (Test-Path $nssmPath) {
-        Write-Host "Eliminando servicio..."
-        & $nssmPath remove $serviceName confirm
-    } else {
-        Write-Host "Eliminando servicio con sc..."
-        sc.exe delete $serviceName
-    }
+    Write-Host "Eliminando servicio..."
+    sc delete $serviceName
 }
 
 # Eliminar archivos
@@ -431,14 +403,9 @@ Write-Host "Desinstalación completada." -ForegroundColor Green
         const agentDir = path.join(buildPath, 'agent');
         await mkdir(agentDir, { recursive: true });
         // Escribir archivos
-        await writeFile(path.join(buildPath, 'install.ps1'), installScript, 'utf-8');
-        await writeFile(path.join(buildPath, 'uninstall.ps1'), uninstallScript, 'utf-8');
-        // Descargar NSSM (Non-Sucking Service Manager) para gestionar servicios de Windows
-        await this.downloadFile('https://nssm.cc/release/nssm-2.24.zip', path.join(buildPath, 'nssm.zip'));
-        // Extraer NSSM
-        await exec(`unzip -j ${path.join(buildPath, 'nssm.zip')} nssm-2.24/win64/nssm.exe -d ${agentDir}`);
-        // Compilar agente para Windows
-        await this.compileAgent(agentDir, AgentOS.WINDOWS);
+        await writeFile(path.join(buildPath, 'install.bat'), installScript, 'utf-8');
+        await writeFile(path.join(buildPath, 'uninstall.bat'), uninstallScript, 'utf-8');
+        console.log('Windows installation scripts created successfully');
     }
     /**
      * Crea archivos necesarios para el agente macOS
@@ -473,8 +440,8 @@ chmod 755 "$LOG_DIR"
 
 # Copiar archivos
 echo "Instalando archivos del agente..."
-cp -Rf ./agent/* "$INSTALL_DIR/"
-chmod +x "$INSTALL_DIR/agent-macos"
+cp "./soc-agent-macos" "$INSTALL_DIR/soc-agent-macos"
+chmod +x "$INSTALL_DIR/soc-agent-macos"
 
 # Guardar configuración
 echo "Configurando agente..."
@@ -568,17 +535,12 @@ fi
 
 echo "Desinstalación completada."
 `;
-        // Crear directorio para archivos del agente
-        const agentDir = path.join(buildPath, 'agent');
-        await mkdir(agentDir, { recursive: true });
-        // Escribir archivos
+        // Escribir archivos (ya no necesitamos directorio separado)
         await writeFile(path.join(buildPath, 'install.sh'), installScript, 'utf-8');
         await writeFile(path.join(buildPath, 'uninstall.sh'), uninstallScript, 'utf-8');
         // Dar permisos de ejecución a los scripts
         await exec(`chmod +x ${path.join(buildPath, 'install.sh')}`);
         await exec(`chmod +x ${path.join(buildPath, 'uninstall.sh')}`);
-        // Compilar agente para macOS
-        await this.compileAgent(agentDir, AgentOS.MACOS);
     }
     /**
      * Crea archivos necesarios para el agente Linux
@@ -613,8 +575,8 @@ chmod 755 "$LOG_DIR"
 
 # Copiar archivos
 echo "Instalando archivos del agente..."
-cp -Rf ./agent/* "$INSTALL_DIR/"
-chmod +x "$INSTALL_DIR/agent-linux"
+cp "./soc-agent-linux" "$INSTALL_DIR/soc-agent-linux"
+chmod +x "$INSTALL_DIR/soc-agent-linux"
 
 # Guardar configuración
 echo "Configurando agente..."
@@ -816,17 +778,12 @@ fi
 
 echo "Desinstalación completada."
 `;
-        // Crear directorio para archivos del agente
-        const agentDir = path.join(buildPath, 'agent');
-        await mkdir(agentDir, { recursive: true });
-        // Escribir archivos
+        // Escribir archivos (ya no necesitamos directorio separado)
         await writeFile(path.join(buildPath, 'install.sh'), installScript, 'utf-8');
         await writeFile(path.join(buildPath, 'uninstall.sh'), uninstallScript, 'utf-8');
         // Dar permisos de ejecución a los scripts
         await exec(`chmod +x ${path.join(buildPath, 'install.sh')}`);
         await exec(`chmod +x ${path.join(buildPath, 'uninstall.sh')}`);
-        // Compilar agente para Linux
-        await this.compileAgent(agentDir, AgentOS.LINUX);
     }
     /**
      * Compila el agente para la plataforma especificada
@@ -974,6 +931,192 @@ main().catch(error => {
             throw new Error(`Error creando el archivo tar.gz: el archivo resultante está vacío o no existe (${outputPath})`);
         }
     }
+    /**
+     * Crea un script de verificación de conexión WebSocket
+     */
+    async createWebSocketTestScript(packageDir, config, os) {
+        const isWindows = os === AgentOS.WINDOWS;
+        const scriptExt = isWindows ? '.bat' : '.sh';
+        const scriptName = `test-websocket${scriptExt}`;
+        
+        let script;
+        if (isWindows) {
+            script = `@echo off
+echo Testing WebSocket connection to SOC server...
+echo Server URL: ${config.serverUrl}
+echo Agent ID: ${config.agentId}
+
+REM Simple test using curl to check if server is reachable
+echo Checking if server is reachable...
+curl -s --max-time 10 ${config.serverUrl}/api/health
+if %errorlevel% neq 0 (
+    echo ERROR: Cannot reach SOC server at ${config.serverUrl}
+    echo Please check:
+    echo 1. Server URL is correct
+    echo 2. Network connectivity
+    echo 3. Firewall settings
+    pause
+    exit /b 1
+)
+
+echo.
+echo Server is reachable! 
+echo Next steps:
+echo 1. Run install.bat as Administrator to install the agent
+echo 2. The agent will automatically connect using WebSocket
+echo 3. Check the SOC dashboard to verify agent connection
+echo.
+pause
+`;
+        } else {
+            script = `#!/bin/bash
+echo "Testing WebSocket connection to SOC server..."
+echo "Server URL: ${config.serverUrl}"
+echo "Agent ID: ${config.agentId}"
+
+# Simple test using curl to check if server is reachable
+echo "Checking if server is reachable..."
+if ! curl -s --max-time 10 "${config.serverUrl}/api/health" >/dev/null 2>&1; then
+    echo "ERROR: Cannot reach SOC server at ${config.serverUrl}"
+    echo "Please check:"
+    echo "1. Server URL is correct"
+    echo "2. Network connectivity"
+    echo "3. Firewall settings"
+    exit 1
+fi
+
+echo ""
+echo "Server is reachable!"
+echo "Next steps:"
+echo "1. Run 'sudo ./install.sh' to install the agent"
+echo "2. The agent will automatically connect using WebSocket"
+echo "3. Check the SOC dashboard to verify agent connection"
+echo ""
+`;
+        }
+        
+        await writeFile(path.join(packageDir, scriptName), script, 'utf-8');
+        
+        if (!isWindows) {
+            // Make script executable on Unix systems
+            await exec(`chmod +x "${path.join(packageDir, scriptName)}"`);
+        }
+    }
+
+    /**
+     * Crea un archivo README con instrucciones de instalación
+     */
+    async createReadmeFile(packageDir, config, os) {
+        const isWindows = os === AgentOS.WINDOWS;
+        
+        const readme = `# SOC Intelligent Agent - ${os.toUpperCase()}
+
+## Overview
+This package contains the SOC Intelligent Agent for ${os} systems, pre-configured to connect to your SOC platform.
+
+## Contents
+- **Agent Binary**: The main agent executable
+- **Configuration**: Pre-configured agent-config.json
+- **Installation Script**: Automated installation and service setup
+- **Uninstall Script**: Clean removal of the agent
+- **WebSocket Test**: Connection verification script
+
+## Agent Configuration
+- **Server URL**: ${config.serverUrl}
+- **Agent ID**: ${config.agentId}
+- **Registration Key**: [Embedded securely]
+
+## Quick Installation
+
+### ${isWindows ? 'Windows' : 'Linux/macOS'}
+${isWindows ? `
+1. **Run as Administrator**: Right-click on install.bat and select "Run as administrator"
+2. **Follow prompts**: The installer will guide you through the process
+3. **Verify installation**: Check Windows Services for "SOC Intelligent Agent"
+4. **Test connection**: Run test-websocket.bat to verify connectivity
+
+### Manual Installation Steps:
+1. Extract all files to C:\\Program Files\\SOCIntelligent\\
+2. Copy agent-config.json to C:\\ProgramData\\SOCIntelligent\\
+3. Install as Windows service using sc command
+4. Start the service
+
+### Requirements:
+- Windows 10/11 or Windows Server 2016+
+- Administrator privileges for installation
+- Network access to ${config.serverUrl}
+` : `
+1. **Make executable**: chmod +x install.sh
+2. **Run installer**: sudo ./install.sh
+3. **Verify installation**: systemctl status soc-intelligent-agent
+4. **Test connection**: ./test-websocket.sh
+
+### Manual Installation Steps:
+1. Copy agent binary to /opt/soc-intelligent/
+2. Copy agent-config.json to /etc/soc-intelligent/
+3. Set up systemd service (install.sh does this automatically)
+4. Start and enable the service
+
+### Requirements:
+- Linux distribution with systemd, Upstart, or SysV init
+- Root/sudo privileges for installation
+- Network access to ${config.serverUrl}
+`}
+
+## Verification
+After installation, verify the agent is working:
+
+1. **Service Status**: Check that the agent service is running
+${isWindows ? '   - Windows: Services.msc → "SOC Intelligent Agent"' : '   - Linux/macOS: systemctl status soc-intelligent-agent'}
+
+2. **Log Files**: Check for any errors in the logs
+${isWindows ? '   - Location: C:\\ProgramData\\SOCIntelligent\\agent.log' : '   - Location: /var/log/soc-intelligent/agent.log'}
+
+3. **SOC Dashboard**: The agent should appear as "online" in your SOC dashboard within 60 seconds
+
+4. **Connection Test**: Run the test-websocket script to verify connectivity
+
+## Capabilities
+This agent is configured with the following monitoring capabilities:
+${config.capabilities ? Object.entries(config.capabilities).map(([key, value]) => `- ${key}: ${value ? 'Enabled' : 'Disabled'}`).join('\n') : '- All standard monitoring capabilities enabled'}
+
+## Troubleshooting
+
+### Agent Not Connecting
+1. Verify network connectivity to ${config.serverUrl}
+2. Check firewall settings (agent needs outbound HTTPS access)
+3. Verify agent-config.json has correct server URL and credentials
+4. Check agent logs for specific error messages
+
+### Service Won't Start
+${isWindows ? `1. Verify all files are in correct locations
+2. Check Windows Event Logs for service startup errors
+3. Try running the agent manually: soc-agent-windows.exe
+4. Ensure Windows service has proper permissions` : `1. Check service logs: journalctl -u soc-intelligent-agent
+2. Verify binary permissions: chmod +x soc-agent-linux
+3. Check configuration file permissions
+4. Try running manually: ./soc-agent-linux`}
+
+### Permission Issues
+- Ensure installation was run with appropriate privileges
+${isWindows ? '- Windows: Run as Administrator' : '- Linux/macOS: Use sudo'}
+
+## Uninstallation
+To remove the agent:
+${isWindows ? '- Run uninstall.bat as Administrator' : '- Run sudo ./uninstall.sh'}
+
+## Support
+For technical support, contact your SOC administrator or refer to the documentation at ${config.serverUrl}/docs
+
+---
+Generated on: ${new Date().toISOString()}
+Agent Version: 1.0.0
+Package ID: ${config.agentId}
+`;
+
+        await writeFile(path.join(packageDir, 'README.md'), readme, 'utf-8');
+    }
+
     /**
      * Limpia los archivos temporales de construcción
      */
