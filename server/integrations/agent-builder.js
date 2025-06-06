@@ -14,6 +14,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
+import * as yaml from 'js-yaml';
 const exec = util.promisify(child_process.exec);
 const writeFile = util.promisify(fs.writeFile);
 const readFile = util.promisify(fs.readFile);
@@ -219,6 +220,9 @@ export class AgentBuilder {
             // Copiar archivo de configuración
             const configPath = path.join(buildPath, 'agent-config.json');
             await fs.promises.copyFile(configPath, path.join(packageDir, 'agent-config.json'));
+            
+            // Generar archivo YAML de configuración
+            await this.generateAgentYamlConfig(packageDir, config);
             
             // Crear script de verificación de WebSocket
             await this.createWebSocketTestScript(packageDir, config, os);
@@ -1016,7 +1020,7 @@ This package contains the SOC Intelligent Agent for ${os} systems, pre-configure
 
 ## Contents
 - **Agent Binary**: The main agent executable
-- **Configuration**: Pre-configured agent-config.json
+- **Configuration**: Pre-configured agent-config.json and agent.yaml
 - **Installation Script**: Automated installation and service setup
 - **Uninstall Script**: Clean removal of the agent
 - **WebSocket Test**: Connection verification script
@@ -1115,6 +1119,31 @@ Package ID: ${config.agentId}
 `;
 
         await writeFile(path.join(packageDir, 'README.md'), readme, 'utf-8');
+    }
+
+    /**
+     * Genera el archivo agent.yaml con la configuración del agente
+     */
+    async generateAgentYamlConfig(packageDir, config) {
+        try {
+            // Convertir la configuración a YAML
+            const yamlContent = yaml.dump(config, {
+                indent: 2,
+                lineWidth: 120,
+                noRefs: true,
+                sortKeys: false
+            });
+            
+            // Escribir el archivo YAML
+            const yamlPath = path.join(packageDir, 'agent.yaml');
+            await writeFile(yamlPath, yamlContent, 'utf-8');
+            
+            console.log('agent.yaml configuration file generated successfully');
+        } catch (error) {
+            console.error('Error generating agent.yaml:', error);
+            // No fallar el proceso completo si solo falla la generación de YAML
+            // El archivo JSON seguirá disponible
+        }
     }
 
     /**
