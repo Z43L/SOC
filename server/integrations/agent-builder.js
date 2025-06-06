@@ -407,8 +407,8 @@ Write-Host "Desinstalación completada." -ForegroundColor Green
         const agentDir = path.join(buildPath, 'agent');
         await mkdir(agentDir, { recursive: true });
         // Escribir archivos
-        await writeFile(path.join(buildPath, 'install.bat'), installScript, 'utf-8');
-        await writeFile(path.join(buildPath, 'uninstall.bat'), uninstallScript, 'utf-8');
+        await writeFile(path.join(buildPath, 'install.ps1'), installScript, 'utf-8');
+        await writeFile(path.join(buildPath, 'uninstall.ps1'), uninstallScript, 'utf-8');
         console.log('Windows installation scripts created successfully');
     }
     /**
@@ -966,7 +966,7 @@ if %errorlevel% neq 0 (
 echo.
 echo Server is reachable! 
 echo Next steps:
-echo 1. Run install.bat as Administrator to install the agent
+echo 1. Run install.ps1 as Administrator to install the agent
 echo 2. The agent will automatically connect using WebSocket
 echo 3. Check the SOC dashboard to verify agent connection
 echo.
@@ -1034,7 +1034,7 @@ This package contains the SOC Intelligent Agent for ${os} systems, pre-configure
 
 ### ${isWindows ? 'Windows' : 'Linux/macOS'}
 ${isWindows ? `
-1. **Run as Administrator**: Right-click on install.bat and select "Run as administrator"
+1. **Run as Administrator**: Right-click on install.ps1 and select "Run with PowerShell"
 2. **Follow prompts**: The installer will guide you through the process
 3. **Verify installation**: Check Windows Services for "SOC Intelligent Agent"
 4. **Test connection**: Run test-websocket.bat to verify connectivity
@@ -1107,7 +1107,7 @@ ${isWindows ? '- Windows: Run as Administrator' : '- Linux/macOS: Use sudo'}
 
 ## Uninstallation
 To remove the agent:
-${isWindows ? '- Run uninstall.bat as Administrator' : '- Run sudo ./uninstall.sh'}
+${isWindows ? '- Run uninstall.ps1 as Administrator' : '- Run sudo ./uninstall.sh'}
 
 ## Support
 For technical support, contact your SOC administrator or refer to the documentation at ${config.serverUrl}/docs
