@@ -45,7 +45,9 @@ EXPOSE 5000
 
 # Copiar y configurar el script de entrada
 COPY entrypoint.sh ./
-RUN chmod +x entrypoint.sh
+# --- strip possible CRLF and make it executable ---
+RUN sed -i 's/\r$//' entrypoint.sh && chmod +x entrypoint.sh
+
 
 # Reemplazar el CMD por defecto con el script de entrada
 ENTRYPOINT ["./entrypoint.sh"]
