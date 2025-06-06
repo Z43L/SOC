@@ -239,50 +239,29 @@ export class AgentBuilder {
     downloadUrl?: string;
   }> {
     try {
-      let outputFilePath: string; // Declare before switch
-      let outputFileName: string;
-      // Lanzar build automatizado antes de empaquetar el binario
-      const { stdout, stderr } = await exec(`npm run build:agent:${os}`, { cwd: path.join(process.cwd(), 'agents') });
-      console.log('BUILD STDOUT:', stdout);
-      console.error('BUILD STDERR:', stderr);
-      // Crear archivos necesarios para cada SO
-      switch (os) {
-        case AgentOS.WINDOWS: {
-          // Correct output path: dist/agents/soc-agent-windows.exe (relative to project root)
-          const buildOutput = path.join(process.cwd(), 'dist', 'agents', 'soc-agent-windows.exe');
-          const exeName = `soc-agent-windows-${agentId}.exe`;
-          outputFilePath = path.join(this.outputDir, exeName);
-          outputFileName = exeName;
-          await fs.promises.copyFile(buildOutput, outputFilePath);
-          break;
-        }
-        case AgentOS.MACOS: {
-          const buildOutput = path.join(process.cwd(), 'dist', 'agents', 'soc-agent-macos');
-          const exeName = `soc-agent-macos-${agentId}`;
-          outputFilePath = path.join(this.outputDir, exeName);
-          outputFileName = exeName;
-          await fs.promises.copyFile(buildOutput, outputFilePath);
-          break;
-        }
-        case AgentOS.LINUX: {
-          const buildOutput = path.join(process.cwd(), 'dist', 'agents', 'soc-agent-linux');
-          const exeName = `soc-agent-linux-${agentId}`;
-          outputFilePath = path.join(this.outputDir, exeName);
-          outputFileName = exeName;
-          await fs.promises.copyFile(buildOutput, outputFilePath);
-          break;
-        }
-        default:
-          throw new Error(`Unsupported OS: ${os}`);
-      }
+      const sourceDir = path.join(buildPath, 'source');
+      await mkdir(sourceDir, { recursive: true });
 
-      // Calcular URL de descarga relativa
-      const downloadUrl = `/downloads/${outputFileName}`;
+      // Copiar el código fuente del agente completo
+      await fs.promises.cp(this.templatesDir, sourceDir, { recursive: true });
+
+      // Guardar configuración dentro del paquete
+      await writeFile(
+        path.join(sourceDir, 'agent-config.json'),
+        JSON.stringify(config, null, 2),
+        'utf-8'
+      );
+
+      const archiveName = `soc-agent-source-${os}-${agentId}.tar.gz`;
+      const archivePath = path.join(this.outputDir, archiveName);
+      await this.createTarArchive(sourceDir, archivePath);
+
+      const downloadUrl = `/downloads/${archiveName}`;
 
       return {
         success: true,
-        message: `Agent binary created successfully`,
-        filePath: outputFilePath,
+        message: `Agent source package created successfully`,
+        filePath: archivePath,
         downloadUrl
       };
     } catch (error) {

@@ -313,7 +313,7 @@ Existe un directorio `agents/common/` a nivel raíz de los agentes, lo que sugie
 *   **`agents/force-agent-reenroll.sh`**: Un script de utilidad, posiblemente para forzar a un agente a volver a registrarse con el servidor, útil en casos de problemas de comunicación o cambios de configuración importantes.
     *   *Referencia:* `agents/force-agent-reenroll.sh`
 
-La descarga de los agentes precompilados se realiza probablemente a través de la interfaz de usuario, con los archivos servidos desde el directorio `public/downloads/` (e.g., `public/downloads/soc-agent-macos-agent-a946d8cd.zip`).
+Anteriormente los agentes se distribuían como binarios ya compilados. A partir de esta versión la plataforma entrega un paquete con el **código fuente** del agente (`soc-agent-source-<os>-<id>.tar.gz`). Dicho paquete incluye el directorio `agents` y un `agent-config.json` generado. El usuario debe compilar el agente de forma manual siguiendo la [guía de compilación](docs/manual-agent-build.md).
 
 ## Datos Compartidos y Esquema de Base de Datos
 
