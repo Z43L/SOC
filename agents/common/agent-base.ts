@@ -284,10 +284,10 @@ export abstract class AgentBase {
       return;
     }
     
+    const events = [...this.pendingEvents];
+    this.pendingEvents = [];
+    
     try {
-      const events = [...this.pendingEvents];
-      this.pendingEvents = [];
-      
       logger.info(`Uploading ${events.length} events to server`);
       
       // Convertir a formato completo
