@@ -15,6 +15,7 @@ const __dirname = dirname(__filename);
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import * as yaml from 'js-yaml';
+import { generateAgentToken } from './connectors/jwt-auth.js';
 const exec = util.promisify(child_process.exec);
 const writeFile = util.promisify(fs.writeFile);
 const readFile = util.promisify(fs.readFile);
@@ -110,12 +111,17 @@ export class AgentBuilder {
             malwareScanning: config.capabilities?.malwareScanning ?? true,
             vulnerabilityScanning: config.capabilities?.vulnerabilityScanning ?? true
         };
+        
+        // Generar token JWT para autenticación de WebSocket
+        const websocketToken = generateAgentToken(agentId, config.userId, config.organizationId);
+        
         // Generar configuración base
         return {
             // Información de conexión
             serverUrl: config.serverUrl,
             organizationKey: config.organizationKey,
             agentId: agentId,
+            websocketToken: websocketToken,
             // Identificación del agente
             configPath: this.getDefaultConfigPath(config.os),
             // Intervalos
