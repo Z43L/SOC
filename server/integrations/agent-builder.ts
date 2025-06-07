@@ -18,7 +18,7 @@ import * as os from 'os';
 import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import * as yaml from 'js-yaml';
-import { AgentConfig } from '../../agents/common/agent-config';
+import { AgentConfig } from '../../agents/core/agent-config';
 
 const exec = util.promisify(child_process.exec);
 const writeFile = util.promisify(fs.writeFile);
@@ -40,7 +40,7 @@ export enum AgentOS {
 export interface AgentBuildConfig {
   os: AgentOS;
   serverUrl: string;
-  registrationKey: string;
+  organizationKey: string;
   userId: number;
   customName?: string;
   capabilities?: {
@@ -145,7 +145,7 @@ export class AgentBuilder {
   /**
    * Genera la configuración para el agente
    */
-  private generateAgentConfig(config: AgentBuildConfig, agentId: string): AgentConfig {
+  private generateAgentConfig(config: AgentBuildConfig, agentId: string): any {
     // Configurar capacidades del agente
     const capabilities = {
       fileSystemMonitoring: config.capabilities?.fileSystemMonitoring ?? true,
@@ -157,15 +157,12 @@ export class AgentBuilder {
       vulnerabilityScanning: config.capabilities?.vulnerabilityScanning ?? true
     };
     
-    // Generar configuración base
+    // Generar configuración base usando el formato correcto del core agent-config
     return {
       // Información de conexión
       serverUrl: config.serverUrl,
-      registrationKey: config.registrationKey,
+      organizationKey: config.organizationKey, // Fixed: was registrationKey
       agentId: agentId,
-      
-      // Identificación del agente
-      configPath: this.getDefaultConfigPath(config.os),
       
       // Intervalos
       heartbeatInterval: 60,
@@ -174,22 +171,38 @@ export class AgentBuilder {
       
       // Endpoints
       registrationEndpoint: '/api/agents/register',
-      dataEndpoint: '/api/agents/data', // <-- Corregido aquí
+      dataEndpoint: '/api/agents/data',
       heartbeatEndpoint: '/api/agents/heartbeat',
       
       // Seguridad
       signMessages: false,
+      validateCertificates: true,
+      maxMessageSize: 1048576, // 1MB
+      allowInsecureConnections: false,
       
-      // Configuración de monitoreo
+      // Capacidades
       capabilities,
       
-      // Logs
+      // Almacenamiento y registros
+      configPath: this.getDefaultConfigPath(config.os),
       logFilePath: this.getDefaultLogPath(config.os),
       maxStorageSize: 100,
       logLevel: 'info',
       
-      // Nuevo: ID del conector para que el agente pueda construir el endpoint
-      connectorId: config.userId ? String(config.userId) : undefined // O usar otro identificador real
+      // Cola de eventos
+      queueSize: 1000,
+      
+      // Transporte - Enable WebSocket by default
+      transport: 'websocket',
+      compressionEnabled: true,
+      
+      // Comandos push
+      enableCommands: true,
+      allowedCommands: ['script', 'configUpdate', 'isolate', 'upgrade'],
+      
+      // Personalización avanzada
+      directoriesToScan: ['/tmp', '/var/tmp', '/dev/shm', '/home'],
+      cpuAlertThreshold: 90
     };
   }
   
@@ -231,7 +244,7 @@ export class AgentBuilder {
   private async packageAgent(
     os: AgentOS,
     buildPath: string,
-    config: AgentConfig,
+    config: any,
     agentId: string
   ): Promise<{
     success: boolean;
@@ -280,7 +293,7 @@ export class AgentBuilder {
   /**
    * Crea archivos necesarios para el agente Windows
    */
-  private async createWindowsAgentFiles(buildPath: string, config: AgentConfig): Promise<void> {
+  private async createWindowsAgentFiles(buildPath: string, config: any): Promise<void> {
     // Crear script de instalación (PowerShell)
     const installScript = `
 # Instalador del Agente SOC-Inteligente para Windows
@@ -505,7 +518,7 @@ Write-Host "Desinstalación completada." -ForegroundColor Green
   /**
    * Crea archivos necesarios para el agente macOS
    */
-  private async createMacOSAgentFiles(buildPath: string, config: AgentConfig): Promise<void> {
+  private async createMacOSAgentFiles(buildPath: string, config: any): Promise<void> {
     // Crear script de instalación (bash)
     const installScript = `#!/bin/bash
 # Instalador del Agente SOC-Inteligente para macOS
@@ -651,7 +664,7 @@ echo "Desinstalación completada."
   /**
    * Crea archivos necesarios para el agente Linux
    */
-  private async createLinuxAgentFiles(buildPath: string, config: AgentConfig): Promise<void> {
+  private async createLinuxAgentFiles(buildPath: string, config: any): Promise<void> {
     // Crear script de instalación (bash)
     const installScript = `#!/bin/bash
 # Instalador del Agente SOC-Inteligente para Linux
@@ -1062,7 +1075,7 @@ main().catch(error => {
   /**
    * Genera el archivo agent.yaml con la configuración del agente
    */
-  private async generateAgentYamlConfig(packageDir: string, config: AgentConfig): Promise<void> {
+  private async generateAgentYamlConfig(packageDir: string, config: any): Promise<void> {
     try {
       // Convertir la configuración a YAML
       const yamlContent = yaml.dump(config, {

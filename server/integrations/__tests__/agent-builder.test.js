@@ -17,7 +17,7 @@ async function testAgentConfig() {
         const testConfig = {
             os: AgentOS.LINUX,
             serverUrl: 'https://test.example.com',
-            registrationKey: 'test-key-123',
+            organizationKey: 'test-key-123',
             userId: 1,
             customName: 'test-agent',
             architecture: 'x64',
@@ -51,7 +51,7 @@ async function testBuildQueue() {
         const testConfig = {
             os: AgentOS.WINDOWS,
             serverUrl: 'https://test.example.com',
-            registrationKey: 'test-key-456',
+            organizationKey: 'test-key-456',
             userId: 2,
             customName: 'queue-test-agent',
             architecture: 'x64'
