@@ -32,9 +32,6 @@ export var AgentOS;
  * Clase para construir y compilar agentes
  */
 export class AgentBuilder {
-    buildDir;
-    outputDir;
-    templatesDir;
     constructor() {
         // Directorios de trabajo
         this.buildDir = path.join(os.tmpdir(), 'soc-agent-builder');
@@ -110,43 +107,41 @@ export class AgentBuilder {
             malwareScanning: config.capabilities?.malwareScanning ?? true,
             vulnerabilityScanning: config.capabilities?.vulnerabilityScanning ?? true
         };
-        // Generar configuración base
+        // Generar configuración base usando el formato correcto del core agent-config
         return {
             // Información de conexión
             serverUrl: config.serverUrl,
-            organizationKey: config.organizationKey,
+            organizationKey: config.organizationKey, // Fixed: was registrationKey
             agentId: agentId,
-            // Identificación del agente
-            configPath: this.getDefaultConfigPath(config.os),
             // Intervalos
             heartbeatInterval: 60,
             dataUploadInterval: 300,
             scanInterval: 3600,
             // Endpoints
             registrationEndpoint: '/api/agents/register',
-            dataEndpoint: '/api/agents/data', // <-- Corregido aquí
+            dataEndpoint: '/api/agents/data',
             heartbeatEndpoint: '/api/agents/heartbeat',
             // Seguridad
             signMessages: false,
-            // Configuración de monitoreo
-            capabilities,
-            // Logs
-            logFilePath: this.getDefaultLogPath(config.os),
-            maxStorageSize: 100,
-            logLevel: 'info',
-            // Security
             validateCertificates: true,
             maxMessageSize: 1048576, // 1MB
             allowInsecureConnections: false,
-            // Queue
+            // Capacidades
+            capabilities,
+            // Almacenamiento y registros
+            configPath: this.getDefaultConfigPath(config.os),
+            logFilePath: this.getDefaultLogPath(config.os),
+            maxStorageSize: 100,
+            logLevel: 'info',
+            // Cola de eventos
             queueSize: 1000,
-            // Transport - Enable WebSocket by default
+            // Transporte - Enable WebSocket by default
             transport: 'websocket',
             compressionEnabled: true,
-            // Commands push
+            // Comandos push
             enableCommands: true,
             allowedCommands: ['script', 'configUpdate', 'isolate', 'upgrade'],
-            // Advanced customization
+            // Personalización avanzada
             directoriesToScan: ['/tmp', '/var/tmp', '/dev/shm', '/home'],
             cpuAlertThreshold: 90
         };
