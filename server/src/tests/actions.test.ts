@@ -28,6 +28,9 @@ describe('SOAR Action System', () => {
       
       expect(actionNames).toContain('notify_email');
       expect(actionNames).toContain('notify_slack');
+      expect(actionNames).toContain('notify_teams');
+      expect(actionNames).toContain('notify_webhook');
+      expect(actionNames).toContain('notify_push');
       expect(actionNames).toContain('block_ip');
       expect(actionNames).toContain('isolate_host');
       expect(actionNames).toContain('create_jira_ticket');
@@ -52,6 +55,9 @@ describe('SOAR Action System', () => {
       const notificationNames = notificationActions.map(a => a.name);
       expect(notificationNames).toContain('notify_email');
       expect(notificationNames).toContain('notify_slack');
+      expect(notificationNames).toContain('notify_teams');
+      expect(notificationNames).toContain('notify_webhook');
+      expect(notificationNames).toContain('notify_push');
       expect(notificationNames).toContain('create_jira_ticket');
     });
   });
@@ -206,6 +212,135 @@ describe('SOAR Action System', () => {
       expect(result.data).toHaveProperty('ticketKey');
       expect(result.data).toHaveProperty('ticketUrl');
       expect(result.data.ticketKey).toMatch(/^SEC-\d+$/);
+    });
+  });
+
+  describe('Teams Notification Action', () => {
+    it('should execute successfully with valid parameters', async () => {
+      const params = {
+        webhookUrl: 'https://outlook.office.com/webhook/test',
+        title: 'Security Alert: {{severity}} priority',
+        message: 'Incident detected on host {{hostname}}',
+        color: 'attention',
+        sections: [{
+          title: 'Alert Details',
+          facts: [
+            { name: 'Host', value: '{{hostname}}' },
+            { name: 'IP', value: '{{sourceIp}}' }
+          ]
+        }]
+      };
+
+      const result = await actionRegistry.executeAction('notify_teams', params, mockContext);
+      
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('Teams notification sent successfully');
+      expect(result.data).toHaveProperty('title');
+      expect(result.data).toHaveProperty('message');
+    });
+
+    it('should fail without webhook URL', async () => {
+      const params = {
+        title: 'Test Alert',
+        message: 'Test message'
+      };
+
+      await expect(
+        actionRegistry.executeAction('notify_teams', params, mockContext)
+      ).rejects.toThrow('Teams webhook URL not provided');
+    });
+  });
+
+  describe('Webhook Notification Action', () => {
+    it('should execute successfully with valid parameters', async () => {
+      const params = {
+        url: 'https://api.example.com/webhook',
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer test-token'
+        },
+        includeAlertData: true
+      };
+
+      const result = await actionRegistry.executeAction('notify_webhook', params, mockContext);
+      
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('Webhook notification sent successfully');
+      expect(result.data).toHaveProperty('url');
+      expect(result.data).toHaveProperty('method', 'POST');
+      expect(result.data).toHaveProperty('statusCode');
+    });
+
+    it('should include alert data in payload when requested', async () => {
+      const params = {
+        url: 'https://api.example.com/webhook',
+        includeAlertData: true,
+        payload: {
+          customField: 'test value'
+        }
+      };
+
+      const result = await actionRegistry.executeAction('notify_webhook', params, mockContext);
+      
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe('Push Notification Action', () => {
+    it('should execute successfully with FCM topic', async () => {
+      const params = {
+        serverKey: 'test-fcm-key',
+        topic: 'security-alerts',
+        title: 'Security Alert: {{severity}}',
+        body: 'Incident on {{hostname}}',
+        priority: 'high'
+      };
+
+      const result = await actionRegistry.executeAction('notify_push', params, mockContext);
+      
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('Push notification sent successfully');
+      expect(result.data).toHaveProperty('title');
+      expect(result.data).toHaveProperty('body');
+      expect(result.data).toHaveProperty('messageId');
+    });
+
+    it('should execute successfully with device tokens', async () => {
+      const params = {
+        serverKey: 'test-fcm-key',
+        tokens: ['token1', 'token2'],
+        title: 'Security Alert',
+        body: 'Test alert message'
+      };
+
+      const result = await actionRegistry.executeAction('notify_push', params, mockContext);
+      
+      expect(result.success).toBe(true);
+      expect(result.data.recipients).toBe(2);
+    });
+
+    it('should fail without FCM server key', async () => {
+      const params = {
+        topic: 'test-topic',
+        title: 'Test',
+        body: 'Test message'
+      };
+
+      await expect(
+        actionRegistry.executeAction('notify_push', params, mockContext)
+      ).rejects.toThrow('FCM server key not provided');
+    });
+
+    it('should fail without topic or tokens', async () => {
+      const params = {
+        serverKey: 'test-key',
+        title: 'Test',
+        body: 'Test message'
+      };
+
+      await expect(
+        actionRegistry.executeAction('notify_push', params, mockContext)
+      ).rejects.toThrow('Either device tokens or topic must be provided');
     });
   });
 });

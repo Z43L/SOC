@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BaseAction } from '../BaseAction';
+import { BaseAction } from '../BaseAction.js';
 // Email notification action
 export class EmailNotificationAction extends BaseAction {
     name = 'notify_email';
