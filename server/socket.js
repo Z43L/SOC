@@ -66,7 +66,8 @@ export function initWebSocket(server) {
             if (!checkConnectionLimit(clientIP)) {
                 try {
                     ws.close(1008, 'Connection limit exceeded');
-                } catch (error) {
+                }
+                catch (error) {
                     console.error(`[WebSocket] Error closing connection for rate limit: ${error.message}`);
                 }
                 return;
@@ -87,16 +88,19 @@ export function initWebSocket(server) {
                 // Use 1008 (Policy Violation) instead of 1002 (Protocol Error) for unknown endpoints
                 try {
                     ws.close(1008, 'Unknown endpoint');
-                } catch (error) {
+                }
+                catch (error) {
                     console.error(`[WebSocket] Error closing connection for unknown endpoint: ${error.message}`);
                 }
             }
-        } catch (error) {
+        }
+        catch (error) {
             console.error(`[WebSocket] Error handling WebSocket connection:`, error);
             try {
                 removeConnection(getClientIP(req));
                 ws.close(1011, 'Internal server error');
-            } catch (closeError) {
+            }
+            catch (closeError) {
                 console.error(`[WebSocket] Error closing connection after error: ${closeError.message}`);
             }
         }
