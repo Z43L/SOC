@@ -1,0 +1,48 @@
+# Agent Configuration for WebSocket Connection
+# This configuration ensures agents connect to the proper WebSocket endpoint
+
+# Server WebSocket URL - includes the correct endpoint path
+server: "ws://localhost:3000/api/ws/agents?token=development-agent-token"
+
+# Agent identification
+agentId: ""  # Will be auto-generated if empty
+
+# Connection settings
+transport: "websocket"
+compressionEnabled: false
+validateCertificates: false  # Set to true in production
+allowInsecureConnections: true  # Set to false in production
+
+# Intervals (in seconds)
+heartbeatInterval: 30
+dataUploadInterval: 300
+scanInterval: 3600
+
+# Security settings
+signMessages: false
+maxMessageSize: 1048576  # 1MB
+
+# Logging
+logLevel: "info"
+logFilePath: "./agent.log"
+
+# Agent capabilities
+capabilities:
+  fileSystemMonitoring: true
+  processMonitoring: true
+  networkMonitoring: true
+  registryMonitoring: false
+  securityLogsMonitoring: true
+  malwareScanning: false
+  vulnerabilityScanning: false
+
+# Queue settings
+queueSize: 1000
+
+# Commands
+enableCommands: true
+allowedCommands:
+  - "script"
+  - "configUpdate"
+  - "isolate"
+  - "upgrade"

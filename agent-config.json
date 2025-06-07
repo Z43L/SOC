@@ -1,6 +1,11 @@
 {
-  "serverUrl": "https://soc.example.com",
-  "registrationKey": "",
+  "serverUrl": "ws://localhost:3000/api/ws/agents",
+  "registrationKey": "development-agent-token",
+  "transport": "websocket",
+  "compressionEnabled": false,
+  "validateCertificates": false,
+  "allowInsecureConnections": true,
+  "maxMessageSize": 1048576,
   "heartbeatInterval": 60,
   "dataUploadInterval": 300,
   "scanInterval": 3600,
@@ -19,5 +24,13 @@
   },
   "logFilePath": "/var/log/soc-agent.log",
   "maxStorageSize": 100,
-  "logLevel": "info"
+  "logLevel": "info",
+  "queueSize": 1000,
+  "enableCommands": true,
+  "allowedCommands": [
+    "script",
+    "configUpdate", 
+    "isolate",
+    "upgrade"
+  ]
 }

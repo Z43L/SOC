@@ -20,6 +20,27 @@ function getClientIP(req: http.IncomingMessage): string {
          'unknown';
 }
 
+function safeClose(ws: WebSocket, code: number, reason?: string): void {
+  try {
+    // Validate close code to prevent invalid frame errors
+    if (code < 1000 || code > 4999) {
+      console.warn(`[WebSocket] Invalid close code ${code}, using 1000 instead`);
+      code = 1000;
+    }
+    
+    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      ws.close(code, reason);
+    }
+  } catch (error) {
+    console.error(`[WebSocket] Error closing connection: ${(error as Error).message}`);
+    try {
+      ws.terminate();
+    } catch (terminateError) {
+      console.error(`[WebSocket] Error terminating connection: ${(terminateError as Error).message}`);
+    }
+  }
+}
+
 function checkConnectionLimit(ip: string): boolean {
   const currentConnections = connectionCounts.get(ip) || 0;
   if (currentConnections >= MAX_CONNECTIONS_PER_IP) {
@@ -79,11 +100,7 @@ export function initWebSocket(server: http.Server) {
       
       // Check connection limits
       if (!checkConnectionLimit(clientIP)) {
-        try {
-          ws.close(1008, 'Connection limit exceeded');
-        } catch (error) {
-          console.error(`[WebSocket] Error closing connection for rate limit: ${(error as Error).message}`);
-        }
+        safeClose(ws, 1008, 'Connection limit exceeded');
         return;
       }
       
@@ -98,20 +115,12 @@ export function initWebSocket(server: http.Server) {
         console.log(`[WebSocket] Unknown endpoint: ${pathname}`);
         removeConnection(clientIP);
         // Use 1008 (Policy Violation) instead of 1002 (Protocol Error) for unknown endpoints
-        try {
-          ws.close(1008, 'Unknown endpoint');
-        } catch (error) {
-          console.error(`[WebSocket] Error closing connection for unknown endpoint: ${(error as Error).message}`);
-        }
+        safeClose(ws, 1008, 'Unknown endpoint');
       }
     } catch (error) {
       console.error(`[WebSocket] Error handling WebSocket connection:`, error);
-      try {
-        removeConnection(getClientIP(req));
-        ws.close(1011, 'Internal server error');
-      } catch (closeError) {
-        console.error(`[WebSocket] Error closing connection after error: ${(closeError as Error).message}`);
-      }
+      removeConnection(getClientIP(req));
+      safeClose(ws, 1011, 'Internal server error');
     }
   });
 
@@ -128,14 +137,14 @@ function handleDashboardConnection(ws: WebSocket, clientIP: string) {
     try {
       // Rate limiting
       if (!checkMessageRateLimit(clientIP)) {
-        ws.close(1008, 'Rate limit exceeded');
+        safeClose(ws, 1008, 'Rate limit exceeded');
         return;
       }
       
       // Message size validation
       if (data.length > maxMessageSize) {
         console.warn(`[WebSocket] Message too large from ${clientIP}: ${data.length} bytes`);
-        ws.close(1009, 'Message too large');
+        safeClose(ws, 1009, 'Message too large');
         return;
       }
       
@@ -219,14 +228,14 @@ function handleConnectorsConnection(ws: WebSocket, clientIP: string) {
     try {
       // Rate limiting
       if (!checkMessageRateLimit(clientIP)) {
-        ws.close(1008, 'Rate limit exceeded');
+        safeClose(ws, 1008, 'Rate limit exceeded');
         return;
       }
       
       // Message size validation
       if (data.length > maxMessageSize) {
         console.warn(`[WebSocket] Connector message too large from ${clientIP}: ${data.length} bytes`);
-        ws.close(1009, 'Message too large');
+        safeClose(ws, 1009, 'Message too large');
         return;
       }
       
@@ -291,7 +300,7 @@ function handleAgentsConnection(ws: WebSocket, clientIP: string, req: http.Incom
   // Validate token
   if (!token) {
     console.warn(`[WebSocket] Agent connection without token from ${clientIP}`);
-    ws.close(1008, 'Authentication token required');
+    safeClose(ws, 1008, 'Authentication token required');
     removeConnection(clientIP);
     return;
   }
@@ -302,14 +311,14 @@ function handleAgentsConnection(ws: WebSocket, clientIP: string, req: http.Incom
     try {
       // Rate limiting
       if (!checkMessageRateLimit(clientIP)) {
-        ws.close(1008, 'Rate limit exceeded');
+        safeClose(ws, 1008, 'Rate limit exceeded');
         return;
       }
       
       // Message size validation
       if (data.length > maxMessageSize) {
         console.warn(`[WebSocket] Agent message too large from ${clientIP}: ${data.length} bytes`);
-        ws.close(1009, 'Message too large');
+        safeClose(ws, 1009, 'Message too large');
         return;
       }
       
