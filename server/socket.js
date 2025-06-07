@@ -15,7 +15,6 @@ function getClientIP(req) {
         req.socket.remoteAddress ||
         'unknown';
 }
-
 function safeClose(ws, code, reason) {
     try {
         // Validate close code to prevent invalid frame errors
@@ -23,15 +22,16 @@ function safeClose(ws, code, reason) {
             console.warn(`[WebSocket] Invalid close code ${code}, using 1000 instead`);
             code = 1000;
         }
-        
         if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
             ws.close(code, reason);
         }
-    } catch (error) {
+    }
+    catch (error) {
         console.error(`[WebSocket] Error closing connection: ${error.message}`);
         try {
             ws.terminate();
-        } catch (terminateError) {
+        }
+        catch (terminateError) {
             console.error(`[WebSocket] Error terminating connection: ${terminateError.message}`);
         }
     }
@@ -77,11 +77,24 @@ export function initWebSocket(server) {
     });
     // Initialize WebSocket Server for raw WebSocket connections
     wss = new WebSocketServer({ server });
+    
+    // Add error handling for the WebSocket server to prevent crashes
+    wss.on('error', (error) => {
+        console.error('[WebSocket] WebSocket server error:', error);
+    });
+    
     // Handle WebSocket connections
     wss.on('connection', (ws, req) => {
         try {
             const pathname = url.parse(req.url).pathname;
             const clientIP = getClientIP(req);
+            
+            // Let Socket.IO handle its own connections - ignore them here
+            if (pathname && pathname.startsWith('/socket.io/')) {
+                console.log(`[WebSocket] Ignoring Socket.IO connection to ${pathname} from ${clientIP}`);
+                return;
+            }
+            
             console.log(`[WebSocket] Client connected to ${pathname} from ${clientIP}`);
             // Check connection limits
             if (!checkConnectionLimit(clientIP)) {

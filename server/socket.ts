@@ -89,12 +89,23 @@ export function initWebSocket(server: http.Server) {
 
   // Initialize WebSocket Server for raw WebSocket connections
   wss = new WebSocketServer({ server });
-
+  
+  // Add error handling for the WebSocket server to prevent crashes
+  wss.on('error', (error: Error) => {
+    console.error('[WebSocket] WebSocket server error:', error);
+  });
+  
   // Handle WebSocket connections
   wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
     try {
       const pathname = url.parse(req.url!).pathname;
       const clientIP = getClientIP(req);
+      
+      // Let Socket.IO handle its own connections - ignore them here
+      if (pathname && pathname.startsWith('/socket.io/')) {
+        console.log(`[WebSocket] Ignoring Socket.IO connection to ${pathname} from ${clientIP}`);
+        return;
+      }
       
       console.log(`[WebSocket] Client connected to ${pathname} from ${clientIP}`);
       
