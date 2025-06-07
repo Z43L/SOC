@@ -186,8 +186,48 @@ export function initWebSocket(server: http.Server) {
 - **Propósito**: Comunicación en tiempo real con agentes instalados
 - **Frecuencia**: Heartbeats cada 60s, logs bajo demanda
 - **Límite de mensaje**: 100KB máximo
-- **Autenticación**: Token de agente requerido en query string
+- **Autenticación**: Token JWT de agente requerido en query string
 - **Tipos de mensaje**: heartbeat, log_batch, status_update, metrics
+- **Seguridad**: Validación JWT completa y verificación de agentId
+
+### Seguridad de Agentes (Mejoras v2.0)
+
+#### Autenticación JWT Mejorada
+```typescript
+// Validación completa del token JWT
+const { verifyAgentToken } = await import('./integrations/connectors/jwt-auth.js');
+authenticatedAgent = verifyAgentToken(token, true);
+
+if (!authenticatedAgent || !authenticatedAgent.agentId) {
+  console.warn(`[WebSocket] Invalid or expired token from ${clientIP}`);
+  safeClose(ws, 1008, 'Invalid or expired token');
+  removeConnection(clientIP);
+  return;
+}
+```
+
+#### Protección Contra Spoofing de AgentId
+```typescript
+// Validar que el agentId del mensaje coincida con el token
+if (message.agentId && message.agentId !== authenticatedAgent.agentId) {
+  console.warn(`[WebSocket] AgentId mismatch: ${message.agentId} vs ${authenticatedAgent.agentId}`);
+  ws.send(JSON.stringify({
+    type: 'error',
+    message: 'AgentId mismatch with authentication token'
+  }));
+  return;
+}
+
+// Siempre usar el agentId autenticado
+message.agentId = authenticatedAgent.agentId;
+```
+
+#### Características de Seguridad
+- **Token JWT completo**: Verificación de firma, expiración y tipo
+- **Prevención de spoofing**: AgentId siempre tomado del token autenticado
+- **Logging de seguridad**: Registro detallado de intentos de autenticación
+- **Códigos de cierre apropiados**: 1008 para violaciones de política
+- **Procesamiento asíncrono**: Eventos procesados en background para mejor rendimiento
 
 ## Manejo de Conexiones del Dashboard
 
