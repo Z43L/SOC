@@ -5,7 +5,7 @@ import fs from 'fs/promises';
 
 // ---------- basic configurable settings ----------
 const CONFIG_FILE = path.resolve(__dirname, '../agent.yml');
-const DEFAULT_URL = 'ws://localhost:3000/api/ws/agents';
+const DEFAULT_URL = 'ws://localhost:5000/api/ws/agents';
 const HEARTBEAT_INTERVAL = 30_000; // 30 s
 //--------------------------------------------------
 

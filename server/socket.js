@@ -15,6 +15,27 @@ function getClientIP(req) {
         req.socket.remoteAddress ||
         'unknown';
 }
+
+function safeClose(ws, code, reason) {
+    try {
+        // Validate close code to prevent invalid frame errors
+        if (code < 1000 || code > 4999) {
+            console.warn(`[WebSocket] Invalid close code ${code}, using 1000 instead`);
+            code = 1000;
+        }
+        
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+            ws.close(code, reason);
+        }
+    } catch (error) {
+        console.error(`[WebSocket] Error closing connection: ${error.message}`);
+        try {
+            ws.terminate();
+        } catch (terminateError) {
+            console.error(`[WebSocket] Error terminating connection: ${terminateError.message}`);
+        }
+    }
+}
 function checkConnectionLimit(ip) {
     const currentConnections = connectionCounts.get(ip) || 0;
     if (currentConnections >= MAX_CONNECTIONS_PER_IP) {
@@ -64,12 +85,7 @@ export function initWebSocket(server) {
             console.log(`[WebSocket] Client connected to ${pathname} from ${clientIP}`);
             // Check connection limits
             if (!checkConnectionLimit(clientIP)) {
-                try {
-                    ws.close(1008, 'Connection limit exceeded');
-                }
-                catch (error) {
-                    console.error(`[WebSocket] Error closing connection for rate limit: ${error.message}`);
-                }
+                safeClose(ws, 1008, 'Connection limit exceeded');
                 return;
             }
             // Handle different WebSocket endpoints
@@ -86,23 +102,13 @@ export function initWebSocket(server) {
                 console.log(`[WebSocket] Unknown endpoint: ${pathname}`);
                 removeConnection(clientIP);
                 // Use 1008 (Policy Violation) instead of 1002 (Protocol Error) for unknown endpoints
-                try {
-                    ws.close(1008, 'Unknown endpoint');
-                }
-                catch (error) {
-                    console.error(`[WebSocket] Error closing connection for unknown endpoint: ${error.message}`);
-                }
+                safeClose(ws, 1008, 'Unknown endpoint');
             }
         }
         catch (error) {
             console.error(`[WebSocket] Error handling WebSocket connection:`, error);
-            try {
-                removeConnection(getClientIP(req));
-                ws.close(1011, 'Internal server error');
-            }
-            catch (closeError) {
-                console.error(`[WebSocket] Error closing connection after error: ${closeError.message}`);
-            }
+            removeConnection(getClientIP(req));
+            safeClose(ws, 1011, 'Internal server error');
         }
     });
     return io;
@@ -115,13 +121,13 @@ function handleDashboardConnection(ws, clientIP) {
         try {
             // Rate limiting
             if (!checkMessageRateLimit(clientIP)) {
-                ws.close(1008, 'Rate limit exceeded');
+                safeClose(ws, 1008, 'Rate limit exceeded');
                 return;
             }
             // Message size validation
             if (data.length > maxMessageSize) {
                 console.warn(`[WebSocket] Message too large from ${clientIP}: ${data.length} bytes`);
-                ws.close(1009, 'Message too large');
+                safeClose(ws, 1009, 'Message too large');
                 return;
             }
             const message = JSON.parse(data.toString());
@@ -195,13 +201,13 @@ function handleConnectorsConnection(ws, clientIP) {
         try {
             // Rate limiting
             if (!checkMessageRateLimit(clientIP)) {
-                ws.close(1008, 'Rate limit exceeded');
+                safeClose(ws, 1008, 'Rate limit exceeded');
                 return;
             }
             // Message size validation
             if (data.length > maxMessageSize) {
                 console.warn(`[WebSocket] Connector message too large from ${clientIP}: ${data.length} bytes`);
-                ws.close(1009, 'Message too large');
+                safeClose(ws, 1009, 'Message too large');
                 return;
             }
             const message = JSON.parse(data.toString());
@@ -256,7 +262,7 @@ function handleAgentsConnection(ws, clientIP, req) {
     // Validate token
     if (!token) {
         console.warn(`[WebSocket] Agent connection without token from ${clientIP}`);
-        ws.close(1008, 'Authentication token required');
+        safeClose(ws, 1008, 'Authentication token required');
         removeConnection(clientIP);
         return;
     }
@@ -265,13 +271,13 @@ function handleAgentsConnection(ws, clientIP, req) {
         try {
             // Rate limiting
             if (!checkMessageRateLimit(clientIP)) {
-                ws.close(1008, 'Rate limit exceeded');
+                safeClose(ws, 1008, 'Rate limit exceeded');
                 return;
             }
             // Message size validation
             if (data.length > maxMessageSize) {
                 console.warn(`[WebSocket] Agent message too large from ${clientIP}: ${data.length} bytes`);
-                ws.close(1009, 'Message too large');
+                safeClose(ws, 1009, 'Message too large');
                 return;
             }
             const message = JSON.parse(data.toString());

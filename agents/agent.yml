@@ -2,7 +2,7 @@
 # This configuration ensures agents connect to the proper WebSocket endpoint
 
 # Server WebSocket URL - includes the correct endpoint path
-server: "ws://localhost:3000/api/ws/agents?token=development-agent-token"
+server: "ws://localhost:5000/api/ws/agents?token=development-agent-token"
 
 # Agent identification
 agentId: ""  # Will be auto-generated if empty
