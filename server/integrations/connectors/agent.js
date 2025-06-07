@@ -2,7 +2,6 @@
  * Implementación de conectores de tipo Agente
  * Gestiona la comunicación con agentes instalados en sistemas objetivo
  */
-// DataSource import removed - not available in schema
 import { BaseConnector } from './base';
 import { log } from '../../vite';
 import { storage } from '../../storage';

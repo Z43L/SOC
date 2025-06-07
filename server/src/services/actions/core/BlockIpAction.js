@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BaseAction } from '../BaseAction.js';
+import { BaseAction } from '../BaseAction';
 // IP blocking action
 export class BlockIpAction extends BaseAction {
     name = 'block_ip';
