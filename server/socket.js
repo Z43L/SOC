@@ -89,11 +89,17 @@ export function initWebSocket(server) {
             const pathname = url.parse(req.url).pathname;
             const clientIP = getClientIP(req);
             
-            // Let Socket.IO handle its own connections - ignore them here
-            if (pathname && pathname.startsWith('/socket.io/')) {
-                console.log(`[WebSocket] Ignoring Socket.IO connection to ${pathname} from ${clientIP}`);
-                return;
-            }
+        // Let Socket.IO handle its own connections - close them here to avoid unhandled errors
+        if (pathname && pathname.startsWith('/socket.io/')) {
+            console.log(`[WebSocket] Ignoring Socket.IO connection to ${pathname} from ${clientIP}`);
+            // Close the connection gracefully and attach a noop error handler so unhandled
+            // Socket.IO frames do not crash the process
+            ws.on('error', (err) => {
+                console.warn(`[WebSocket] Error on ignored Socket.IO connection from ${clientIP}:`, err.message);
+            });
+            safeClose(ws, 1000, 'Socket.IO not handled here');
+            return;
+        }
             
             console.log(`[WebSocket] Client connected to ${pathname} from ${clientIP}`);
             // Check connection limits
