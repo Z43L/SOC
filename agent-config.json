@@ -1,6 +1,6 @@
 {
   "serverUrl": "ws://localhost:5000/api/ws/agents",
-  "registrationKey": "development-agent-token",
+  "organizationKey": "development-agent-token",
   "transport": "websocket",
   "compressionEnabled": false,
   "validateCertificates": false,
