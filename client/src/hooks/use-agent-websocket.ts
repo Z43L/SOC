@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import useWebSocket from './use-websocket';
 import { useToast } from './use-toast';
+import { io, Socket } from 'socket.io-client';
 
 interface AgentStatus {
   agentId: string;
@@ -21,140 +21,149 @@ interface AgentLog {
   eventType?: string;
 }
 
-interface AgentWebSocketData {
-  type: 'agent_status' | 'agent_heartbeat' | 'agent_logs' | 'agent_connected' | 'agent_disconnected';
-  agentId?: string;
-  data?: any;
-  timestamp?: string;
-}
-
 export const useAgentWebSocket = () => {
   const { toast } = useToast();
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'failed'>('disconnected');
+  const [isManuallyDisabled, setIsManuallyDisabled] = useState(false);
   const [agentStatuses, setAgentStatuses] = useState<Map<string, AgentStatus>>(new Map());
   const [agentLogs, setAgentLogs] = useState<AgentLog[]>([]);
   const [connectedAgents, setConnectedAgents] = useState<Set<string>>(new Set());
 
-  const handleMessage = useCallback((message: AgentWebSocketData) => {
-    switch (message.type) {
-      case 'agent_connected':
-        if (message.agentId) {
-          setConnectedAgents(prev => new Set(prev).add(message.agentId!));
-          setAgentStatuses(prev => {
-            const newMap = new Map(prev);
-            const existing = newMap.get(message.agentId!) || {
-              agentId: message.agentId!,
-              status: 'active' as const,
-              lastHeartbeat: new Date().toISOString()
-            };
-            newMap.set(message.agentId!, {
-              ...existing,
-              status: 'active',
-              lastHeartbeat: new Date().toISOString()
-            });
-            return newMap;
-          });
-          
-          toast({
-            title: "Agent Connected",
-            description: `Agent ${message.agentId} is now active`,
-            variant: "default"
-          });
-        }
-        break;
+  const connect = useCallback(() => {
+    if (isManuallyDisabled || socket?.connected) return;
 
-      case 'agent_disconnected':
-        if (message.agentId) {
-          setConnectedAgents(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(message.agentId!);
-            return newSet;
+    setConnectionStatus('connecting');
+    console.log('Connecting to Socket.IO for agent monitoring...');
+
+    const newSocket = io({
+      transports: ['websocket', 'polling']
+    });
+
+    newSocket.on('connect', () => {
+      setConnectionStatus('connected');
+      console.log('Socket.IO connected for agent monitoring');
+      toast({
+        title: "WebSocket Connected",
+        description: "Real-time agent monitoring is now active",
+        variant: "default"
+      });
+    });
+
+    newSocket.on('disconnect', () => {
+      setConnectionStatus('disconnected');
+      console.log('Socket.IO disconnected');
+    });
+
+    newSocket.on('connect_error', (error) => {
+      setConnectionStatus('failed');
+      console.error('Socket.IO connection error:', error);
+    });
+
+    // Listen for agent events
+    newSocket.on('agent_connected', (data) => {
+      if (data.agentId) {
+        setConnectedAgents(prev => new Set(prev).add(data.agentId));
+        setAgentStatuses(prev => {
+          const newMap = new Map(prev);
+          const existing = newMap.get(data.agentId) || {
+            agentId: data.agentId,
+            status: 'active' as const,
+            lastHeartbeat: new Date().toISOString()
+          };
+          newMap.set(data.agentId, {
+            ...existing,
+            status: 'active',
+            lastHeartbeat: data.timestamp || new Date().toISOString()
           });
-          setAgentStatuses(prev => {
-            const newMap = new Map(prev);
-            const existing = newMap.get(message.agentId!);
-            if (existing) {
-              newMap.set(message.agentId!, {
-                ...existing,
-                status: 'inactive'
-              });
-            }
-            return newMap;
-          });
-
-          toast({
-            title: "Agent Disconnected", 
-            description: `Agent ${message.agentId} went offline`,
-            variant: "destructive"
-          });
-        }
-        break;
-
-      case 'agent_heartbeat':
-        if (message.agentId && message.data) {
-          setAgentStatuses(prev => {
-            const newMap = new Map(prev);
-            newMap.set(message.agentId!, {
-              agentId: message.agentId!,
-              status: message.data.status || 'active',
-              lastHeartbeat: message.data.timestamp || new Date().toISOString(),
-              metrics: message.data.metrics
-            });
-            return newMap;
-          });
-        }
-        break;
-
-      case 'agent_logs':
-        if (message.agentId && message.data && Array.isArray(message.data.events)) {
-          const newLogs: AgentLog[] = message.data.events.map((event: any) => ({
-            agentId: message.agentId!,
-            timestamp: event.timestamp || new Date().toISOString(),
-            message: event.message || 'No message',
-            level: event.severity === 'high' || event.severity === 'critical' ? 'error' :
-                   event.severity === 'medium' ? 'warning' : 'info',
-            eventType: event.eventType
-          }));
-
-          setAgentLogs(prev => [...newLogs, ...prev].slice(0, 100)); // Keep only latest 100 logs
-        }
-        break;
-
-      case 'agent_status':
-        if (message.agentId && message.data) {
-          setAgentStatuses(prev => {
-            const newMap = new Map(prev);
-            newMap.set(message.agentId!, {
-              agentId: message.agentId!,
-              status: message.data.status || 'active',
-              lastHeartbeat: message.data.lastHeartbeat || new Date().toISOString(),
-              metrics: message.data.metrics
-            });
-            return newMap;
-          });
-        }
-        break;
-    }
-  }, [toast]);
-
-  const {
-    connectionStatus,
-    toggleConnection,
-    isManuallyDisabled,
-    send
-  } = useWebSocket(
-    `ws://${typeof window !== 'undefined' ? window.location.host : 'localhost:5000'}/api/ws/dashboard`,
-    {
-      manualMode: true,
-      onMessage: handleMessage,
-      onError: (error) => {
-        console.warn("Agent WebSocket connection error:", error);
-      },
-      onOpen: () => {
-        // Request initial agent status when connected
-        send({ type: 'request_agent_status' });
+          return newMap;
+        });
+        
+        toast({
+          title: "Agent Connected",
+          description: `Agent ${data.agentId} is now active`,
+          variant: "default"
+        });
       }
+    });
+
+    newSocket.on('agent_disconnected', (data) => {
+      if (data.agentId) {
+        setConnectedAgents(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(data.agentId);
+          return newSet;
+        });
+        setAgentStatuses(prev => {
+          const newMap = new Map(prev);
+          const existing = newMap.get(data.agentId);
+          if (existing) {
+            newMap.set(data.agentId, {
+              ...existing,
+              status: 'inactive'
+            });
+          }
+          return newMap;
+        });
+
+        toast({
+          title: "Agent Disconnected", 
+          description: `Agent ${data.agentId} went offline`,
+          variant: "destructive"
+        });
+      }
+    });
+
+    newSocket.on('agent_heartbeat', (data) => {
+      if (data.agentId && data.data) {
+        setAgentStatuses(prev => {
+          const newMap = new Map(prev);
+          newMap.set(data.agentId, {
+            agentId: data.agentId,
+            status: data.data.status || 'active',
+            lastHeartbeat: data.data.timestamp || new Date().toISOString(),
+            metrics: data.data.metrics
+          });
+          return newMap;
+        });
+      }
+    });
+
+    newSocket.on('agent_logs', (data) => {
+      if (data.agentId && data.data && Array.isArray(data.data.events)) {
+        const newLogs: AgentLog[] = data.data.events.map((event: any) => ({
+          agentId: data.agentId,
+          timestamp: event.timestamp || new Date().toISOString(),
+          message: event.message || 'No message',
+          level: event.severity === 'high' || event.severity === 'critical' ? 'error' :
+                 event.severity === 'medium' ? 'warning' : 'info',
+          eventType: event.eventType
+        }));
+
+        setAgentLogs(prev => [...newLogs, ...prev].slice(0, 100)); // Keep only latest 100 logs
+      }
+    });
+
+    setSocket(newSocket);
+  }, [isManuallyDisabled, socket, toast]);
+
+  const disconnect = useCallback(() => {
+    if (socket) {
+      socket.disconnect();
+      setSocket(null);
     }
-  );
+    setConnectionStatus('disconnected');
+  }, [socket]);
+
+  const toggleConnection = useCallback(() => {
+    if (isManuallyDisabled || connectionStatus === 'disconnected' || connectionStatus === 'failed') {
+      setIsManuallyDisabled(false);
+      connect();
+    } else {
+      setIsManuallyDisabled(true);
+      disconnect();
+    }
+  }, [isManuallyDisabled, connectionStatus, connect, disconnect]);
 
   const clearLogs = useCallback(() => {
     setAgentLogs([]);
@@ -167,6 +176,15 @@ export const useAgentWebSocket = () => {
   const isAgentConnected = useCallback((agentId: string): boolean => {
     return connectedAgents.has(agentId);
   }, [connectedAgents]);
+
+  useEffect(() => {
+    // Auto-connect on component mount
+    connect();
+
+    return () => {
+      disconnect();
+    };
+  }, []);
 
   return {
     connectionStatus,

@@ -299,6 +299,23 @@ function handleAgentsConnection(ws, clientIP, req) {
     
     ws.on('close', (code, reason) => {
         console.log(`[WebSocket] Agent client disconnected: ${code} ${reason}`);
+        
+        // Try to extract agent ID from the last received message to emit disconnection event
+        // We can store the agent ID when processing messages
+        if (ws.agentId) {
+            try {
+                const io = getIo();
+                io.emit('agent_disconnected', {
+                    type: 'agent_disconnected',
+                    agentId: ws.agentId,
+                    timestamp: new Date().toISOString()
+                });
+                console.log(`[WebSocket] Emitted disconnection event for agent ${ws.agentId}`);
+            } catch (ioError) {
+                console.warn('[WebSocket] Could not emit disconnection event:', ioError.message);
+            }
+        }
+        
         removeConnection(clientIP);
     });
     
@@ -319,6 +336,11 @@ function handleAgentsConnection(ws, clientIP, req) {
 
 async function handleAgentMessage(message, ws, clientIP, token) {
     try {
+        // Store agent ID on WebSocket for disconnection handling
+        if (message.agentId && !ws.agentId) {
+            ws.agentId = message.agentId;
+        }
+        
         switch (message.type) {
             case 'heartbeat':
                 await handleAgentHeartbeat(message, ws, clientIP, token);
@@ -367,6 +389,7 @@ async function handleAgentHeartbeat(message, ws, clientIP, token) {
         if (agentConnector && agentConnector.configuration.agents) {
             const agent = agentConnector.configuration.agents[message.agentId];
             if (agent) {
+                const wasActive = agent.status === 'active';
                 agent.lastHeartbeat = new Date().toISOString();
                 agent.status = 'active';
                 
@@ -381,6 +404,33 @@ async function handleAgentHeartbeat(message, ws, clientIP, token) {
                 });
                 
                 console.log(`[WebSocket] Updated agent ${message.agentId} heartbeat`);
+                
+                // Emit Socket.IO events for dashboard updates
+                try {
+                    const io = getIo();
+                    
+                    // Emit agent heartbeat event
+                    io.emit('agent_heartbeat', {
+                        type: 'agent_heartbeat',
+                        agentId: message.agentId,
+                        data: {
+                            status: 'active',
+                            timestamp: agent.lastHeartbeat,
+                            metrics: agent.metrics
+                        }
+                    });
+                    
+                    // If agent was not active before, emit connection event
+                    if (!wasActive) {
+                        io.emit('agent_connected', {
+                            type: 'agent_connected',
+                            agentId: message.agentId,
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+                } catch (ioError) {
+                    console.warn('[WebSocket] Could not emit Socket.IO events:', ioError.message);
+                }
             }
         }
     } catch (error) {
@@ -430,6 +480,21 @@ async function handleAgentLogBatch(message, ws, clientIP, token) {
             await connector.processAgentEvents();
             
             console.log(`[WebSocket] Processed ${message.events.length} events from agent ${message.agentId}`);
+            
+            // Emit Socket.IO event for real-time log display
+            try {
+                const io = getIo();
+                io.emit('agent_logs', {
+                    type: 'agent_logs',
+                    agentId: message.agentId,
+                    data: {
+                        events: message.events,
+                        timestamp: new Date().toISOString()
+                    }
+                });
+            } catch (ioError) {
+                console.warn('[WebSocket] Could not emit log events:', ioError.message);
+            }
         }
     } catch (error) {
         console.error(`[WebSocket] Error processing agent log batch:`, error);
