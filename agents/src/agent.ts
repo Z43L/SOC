@@ -5,7 +5,7 @@ import fs from 'fs/promises';
 
 // ---------- basic configurable settings ----------
 const CONFIG_FILE = path.resolve(__dirname, '../agent.yml');
-const DEFAULT_URL = 'ws://localhost:3000/agents';
+const DEFAULT_URL = 'ws://localhost:5000/api/ws/agents';
 const HEARTBEAT_INTERVAL = 30_000; // 30 s
 //--------------------------------------------------
 
@@ -21,8 +21,25 @@ async function loadWsUrl(): Promise<string> {
 	}
 }
 
+// Helper to build WebSocket URL with token
+function buildWebSocketUrl(baseUrl: string): string {
+	try {
+		const url = new URL(baseUrl);
+		// Add token if not already present
+		if (!url.searchParams.has('token')) {
+			url.searchParams.set('token', 'development-agent-token');
+		}
+		return url.toString();
+	} catch {
+		// Fallback for simple URLs
+		const separator = baseUrl.includes('?') ? '&' : '?';
+		return `${baseUrl}${separator}token=development-agent-token`;
+	}
+}
+
 (async () => {
-	const serverUrl = await loadWsUrl();
+	const baseUrl = await loadWsUrl();
+	const serverUrl = buildWebSocketUrl(baseUrl);
 	const socket = new WebSocket(serverUrl);
 
 	const agentId = `${os.hostname()}-${process.pid}`;

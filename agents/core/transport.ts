@@ -289,11 +289,18 @@ export class Transport extends EventEmitter {
           }
         });
         
-        this.ws.on('close', () => {
-          console.log('WebSocket connection closed');
+        this.ws.on('close', (code, reason) => {
+          console.log(`WebSocket connection closed: ${code} ${reason || 'no reason'}`);
           this.connected = false;
+          
+          // Only attempt reconnection for certain close codes
           if (this.options.autoReconnect !== false) {
-            this.scheduleReconnect();
+            // Valid close codes that should trigger reconnection
+            if (!code || code === 1000 || code === 1001 || code === 1006 || code >= 3000) {
+              this.scheduleReconnect();
+            } else {
+              console.log(`WebSocket closed with code ${code}, not attempting reconnection`);
+            }
           }
         });
         
@@ -467,9 +474,15 @@ export class Transport extends EventEmitter {
     
     if (this.ws) {
       try {
-        this.ws.terminate();
+        // Use a proper close code (1000 = normal closure)
+        if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
+          this.ws.close(1000, 'Agent shutdown');
+        } else {
+          this.ws.terminate();
+        }
       } catch (e) {
         // Ignorar errores al cerrar
+        console.warn('Error closing WebSocket:', e.message);
       }
       this.ws = null;
     }
