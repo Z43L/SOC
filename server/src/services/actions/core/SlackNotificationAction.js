@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BaseAction } from '../BaseAction';
+import { BaseAction } from '../BaseAction.js';
 // Slack notification action
 export class SlackNotificationAction extends BaseAction {
     name = 'notify_slack';

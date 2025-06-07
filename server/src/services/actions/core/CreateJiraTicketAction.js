@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BaseAction } from '../BaseAction';
+import { BaseAction } from '../BaseAction.js';
 // Jira ticket creation action
 export class CreateJiraTicketAction extends BaseAction {
     name = 'create_jira_ticket';
