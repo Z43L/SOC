@@ -1,12 +1,9 @@
 // Import all core actions
-import { EmailNotificationAction } from './core/EmailNotificationAction.js';
-import { SlackNotificationAction } from './core/SlackNotificationAction.js';
-import { TeamsNotificationAction } from './core/TeamsNotificationAction.js';
-import { WebhookNotificationAction } from './core/WebhookNotificationAction.js';
-import { PushNotificationAction } from './core/PushNotificationAction.js';
-import { BlockIpAction } from './core/BlockIpAction.js';
-import { IsolateHostAction } from './core/IsolateHostAction.js';
-import { CreateJiraTicketAction } from './core/CreateJiraTicketAction.js';
+import { EmailNotificationAction } from './core/EmailNotificationAction';
+import { SlackNotificationAction } from './core/SlackNotificationAction';
+import { BlockIpAction } from './core/BlockIpAction';
+import { IsolateHostAction } from './core/IsolateHostAction';
+import { CreateJiraTicketAction } from './core/CreateJiraTicketAction';
 export class SoarActionRegistry {
     actions = {};
     constructor() {
@@ -16,9 +13,6 @@ export class SoarActionRegistry {
     registerCoreActions() {
         this.registerAction(new EmailNotificationAction());
         this.registerAction(new SlackNotificationAction());
-        this.registerAction(new TeamsNotificationAction());
-        this.registerAction(new WebhookNotificationAction());
-        this.registerAction(new PushNotificationAction());
         this.registerAction(new BlockIpAction());
         this.registerAction(new IsolateHostAction());
         this.registerAction(new CreateJiraTicketAction());

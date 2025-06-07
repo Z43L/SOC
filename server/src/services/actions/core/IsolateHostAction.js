@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BaseAction } from '../BaseAction.js';
+import { BaseAction } from '../BaseAction';
 // Host isolation action
 export class IsolateHostAction extends BaseAction {
     name = 'isolate_host';

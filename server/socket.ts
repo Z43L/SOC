@@ -71,28 +71,47 @@ export function initWebSocket(server: http.Server) {
 
   // Handle WebSocket connections
   wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
-    const pathname = url.parse(req.url!).pathname;
-    const clientIP = getClientIP(req);
-    
-    console.log(`[WebSocket] Client connected to ${pathname} from ${clientIP}`);
-    
-    // Check connection limits
-    if (!checkConnectionLimit(clientIP)) {
-      ws.close(1008, 'Connection limit exceeded');
-      return;
-    }
-    
-    // Handle different WebSocket endpoints
-    if (pathname === '/api/ws/dashboard') {
-      handleDashboardConnection(ws, clientIP);
-    } else if (pathname === '/api/ws/connectors') {
-      handleConnectorsConnection(ws, clientIP);
-    } else if (pathname === '/api/ws/agents') {
-      handleAgentsConnection(ws, clientIP, req);
-    } else {
-      console.log(`[WebSocket] Unknown endpoint: ${pathname}`);
-      removeConnection(clientIP);
-      ws.close(1002, 'Unknown endpoint');
+    try {
+      const pathname = url.parse(req.url!).pathname;
+      const clientIP = getClientIP(req);
+      
+      console.log(`[WebSocket] Client connected to ${pathname} from ${clientIP}`);
+      
+      // Check connection limits
+      if (!checkConnectionLimit(clientIP)) {
+        try {
+          ws.close(1008, 'Connection limit exceeded');
+        } catch (error) {
+          console.error(`[WebSocket] Error closing connection for rate limit: ${(error as Error).message}`);
+        }
+        return;
+      }
+      
+      // Handle different WebSocket endpoints
+      if (pathname === '/api/ws/dashboard' || pathname === '/ws/dashboard') {
+        handleDashboardConnection(ws, clientIP);
+      } else if (pathname === '/api/ws/connectors') {
+        handleConnectorsConnection(ws, clientIP);
+      } else if (pathname === '/api/ws/agents') {
+        handleAgentsConnection(ws, clientIP, req);
+      } else {
+        console.log(`[WebSocket] Unknown endpoint: ${pathname}`);
+        removeConnection(clientIP);
+        // Use 1008 (Policy Violation) instead of 1002 (Protocol Error) for unknown endpoints
+        try {
+          ws.close(1008, 'Unknown endpoint');
+        } catch (error) {
+          console.error(`[WebSocket] Error closing connection for unknown endpoint: ${(error as Error).message}`);
+        }
+      }
+    } catch (error) {
+      console.error(`[WebSocket] Error handling WebSocket connection:`, error);
+      try {
+        removeConnection(getClientIP(req));
+        ws.close(1011, 'Internal server error');
+      } catch (closeError) {
+        console.error(`[WebSocket] Error closing connection after error: ${(closeError as Error).message}`);
+      }
     }
   });
 
