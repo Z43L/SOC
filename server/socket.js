@@ -15,7 +15,6 @@ function getClientIP(req) {
         req.socket.remoteAddress ||
         'unknown';
 }
-
 function safeClose(ws, code, reason) {
     try {
         // Validate close code to prevent invalid frame errors
@@ -23,15 +22,16 @@ function safeClose(ws, code, reason) {
             console.warn(`[WebSocket] Invalid close code ${code}, using 1000 instead`);
             code = 1000;
         }
-        
         if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
             ws.close(code, reason);
         }
-    } catch (error) {
+    }
+    catch (error) {
         console.error(`[WebSocket] Error closing connection: ${error.message}`);
         try {
             ws.terminate();
-        } catch (terminateError) {
+        }
+        catch (terminateError) {
             console.error(`[WebSocket] Error terminating connection: ${terminateError.message}`);
         }
     }
