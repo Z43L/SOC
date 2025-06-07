@@ -1,0 +1,61 @@
+# Agent Configuration Example
+# This file shows how to configure an agent to use WebSocket communication
+
+# Server connection
+serverUrl: "https://your-soc-server.com"
+organizationKey: "your-master-registration-token-here"
+
+# Communication settings
+transport: "websocket"  # Use "https" for HTTP-only fallback
+compressionEnabled: true
+
+# Intervals (in seconds)
+heartbeatInterval: 60
+dataUploadInterval: 300
+scanInterval: 3600
+
+# API endpoints
+registrationEndpoint: "/api/agents/register"
+dataEndpoint: "/api/agents/data"
+heartbeatEndpoint: "/api/agents/heartbeat"
+
+# Security
+signMessages: false
+validateCertificates: true
+allowInsecureConnections: false  # Set to true only for development
+maxMessageSize: 1048576  # 1MB
+
+# Agent capabilities
+capabilities:
+  fileIntegrity: true
+  processMonitoring: true
+  networkMonitoring: true
+  logCollection: true
+  systemMetrics: true
+
+# Logging
+logLevel: "info"
+logFilePath: "/var/log/soc-agent/agent.log"
+maxStorageSize: 100  # MB
+
+# Event queue
+queueSize: 1000
+queuePersistPath: "/var/lib/soc-agent/queue"
+
+# Commands (optional)
+enableCommands: true
+allowedCommands:
+  - "script"
+  - "configUpdate"
+  - "isolate"
+  - "upgrade"
+
+# System scanning
+directoriesToScan:
+  - "/etc"
+  - "/bin"
+  - "/usr/bin"
+  - "/var/log"
+
+# Thresholds
+cpuAlertThreshold: 80

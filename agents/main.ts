@@ -264,11 +264,13 @@ class Agent {
       const response = await this.transport.request({
         endpoint: this.config.registrationEndpoint,
         method: 'POST',
+        headers: {
+          'x-registration-token': this.config.organizationKey
+        },
         data: {
           hostname,
           os: platform,
           arch,
-          organizationKey: this.config.organizationKey,
           version: AGENT_VERSION
         }
       });
@@ -283,7 +285,7 @@ class Agent {
       // Actualizar transporte con el nuevo token
       this.transport = new Transport({
         serverUrl: this.config.serverUrl,
-        token: (response.data as any).jwtAgent,
+        token: (response.data as any).authToken,
         serverCA: (response.data as any).serverRootCA,
         enableCompression: this.config.compressionEnabled
       }, this.config);
@@ -376,15 +378,29 @@ class Agent {
       
       this.logger.info(`Uploading ${events.length} events to server`);
       
-      // Enviar eventos
-      const response = await this.transport.request({
-        endpoint: this.config.dataEndpoint,
-        method: 'POST',
-        data: { events }
-      });
+      // Try WebSocket first, fallback to HTTP
+      let success = false;
       
-      if (!response.success) {
-        throw new Error(`Failed to upload events: ${response.error || 'Unknown error'}`);
+      if (this.config.transport === 'websocket' && this.transport.isConnected()) {
+        success = await this.transport.sendWsMessage({
+          type: 'log_batch',
+          agentId: this.config.agentId,
+          events: events,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      if (!success) {
+        // Fallback to HTTP
+        const response = await this.transport.request({
+          endpoint: this.config.dataEndpoint,
+          method: 'POST',
+          data: { events }
+        });
+        
+        if (!response.success) {
+          throw new Error(`Failed to upload events: ${response.error || 'Unknown error'}`);
+        }
       }
       
       // Actualizar métrica de cola

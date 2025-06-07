@@ -188,7 +188,7 @@ export class Transport extends EventEmitter {
 
     return new Promise((resolve) => {
       try {
-        const wsUrl = new URL('/ws/agent', this.options.serverUrl);
+        const wsUrl = new URL('/api/ws/agents', this.options.serverUrl);
         wsUrl.protocol = wsUrl.protocol.replace('http', 'ws');
         
         // Añadir token a la URL si está disponible

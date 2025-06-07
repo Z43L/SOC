@@ -182,6 +182,13 @@ export function initWebSocket(server: http.Server) {
 - **Frecuencia**: Variable según el conector
 - **Límite de mensaje**: 50KB máximo
 
+#### 3. `/api/ws/agents` - Agentes SOC
+- **Propósito**: Comunicación en tiempo real con agentes instalados
+- **Frecuencia**: Heartbeats cada 60s, logs bajo demanda
+- **Límite de mensaje**: 100KB máximo
+- **Autenticación**: Token de agente requerido en query string
+- **Tipos de mensaje**: heartbeat, log_batch, status_update, metrics
+
 ## Manejo de Conexiones del Dashboard
 
 ### Configuración del Handler
@@ -481,6 +488,116 @@ setInterval(async () => {
 - No exposición de información sensible en errores
 - Logging detallado para debugging
 - Graceful degradation en fallos
+
+## Manejo de Conexiones de Agentes
+
+### Configuración Específica para Agentes
+
+```typescript
+function handleAgentsConnection(ws: WebSocket, clientIP: string, req: IncomingMessage) {
+  console.log('[WebSocket] Agent client connected');
+  
+  let messageCount = 0;
+  const maxMessageSize = 1024 * 100; // 100KB max for agent messages
+  
+  // Extract and validate token
+  const query = url.parse(req.url, true).query;
+  const token = query.token;
+  
+  if (!token) {
+    ws.close(1008, 'Authentication token required');
+    return;
+  }
+}
+```
+
+**Diferencias con otros endpoints**:
+- **Límite de mensaje mayor**: 100KB vs 50KB (logs pueden ser grandes)
+- **Autenticación requerida**: Token de agente obligatorio
+- **Tipos de mensaje específicos**: heartbeat, log_batch, status_update, metrics
+- **Integración con almacenamiento**: Actualiza base de datos en tiempo real
+
+### Tipos de Mensajes de Agentes
+
+#### 1. Heartbeat Messages
+
+```typescript
+{
+  type: 'heartbeat',
+  agentId: 'agent-uuid',
+  timestamp: '2024-01-15T10:30:00Z',
+  status: 'active',
+  metrics: {
+    cpu: 25.5,
+    memory: 1024,
+    disk: 512
+  }
+}
+```
+
+#### 2. Log Batch Messages
+
+```typescript
+{
+  type: 'log_batch',
+  agentId: 'agent-uuid',
+  timestamp: '2024-01-15T10:30:00Z',
+  events: [
+    {
+      eventType: 'security_alert',
+      severity: 'high',
+      message: 'Suspicious process detected',
+      timestamp: '2024-01-15T10:30:00Z'
+    }
+  ]
+}
+```
+
+#### 3. Status Update Messages
+
+```typescript
+{
+  type: 'status_update',
+  agentId: 'agent-uuid',
+  status: 'inactive' | 'active' | 'error',
+  timestamp: '2024-01-15T10:30:00Z'
+}
+```
+
+### Integración con AgentConnector
+
+Los mensajes de agentes se integran con el sistema existente:
+
+```typescript
+// Actualización de heartbeat
+if (agentConnector && agentConnector.configuration.agents) {
+  const agent = agentConnector.configuration.agents[message.agentId];
+  if (agent) {
+    agent.lastHeartbeat = new Date().toISOString();
+    agent.status = 'active';
+    
+    // Persistir cambios
+    await storage.updateConnector(agentConnector.id, {
+      configuration: agentConnector.configuration
+    });
+  }
+}
+
+// Procesamiento de logs
+const connector = new AgentConnector(agentConnectorConfig);
+for (const event of message.events) {
+  connector.pendingEvents.push(event);
+}
+await connector.processAgentEvents();
+```
+
+### Ventajas del WebSocket para Agentes
+
+1. **Comunicación en tiempo real**: Los logs se procesan inmediatamente
+2. **Heartbeats eficientes**: Menor overhead que HTTP
+3. **Detección rápida de desconexión**: Estado del agente se actualiza en tiempo real
+4. **Escalabilidad**: Maneja múltiples agentes simultáneamente
+5. **Fallback automático**: Si WebSocket falla, los agentes usan HTTP
 
 ## Performance y Escalabilidad
 
