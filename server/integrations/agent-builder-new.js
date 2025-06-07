@@ -208,7 +208,7 @@ define("agents/core/agent-config", ["require", "exports", "fs/promises", "path",
         // Cola de eventos
         queueSize: 1000,
         // Transporte
-        transport: 'https',
+        transport: 'websocket',
         compressionEnabled: true,
         // Comandos push
         enableCommands: true,
