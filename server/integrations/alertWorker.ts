@@ -9,6 +9,7 @@ import * as schema from '@shared/schema';
 import { insertEnrichmentSchema, enrichments, alerts } from '@shared/schema';
 import { AlertEnricher, AlertRecord, Enrich } from './enrichers/alert-enricher';
 import { getIo } from '../socket';
+import { eq, lt, and } from 'drizzle-orm';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -61,10 +62,10 @@ export async function processAlerts() {
   }
   // Fetch raw alerts
   const rawAlerts = await db.select().from(alerts)
-    .where(
-      db.eq(alerts.status, 'raw'),
-      db.lt(alerts.retryCount, config.maxRetries || 3),
-    );
+    .where(and(
+      eq(alerts.status, 'raw'),
+      lt(alerts.retryCount, config.maxRetries || 3),
+    ));
 
   for (const alert of rawAlerts) {
     queue.add(() => handleAlert(alert as AlertRecord));
@@ -100,18 +101,18 @@ async function handleAlert(alert: AlertRecord) {
   // Update alert
   await db.update(alerts)
     .set({ status: anyEnriched ? 'enriched' : 'raw', retryCount: alert.retryCount + 1 })
-    .where(db.eq(alerts.id, alert.id))
+    .where(eq(alerts.id, alert.id))
     .returning();
   
   // Emit WebSocket event with enriched data
   const [updatedAlert] = await db
     .select()
     .from(alerts)
-    .where(db.eq(alerts.id, alert.id));
+    .where(eq(alerts.id, alert.id));
   const enrichmentRows = await db
     .select()
     .from(enrichments)
-    .where(db.eq(enrichments.alertId, alert.id));
+    .where(eq(enrichments.alertId, alert.id));
   getIo().emit('alertEnriched', { alert: updatedAlert, enrichments: enrichmentRows });
    
   return;
