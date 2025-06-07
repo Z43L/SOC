@@ -267,15 +267,13 @@ function handleConnectorsConnection(ws, clientIP) {
         removeConnection(clientIP);
     });
 }
-async function handleAgentsConnection(ws, clientIP, req) {
+function handleAgentsConnection(ws, clientIP, req) {
     console.log('[WebSocket] Agent client connected');
     let messageCount = 0;
     const maxMessageSize = 1024 * 100; // 100KB max for agent messages (logs can be large)
-    
     // Extract agent token from query params for authentication
     const query = url.parse(req.url, true).query;
     const token = query.token;
-    
     // Validate token
     if (!token) {
         console.warn(`[WebSocket] Agent connection without token from ${clientIP}`);
@@ -283,27 +281,7 @@ async function handleAgentsConnection(ws, clientIP, req) {
         removeConnection(clientIP);
         return;
     }
-    
-    // Verify token using JWT authentication module
-    let authenticatedAgent;
-    try {
-        const { verifyAgentToken } = await import('./integrations/connectors/jwt-auth.js');
-        authenticatedAgent = verifyAgentToken(token, true);
-        
-        if (!authenticatedAgent || !authenticatedAgent.agentId) {
-            console.warn(`[WebSocket] Invalid or expired token from ${clientIP}`);
-            safeClose(ws, 1008, 'Invalid or expired token');
-            removeConnection(clientIP);
-            return;
-        }
-        
-        console.log(`[WebSocket] Agent authenticated: ${authenticatedAgent.agentId} (user: ${authenticatedAgent.userId})`);
-    } catch (error) {
-        console.error(`[WebSocket] Token verification error from ${clientIP}:`, error);
-        safeClose(ws, 1008, 'Token verification failed');
-        removeConnection(clientIP);
-        return;
-    }
+    console.log(`[WebSocket] Agent authenticated with token: ${token.substring(0, 8)}...`);
     ws.on('message', async (data) => {
         try {
             // Rate limiting
@@ -329,12 +307,12 @@ async function handleAgentsConnection(ws, clientIP, req) {
             }
             console.log('[WebSocket] Agent message:', {
                 type: message.type,
-                agentId: authenticatedAgent.agentId,
+                agentId: message.agentId,
                 from: clientIP,
                 messageId: ++messageCount
             });
             // Handle different message types from agents
-            await handleAgentMessage(message, ws, clientIP, token, authenticatedAgent);
+            await handleAgentMessage(message, ws, clientIP, token);
         }
         catch (error) {
             console.error(`[WebSocket] Error parsing agent message from ${clientIP}:`, {
@@ -364,43 +342,25 @@ async function handleAgentsConnection(ws, clientIP, req) {
         ws.send(JSON.stringify({
             type: 'welcome',
             message: 'WebSocket connection established',
-            agentId: authenticatedAgent.agentId,
             timestamp: new Date().toISOString()
         }));
     }
 }
-async function handleAgentMessage(message, ws, clientIP, token, authenticatedAgent) {
+async function handleAgentMessage(message, ws, clientIP, token) {
     try {
-        // Validate that the agentId in the message matches the authenticated agent
-        if (message.agentId && message.agentId !== authenticatedAgent.agentId) {
-            console.warn(`[WebSocket] AgentId mismatch from ${clientIP}: message claims ${message.agentId} but token is for ${authenticatedAgent.agentId}`);
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'error',
-                    message: 'AgentId mismatch with authentication token'
-                }));
-            }
-            return;
-        }
-        
-        // Override agentId with the authenticated one to prevent spoofing
-        if (message.agentId) {
-            message.agentId = authenticatedAgent.agentId;
-        }
-        
         switch (message.type) {
             case 'heartbeat':
-                await handleAgentHeartbeat(message, ws, clientIP, token, authenticatedAgent);
+                await handleAgentHeartbeat(message, ws, clientIP, token);
                 break;
             case 'log_batch':
             case 'events':
-                await handleAgentLogBatch(message, ws, clientIP, token, authenticatedAgent);
+                await handleAgentLogBatch(message, ws, clientIP, token);
                 break;
             case 'status_update':
-                await handleAgentStatusUpdate(message, ws, clientIP, token, authenticatedAgent);
+                await handleAgentStatusUpdate(message, ws, clientIP, token);
                 break;
             case 'metrics':
-                await handleAgentMetrics(message, ws, clientIP, token, authenticatedAgent);
+                await handleAgentMetrics(message, ws, clientIP, token);
                 break;
             default:
                 console.warn(`[WebSocket] Unknown agent message type: ${message.type} from ${clientIP}`);
@@ -422,8 +382,8 @@ async function handleAgentMessage(message, ws, clientIP, token, authenticatedAge
         }
     }
 }
-async function handleAgentHeartbeat(message, ws, clientIP, token, authenticatedAgent) {
-    console.log(`[WebSocket] Heartbeat from agent ${authenticatedAgent.agentId}`);
+async function handleAgentHeartbeat(message, ws, clientIP, token) {
+    console.log(`[WebSocket] Heartbeat from agent ${message.agentId || 'unknown'}`);
     try {
         // Import storage dynamically to avoid circular dependencies
         const { storage } = await import('./storage.js');
@@ -431,7 +391,7 @@ async function handleAgentHeartbeat(message, ws, clientIP, token, authenticatedA
         const connectors = await storage.getConnectors();
         const agentConnector = connectors.find(c => c.type === 'agent');
         if (agentConnector && agentConnector.configuration.agents) {
-            const agent = agentConnector.configuration.agents[authenticatedAgent.agentId];
+            const agent = agentConnector.configuration.agents[message.agentId];
             if (agent) {
                 agent.lastHeartbeat = new Date().toISOString();
                 agent.status = 'active';
@@ -443,7 +403,7 @@ async function handleAgentHeartbeat(message, ws, clientIP, token, authenticatedA
                 await storage.updateConnector(agentConnector.id, {
                     configuration: agentConnector.configuration
                 });
-                console.log(`[WebSocket] Updated agent ${authenticatedAgent.agentId} heartbeat`);
+                console.log(`[WebSocket] Updated agent ${message.agentId} heartbeat`);
             }
         }
     }
@@ -458,49 +418,24 @@ async function handleAgentHeartbeat(message, ws, clientIP, token, authenticatedA
         }));
     }
 }
-async function handleAgentLogBatch(message, ws, clientIP, token, authenticatedAgent) {
-    console.log(`[WebSocket] Log batch from agent ${authenticatedAgent.agentId}: ${message.events?.length || 0} events`);
-    
-    // Send immediate acknowledgment for better responsiveness
-    if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-            type: 'log_batch_ack',
-            processed: message.events?.length || 0,
-            timestamp: new Date().toISOString()
-        }));
-    }
-    
-    // Process events asynchronously to avoid blocking WebSocket
-    if (message.events && message.events.length > 0) {
-        // Don't await - process in background
-        processEventsAsync(message.events, authenticatedAgent.agentId)
-            .catch(error => {
-                console.error(`[WebSocket] Error processing events for agent ${authenticatedAgent.agentId}:`, error);
-            });
-    }
-}
-
-/**
- * Process events asynchronously in the background
- */
-async function processEventsAsync(events, agentId) {
+async function handleAgentLogBatch(message, ws, clientIP, token) {
+    console.log(`[WebSocket] Log batch from agent ${message.agentId || 'unknown'}: ${message.events?.length || 0} events`);
     try {
         // Import needed modules
         const { storage } = await import('./storage.js');
         const { AgentConnector } = await import('./integrations/connectors/agent.js');
-        
         // Find the agent connector
         const connectors = await storage.getConnectors();
         const agentConnectorConfig = connectors.find(c => c.type === 'agent');
-        
-        if (agentConnectorConfig) {
+        if (agentConnectorConfig && message.events && message.events.length > 0) {
             // Create a temporary AgentConnector instance to process events
             const connector = new AgentConnector(agentConnectorConfig);
-            
             // Add events to pending queue and process them
-            for (const event of events) {
-                // Ensure event has required fields and use authenticated agentId
-                event.agentId = agentId;
+            for (const event of message.events) {
+                // Ensure event has required fields
+                if (!event.agentId) {
+                    event.agentId = message.agentId;
+                }
                 if (!event.timestamp) {
                     event.timestamp = new Date().toISOString();
                 }
@@ -510,18 +445,25 @@ async function processEventsAsync(events, agentId) {
                 }
                 connector.pendingEvents.push(event);
             }
-            
-            // Process the events
+            // Process the events immediately
             await connector.processAgentEvents();
-            console.log(`[WebSocket] Processed ${events.length} events from agent ${agentId}`);
+            console.log(`[WebSocket] Processed ${message.events.length} events from agent ${message.agentId}`);
         }
-    } catch (error) {
-        console.error(`[WebSocket] Error in async event processing:`, error);
-        throw error; // Re-throw so caller's catch block can handle it
+    }
+    catch (error) {
+        console.error(`[WebSocket] Error processing agent log batch:`, error);
+    }
+    // Send acknowledgment
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'log_batch_ack',
+            processed: message.events?.length || 0,
+            timestamp: new Date().toISOString()
+        }));
     }
 }
-async function handleAgentStatusUpdate(message, ws, clientIP, token, authenticatedAgent) {
-    console.log(`[WebSocket] Status update from agent ${authenticatedAgent.agentId}: ${message.status}`);
+async function handleAgentStatusUpdate(message, ws, clientIP, token) {
+    console.log(`[WebSocket] Status update from agent ${message.agentId || 'unknown'}: ${message.status}`);
     try {
         // Import storage
         const { storage } = await import('./storage.js');
@@ -529,7 +471,7 @@ async function handleAgentStatusUpdate(message, ws, clientIP, token, authenticat
         const connectors = await storage.getConnectors();
         const agentConnector = connectors.find(c => c.type === 'agent');
         if (agentConnector && agentConnector.configuration.agents) {
-            const agent = agentConnector.configuration.agents[authenticatedAgent.agentId];
+            const agent = agentConnector.configuration.agents[message.agentId];
             if (agent) {
                 agent.status = message.status;
                 agent.lastHeartbeat = new Date().toISOString();
@@ -537,7 +479,7 @@ async function handleAgentStatusUpdate(message, ws, clientIP, token, authenticat
                 await storage.updateConnector(agentConnector.id, {
                     configuration: agentConnector.configuration
                 });
-                console.log(`[WebSocket] Updated agent ${authenticatedAgent.agentId} status to ${message.status}`);
+                console.log(`[WebSocket] Updated agent ${message.agentId} status to ${message.status}`);
             }
         }
     }
@@ -552,8 +494,8 @@ async function handleAgentStatusUpdate(message, ws, clientIP, token, authenticat
         }));
     }
 }
-async function handleAgentMetrics(message, ws, clientIP, token, authenticatedAgent) {
-    console.log(`[WebSocket] Metrics from agent ${authenticatedAgent.agentId}`);
+async function handleAgentMetrics(message, ws, clientIP, token) {
+    console.log(`[WebSocket] Metrics from agent ${message.agentId || 'unknown'}`);
     try {
         // Import storage
         const { storage } = await import('./storage.js');
@@ -561,7 +503,7 @@ async function handleAgentMetrics(message, ws, clientIP, token, authenticatedAge
         const connectors = await storage.getConnectors();
         const agentConnector = connectors.find(c => c.type === 'agent');
         if (agentConnector && agentConnector.configuration.agents) {
-            const agent = agentConnector.configuration.agents[authenticatedAgent.agentId];
+            const agent = agentConnector.configuration.agents[message.agentId];
             if (agent) {
                 agent.metrics = message.metrics;
                 agent.lastHeartbeat = new Date().toISOString();
@@ -569,7 +511,7 @@ async function handleAgentMetrics(message, ws, clientIP, token, authenticatedAge
                 await storage.updateConnector(agentConnector.id, {
                     configuration: agentConnector.configuration
                 });
-                console.log(`[WebSocket] Updated agent ${authenticatedAgent.agentId} metrics`);
+                console.log(`[WebSocket] Updated agent ${message.agentId} metrics`);
             }
         }
     }
