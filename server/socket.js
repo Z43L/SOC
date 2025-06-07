@@ -460,20 +460,47 @@ async function handleAgentHeartbeat(message, ws, clientIP, token, authenticatedA
 }
 async function handleAgentLogBatch(message, ws, clientIP, token, authenticatedAgent) {
     console.log(`[WebSocket] Log batch from agent ${authenticatedAgent.agentId}: ${message.events?.length || 0} events`);
+    
+    // Send immediate acknowledgment for better responsiveness
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'log_batch_ack',
+            processed: message.events?.length || 0,
+            timestamp: new Date().toISOString()
+        }));
+    }
+    
+    // Process events asynchronously to avoid blocking WebSocket
+    if (message.events && message.events.length > 0) {
+        // Don't await - process in background
+        processEventsAsync(message.events, authenticatedAgent.agentId)
+            .catch(error => {
+                console.error(`[WebSocket] Error processing events for agent ${authenticatedAgent.agentId}:`, error);
+            });
+    }
+}
+
+/**
+ * Process events asynchronously in the background
+ */
+async function processEventsAsync(events, agentId) {
     try {
         // Import needed modules
         const { storage } = await import('./storage.js');
         const { AgentConnector } = await import('./integrations/connectors/agent.js');
+        
         // Find the agent connector
         const connectors = await storage.getConnectors();
         const agentConnectorConfig = connectors.find(c => c.type === 'agent');
-        if (agentConnectorConfig && message.events && message.events.length > 0) {
+        
+        if (agentConnectorConfig) {
             // Create a temporary AgentConnector instance to process events
             const connector = new AgentConnector(agentConnectorConfig);
+            
             // Add events to pending queue and process them
-            for (const event of message.events) {
+            for (const event of events) {
                 // Ensure event has required fields and use authenticated agentId
-                event.agentId = authenticatedAgent.agentId;
+                event.agentId = agentId;
                 if (!event.timestamp) {
                     event.timestamp = new Date().toISOString();
                 }
@@ -483,21 +510,14 @@ async function handleAgentLogBatch(message, ws, clientIP, token, authenticatedAg
                 }
                 connector.pendingEvents.push(event);
             }
-            // Process the events immediately
+            
+            // Process the events
             await connector.processAgentEvents();
-            console.log(`[WebSocket] Processed ${message.events.length} events from agent ${authenticatedAgent.agentId}`);
+            console.log(`[WebSocket] Processed ${events.length} events from agent ${agentId}`);
         }
-    }
-    catch (error) {
-        console.error(`[WebSocket] Error processing agent log batch:`, error);
-    }
-    // Send acknowledgment
-    if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-            type: 'log_batch_ack',
-            processed: message.events?.length || 0,
-            timestamp: new Date().toISOString()
-        }));
+    } catch (error) {
+        console.error(`[WebSocket] Error in async event processing:`, error);
+        throw error; // Re-throw so caller's catch block can handle it
     }
 }
 async function handleAgentStatusUpdate(message, ws, clientIP, token, authenticatedAgent) {
