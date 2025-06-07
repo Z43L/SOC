@@ -9,6 +9,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
+import { useAgentWebSocket } from "@/hooks/use-agent-websocket";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -26,7 +27,11 @@ import {
   RefreshCw, 
   Server, 
   Shield, 
-  XCircle 
+  XCircle,
+  Wifi,
+  WifiOff,
+  ScrollText,
+  Activity
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -121,7 +126,21 @@ export default function Agents({ user, organization }: any) {
   const [isAgentDialogOpen, setIsAgentDialogOpen] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [registrationKey, setRegistrationKey] = useState<string | null>(null);
+  const [showLogs, setShowLogs] = useState(false);
   const { toast } = useToast();
+
+  // WebSocket integration for real-time agent monitoring
+  const {
+    connectionStatus,
+    toggleConnection,
+    isManuallyDisabled,
+    agentStatuses,
+    agentLogs,
+    connectedAgents,
+    clearLogs,
+    getAgentStatus,
+    isAgentConnected
+  } = useAgentWebSocket();
 
   const { data: agents, isLoading, error } = useQuery<Agent[]>({
     queryKey: ['/api/agents'],
@@ -237,15 +256,56 @@ export default function Agents({ user, organization }: any) {
         )}
         
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold">Agentes</h1>
-          <Dialog open={isAgentDialogOpen} onOpenChange={setIsAgentDialogOpen}>
-            <DialogTrigger asChild>
-              <Button disabled={isAgentLimitReached || isLoadingPlan}>
-                <Server className="mr-2 h-4 w-4" />
-                Crear Agente
-                {isAgentLimitReached && " (Límite alcanzado)"}
+          <div className="flex items-center space-x-4">
+            <h1 className="text-3xl font-bold">Agentes</h1>
+            
+            {/* WebSocket Status */}
+            <div className="flex items-center space-x-2">
+              <Badge 
+                variant={connectionStatus === 'connected' ? 'default' : 'outline'}
+                className={connectionStatus === 'connected' ? 'bg-green-500' : ''}
+              >
+                {connectionStatus === 'connected' ? <Wifi className="mr-1 h-3 w-3" /> : <WifiOff className="mr-1 h-3 w-3" />}
+                WebSocket {connectionStatus === 'connected' ? 'Conectado' : 'Desconectado'}
+              </Badge>
+              
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={toggleConnection}
+                disabled={connectionStatus === 'connecting'}
+              >
+                {connectionStatus === 'connecting' ? (
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                ) : connectionStatus === 'connected' ? (
+                  <WifiOff className="mr-2 h-4 w-4" />
+                ) : (
+                  <Wifi className="mr-2 h-4 w-4" />
+                )}
+                {connectionStatus === 'connected' ? 'Desconectar' : 'Conectar'}
               </Button>
-            </DialogTrigger>
+            </div>
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            {/* Live Logs Button */}
+            <Button 
+              variant="outline"
+              onClick={() => setShowLogs(!showLogs)}
+              className={showLogs ? 'bg-blue-50' : ''}
+            >
+              <ScrollText className="mr-2 h-4 w-4" />
+              Logs en Vivo {agentLogs.length > 0 && `(${agentLogs.length})`}
+            </Button>
+            
+            <Dialog open={isAgentDialogOpen} onOpenChange={setIsAgentDialogOpen}>
+              <DialogTrigger asChild>
+                <Button disabled={isAgentLimitReached || isLoadingPlan}>
+                  <Server className="mr-2 h-4 w-4" />
+                  Crear Agente
+                  {isAgentLimitReached && " (Límite alcanzado)"}
+                </Button>
+              </DialogTrigger>
             <DialogContent className="sm:max-w-[550px]">
               <DialogHeader>
                 <DialogTitle>Configurar Nuevo Agente</DialogTitle>
@@ -483,7 +543,60 @@ export default function Agents({ user, organization }: any) {
               )}
             </DialogContent>
           </Dialog>
+          </div>
         </div>
+
+        {/* Live Logs Panel */}
+        {showLogs && (
+          <Card className="mb-6">
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <CardTitle className="flex items-center">
+                  <Activity className="mr-2 h-5 w-5" />
+                  Logs en Tiempo Real
+                </CardTitle>
+                <div className="flex items-center space-x-2">
+                  <Badge variant="outline">{agentLogs.length} eventos</Badge>
+                  <Button variant="outline" size="sm" onClick={clearLogs}>
+                    Limpiar
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="max-h-96 overflow-y-auto space-y-2">
+                {agentLogs.length === 0 ? (
+                  <p className="text-gray-500 text-center py-4">No hay logs disponibles</p>
+                ) : (
+                  agentLogs.map((log, index) => (
+                    <div key={index} className="flex items-start space-x-3 p-3 border rounded-lg">
+                      <Badge 
+                        variant={log.level === 'error' ? 'destructive' : log.level === 'warning' ? 'outline' : 'default'}
+                        className="mt-1"
+                      >
+                        {log.level}
+                      </Badge>
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 text-sm text-gray-600">
+                          <span className="font-medium">{log.agentId}</span>
+                          <span>•</span>
+                          <span>{new Date(log.timestamp).toLocaleString()}</span>
+                          {log.eventType && (
+                            <>
+                              <span>•</span>
+                              <span className="italic">{log.eventType}</span>
+                            </>
+                          )}
+                        </div>
+                        <p className="mt-1 text-gray-900">{log.message}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Tabs defaultValue="active" className="w-full">
           <TabsList className="mb-4">
@@ -496,6 +609,8 @@ export default function Agents({ user, organization }: any) {
               isLoading={isLoading} 
               agents={agents?.filter(a => a.status === 'active') || []} 
               error={error}
+              getAgentStatus={getAgentStatus}
+              isAgentConnected={isAgentConnected}
             />
           </TabsContent>
           
@@ -504,6 +619,8 @@ export default function Agents({ user, organization }: any) {
               isLoading={isLoading} 
               agents={agents || []} 
               error={error}
+              getAgentStatus={getAgentStatus}
+              isAgentConnected={isAgentConnected}
             />
           </TabsContent>
         </Tabs>
@@ -516,9 +633,11 @@ interface AgentTableProps {
   isLoading: boolean;
   agents: Agent[];
   error: Error | null;
+  getAgentStatus: (agentId: string) => any;
+  isAgentConnected: (agentId: string) => boolean;
 }
 
-function AgentTable({ isLoading, agents, error }: AgentTableProps) {
+function AgentTable({ isLoading, agents, error, getAgentStatus, isAgentConnected }: AgentTableProps) {
   if (isLoading) {
     return <AgentTableSkeleton />;
   }
@@ -558,38 +677,65 @@ function AgentTable({ isLoading, agents, error }: AgentTableProps) {
               <TableHead>Nombre</TableHead>
               <TableHead>IP</TableHead>
               <TableHead>Sistema</TableHead>
-              <TableHead>Estado</TableHead>
+              <TableHead>Estado DB</TableHead>
+              <TableHead>WebSocket</TableHead>
               <TableHead>Último Heartbeat</TableHead>
               <TableHead>Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {agents.map((agent) => (
-              <TableRow key={agent.id}>
-                <TableCell className="font-medium flex items-center">
-                  <AgentIcon os={agent.operatingSystem} />
-                  <span className="ml-2">{agent.name}</span>
-                </TableCell>
-                <TableCell>{agent.ipAddress || "Desconocida"}</TableCell>
-                <TableCell>
-                  {agent.operatingSystem} {agent.version || ""}
-                </TableCell>
-                <TableCell>
-                  <AgentStatusBadge status={agent.status} />
-                </TableCell>
-                <TableCell>{formatDate(agent.lastHeartbeat)}</TableCell>
-                <TableCell>
-                  <div className="flex space-x-1">
-                    <Button variant="outline" size="icon" className="h-8 w-8">
-                      <Monitor className="h-4 w-4" />
-                    </Button>
-                    <Button variant="outline" size="icon" className="h-8 w-8">
-                      <Shield className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+            {agents.map((agent) => {
+              const wsStatus = getAgentStatus(agent.agentIdentifier || agent.id.toString());
+              const isConnected = isAgentConnected(agent.agentIdentifier || agent.id.toString());
+              
+              return (
+                <TableRow key={agent.id}>
+                  <TableCell className="font-medium flex items-center">
+                    <AgentIcon os={agent.operatingSystem} />
+                    <span className="ml-2">{agent.name}</span>
+                  </TableCell>
+                  <TableCell>{agent.ipAddress || "Desconocida"}</TableCell>
+                  <TableCell>
+                    {agent.operatingSystem} {agent.version || ""}
+                  </TableCell>
+                  <TableCell>
+                    <AgentStatusBadge status={agent.status} />
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center space-x-2">
+                      <Badge 
+                        variant={isConnected ? 'default' : 'outline'}
+                        className={isConnected ? 'bg-green-500' : ''}
+                      >
+                        {isConnected ? <Wifi className="mr-1 h-3 w-3" /> : <WifiOff className="mr-1 h-3 w-3" />}
+                        {isConnected ? 'Online' : 'Offline'}
+                      </Badge>
+                      {wsStatus?.metrics && (
+                        <div className="text-xs text-gray-500">
+                          CPU: {wsStatus.metrics.cpu}%
+                        </div>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {wsStatus?.lastHeartbeat ? 
+                      formatDate(wsStatus.lastHeartbeat) : 
+                      formatDate(agent.lastHeartbeat)
+                    }
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex space-x-1">
+                      <Button variant="outline" size="icon" className="h-8 w-8">
+                        <Monitor className="h-4 w-4" />
+                      </Button>
+                      <Button variant="outline" size="icon" className="h-8 w-8">
+                        <Shield className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </CardContent>
