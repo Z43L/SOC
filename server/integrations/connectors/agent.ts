@@ -3,7 +3,7 @@
  * Gestiona la comunicación con agentes instalados en sistemas objetivo
  */
 
-import { Connector, InsertAlert, DataSource } from '@shared/schema'; // Added DataSource
+import { Connector, InsertAlert } from '@shared/schema';
 import { BaseConnector, ConnectorConfig, ConnectorResult } from './base';
 import { log } from '../../vite';
 import { storage } from '../../storage';
@@ -581,7 +581,7 @@ export class AgentConnector extends BaseConnector {
           timestamp: event.timestamp || new Date().toISOString(),
           details: event.details || {}
         },
-        dataSource: DataSource.AGENT, // Specify data source
+        // dataSource: DataSource.AGENT removed - field not in schema
       };
     } catch (error) {
       log(`Error creando alerta desde evento de agente: ${error instanceof Error ? error.message : 'Error desconocido'}`, 'connector');
