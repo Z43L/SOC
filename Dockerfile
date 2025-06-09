@@ -18,9 +18,9 @@ RUN apk update && apk add --no-cache \
     g++ \
     sqlite \
     wine \
-    xvfb-run \
-    gtk+3.0 \
+    xvfb \
     nss \
+    gtk+3.0 \
     alsa-lib \
     at-spi2-atk \
     mesa-dri-gallium \
@@ -29,6 +29,13 @@ RUN apk update && apk add --no-cache \
     libxrandr \
     libxkbcommon \
     at-spi2-core
+
+# Configure wine and electron-builder for cross-platform builds
+ENV WINEARCH win64
+ENV WINEPREFIX /root/.wine
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD 1
+ENV CI true
+RUN winecfg || true
 # Establecer el directorio de trabajo dentro del contenedor
 WORKDIR /usr/src/app
 

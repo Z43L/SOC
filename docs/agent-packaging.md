@@ -34,15 +34,42 @@ The SOC Intelligent Agent packaging system creates **pre-compiled Electron appli
 
 ## Build Process
 
-### Server-Side Compilation (Automatic)
+### Server-Side Compilation (Automatic) - UPDATED
 
 When an agent is generated from the frontend:
 
 1. **Configuration Generation**: Server generates agent configuration with org key, endpoints, etc.
 2. **Electron Project Setup**: Server creates temporary Electron project with embedded config
-3. **Platform Compilation**: Server compiles Electron app for target platform
-4. **Executable Generation**: Generates platform-specific executable (AppImage, .exe, .dmg)
+3. **Platform Compilation**: Server compiles Electron app for target platform using correct build scripts:
+   - `build:agent:windows` - Windows x64 portable executable
+   - `build:agent:linux` - Linux x64/ARM64 AppImage  
+   - `build:agent:macos` - macOS x64/ARM64 DMG installer
+4. **Executable Generation**: Generates platform-specific executable with embedded configuration
 5. **Download Delivery**: User downloads pre-compiled executable
+
+### Technical Improvements (Issue #138)
+
+The agent compilation system has been updated to:
+
+- ✅ Use the correct Electron build scripts (`build:agent:*` instead of `package:*`)
+- ✅ Properly embed configuration files as Electron resources
+- ✅ Support cross-platform compilation from Linux Docker containers
+- ✅ Include all necessary dependencies for Electron compilation
+- ✅ Simplify the build process to use unified scripts
+
+### Cross-Platform Build Requirements
+
+For complete cross-platform compilation, the Docker environment includes:
+
+```dockerfile
+# Cross-platform dependencies for Electron builds
+RUN apk add --no-cache wine xvfb nss gtk+3.0 alsa-lib
+ENV WINEARCH win64
+ENV WINEPREFIX /root/.wine
+ENV CI true
+```
+
+**Note**: Windows cross-compilation from Linux requires wine configuration. For production environments, consider using platform-specific build agents or GitHub Actions with appropriate runners.
 
 ### Manual Development Build
 

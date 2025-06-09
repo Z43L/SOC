@@ -61,7 +61,8 @@
         }
       ],
       "artifactName": "soc-agent-windows-${arch}.${ext}",
-      "sign": false
+      "sign": false,
+      "forceCodeSigning": false
     },
     "linux": {
       "target": [
