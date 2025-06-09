@@ -528,37 +528,98 @@ define("server/integrations/agent-builder", ["require", "exports", "fs", "path",
          */
         async packageAgent(os, buildPath, config, agentId) {
             try {
-                const sourceDir = path.join(buildPath, 'source');
-                await mkdir(sourceDir, { recursive: true });
-                // Copiar el código fuente del agente completo
-                await fs.promises.cp(this.templatesDir, sourceDir, { recursive: true });
-                // Guardar configuración dentro del paquete
-                await writeFile(path.join(sourceDir, 'agent-config.json'), JSON.stringify(config, null, 2), 'utf-8');
-                // Generar archivo YAML de configuración
-                await this.generateAgentYamlConfig(sourceDir, config);
-                const archiveName = `soc-agent-source-${os}-${agentId}.tar.gz`;
-                const archivePath = path.join(this.outputDir, archiveName);
-                await this.createTarArchive(sourceDir, archivePath);
-                const downloadUrl = `/downloads/${archiveName}`;
+                console.log(`Packaging Electron agent for ${os}...`);
+                
+                // Create build environment
+                const buildDir = path.join(buildPath, 'build');
+                await mkdir(buildDir, { recursive: true });
+                
+                // Compile the Electron agent
+                await this.compileAgent(buildDir, os, config, agentId);
+                
+                // Find the generated executable(s)
+                const outputFiles = await this.findGeneratedExecutables(buildPath, os, agentId);
+                
+                if (outputFiles.length === 0) {
+                    throw new Error(`No executable files found for ${os}`);
+                }
+                
+                // Return the main executable file
+                const mainExecutable = outputFiles[0];
+                const fileName = path.basename(mainExecutable);
+                const downloadUrl = `/downloads/${fileName}`;
+                
+                // Copy to output directory for download
+                const outputPath = path.join(this.outputDir, fileName);
+                await fs.promises.copyFile(mainExecutable, outputPath);
+                
                 return {
                     success: true,
-                    message: `Agent source package created successfully`,
-                    filePath: archivePath,
-                    downloadUrl
+                    message: `Electron agent packaged successfully for ${os}`,
+                    filePath: outputPath,
+                    downloadUrl,
+                    executables: outputFiles.map(f => path.basename(f))
                 };
-            }
-            catch (error) {
-                console.error(`Error packaging agent for ${os}:`, error);
+                
+            } catch (error) {
+                console.error(`Error packaging Electron agent for ${os}:`, error);
                 return {
                     success: false,
                     message: `Error packaging agent: ${error instanceof Error ? error.message : String(error)}`
                 };
             }
         }
+
+        /**
+         * Find generated executable files after Electron build
+         */
+        async findGeneratedExecutables(buildPath, os, agentId) {
+            const files = [];
+            const distPath = path.join(buildPath, '../dist/agents');
+            
+            try {
+                const dirContents = await fs.promises.readdir(distPath);
+                
+                for (const item of dirContents) {
+                    const itemPath = path.join(distPath, item);
+                    const stat = await fs.promises.stat(itemPath);
+                    
+                    if (stat.isFile()) {
+                        // Check if it's an executable file for the target OS
+                        const isExecutable = this.isExecutableForOS(item, os, agentId);
+                        if (isExecutable) {
+                            files.push(itemPath);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.warn(`Error reading dist directory: ${error.message}`);
+            }
+            
+            return files;
+        }
+
+        /**
+         * Check if a file is an executable for the target OS
+         */
+        isExecutableForOS(fileName, os, agentId) {
+            const lowerName = fileName.toLowerCase();
+            
+            switch (os) {
+                case AgentOS.WINDOWS:
+                    return lowerName.includes('windows') && (lowerName.endsWith('.exe') || lowerName.endsWith('.zip'));
+                case AgentOS.LINUX:
+                    return lowerName.includes('linux') && lowerName.endsWith('.appimage');
+                case AgentOS.MACOS:
+                    return lowerName.includes('macos') && lowerName.endsWith('.dmg');
+                default:
+                    return false;
+            }
+        }
         /**
          * Crea archivos necesarios para el agente Windows
          */
-        async createWindowsAgentFiles(buildPath, config) {
+        async createWindowsAgentFiles(buildPath, config, agentId) {
             // Crear script de instalación (PowerShell)
             const installScript = `
 # Instalador del Agente SOC-Inteligente para Windows
@@ -768,12 +829,12 @@ Write-Host "Desinstalación completada." -ForegroundColor Green
             // Extraer NSSM
             await exec(`unzip -j ${path.join(buildPath, 'nssm.zip')} nssm-2.24/win64/nssm.exe -d ${agentDir}`);
             // Compilar agente para Windows
-            await this.compileAgent(agentDir, AgentOS.WINDOWS);
+            await this.compileAgent(agentDir, AgentOS.WINDOWS, config, agentId);
         }
         /**
          * Crea archivos necesarios para el agente macOS
          */
-        async createMacOSAgentFiles(buildPath, config) {
+        async createMacOSAgentFiles(buildPath, config, agentId) {
             // Crear script de instalación (bash)
             const installScript = `#!/bin/bash
 # Instalador del Agente SOC-Inteligente para macOS
@@ -908,12 +969,12 @@ echo "Desinstalación completada."
             await exec(`chmod +x ${path.join(buildPath, 'install.sh')}`);
             await exec(`chmod +x ${path.join(buildPath, 'uninstall.sh')}`);
             // Compilar agente para macOS
-            await this.compileAgent(agentDir, AgentOS.MACOS);
+            await this.compileAgent(agentDir, AgentOS.MACOS, config, agentId);
         }
         /**
          * Crea archivos necesarios para el agente Linux
          */
-        async createLinuxAgentFiles(buildPath, config) {
+        async createLinuxAgentFiles(buildPath, config, agentId) {
             // Crear script de instalación (bash)
             const installScript = `#!/bin/bash
 # Instalador del Agente SOC-Inteligente para Linux
@@ -1156,97 +1217,120 @@ echo "Desinstalación completada."
             await exec(`chmod +x ${path.join(buildPath, 'install.sh')}`);
             await exec(`chmod +x ${path.join(buildPath, 'uninstall.sh')}`);
             // Compilar agente para Linux
-            await this.compileAgent(agentDir, AgentOS.LINUX);
+            await this.compileAgent(agentDir, AgentOS.LINUX, config, agentId);
         }
         /**
          * Compila el agente para la plataforma especificada
          */
-        async compileAgent(outputDir, os) {
+        async compileAgent(outputDir, os, config, agentId) {
             try {
-                // Nombre del archivo principal según SO
-                const mainFile = this.getAgentMainFile(os);
-                // Copiar código fuente necesario
-                await exec(`cp -r ${path.join(this.templatesDir, 'common')} ${outputDir}/`);
-                await exec(`cp -r ${path.join(this.templatesDir, os.toString())} ${outputDir}/`);
-                // Crear archivo de punto de entrada
-                const agentEntryPoint = `
-import path from 'path';
-const mainModulePath = path.join(__dirname, '${os.toString()}', '${mainFile}');
-import { ${this.getAgentClassName(os)} as AgentClass } from mainModulePath;
-const { AgentConfig, loadConfig } = require('./common/agent-config');
+                console.log(`Compiling Electron agent for ${os}...`);
+                
+                // Create Electron project structure
+                const electronProjectDir = path.join(outputDir, 'electron-project');
+                await mkdir(electronProjectDir, { recursive: true });
+                
+                // Copy agent source files
+                const agentsDir = path.join(__dirname, '../../agents');
+                await exec(`cp -r "${agentsDir}"/* "${electronProjectDir}"/`);
+                
+                // Create embedded configuration file
+                const embeddedConfig = this.generateAgentConfig(config, agentId);
+                await writeFile(path.join(electronProjectDir, 'agent-config.json'), JSON.stringify(embeddedConfig, null, 2), 'utf-8');
+                
+                // Update package.json for this specific build
+                const packageJsonPath = path.join(electronProjectDir, 'package.json');
+                const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf-8'));
+                
+                // Update electron-builder configuration based on OS
+                const buildConfig = {
+                    appId: `com.soc.agent.${agentId}`,
+                    productName: `SOC Agent ${agentId}`,
+                    directories: {
+                        output: outputDir
+                    },
+                    files: [
+                        "dist/**/*",
+                        "assets/**/*",
+                        "agent-config.json",
+                        "node_modules/**/*",
+                        "!node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+                        "!node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+                        "!node_modules/*.d.ts",
+                        "!node_modules/.bin",
+                        "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+                        "!.editorconfig",
+                        "!**/._*",
+                        "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+                        "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+                        "!**/{appveyor.yml,.travis.yml,circle.yml}",
+                        "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+                    ],
+                    extraResources: [
+                        {
+                            from: "agent-config.json",
+                            to: "agent-config.json"
+                        }
+                    ]
+                };
 
-// Para ser autosuficiente, exportamos las clases necesarias
-exports.${this.getAgentClassName(os)} = AgentClass;
-exports.AgentConfig = AgentConfig;
-exports.loadConfig = loadConfig;
-`;
-                await writeFile(path.join(outputDir, 'agent-core.js'), agentEntryPoint, 'utf-8');
-                // Crear ejecutable según SO
+                // Platform-specific build configuration
                 switch (os) {
                     case AgentOS.WINDOWS:
-                        // Para Windows, basta con el archivo .js
+                        buildConfig.win = {
+                            target: [{ target: "portable", arch: ["x64"] }],
+                            artifactName: `soc-agent-windows-${agentId}-\${arch}.\${ext}`
+                        };
+                        break;
+                    case AgentOS.LINUX:
+                        buildConfig.linux = {
+                            target: [{ target: "AppImage", arch: ["x64"] }],
+                            artifactName: `soc-agent-linux-${agentId}-\${arch}.\${ext}`
+                        };
                         break;
                     case AgentOS.MACOS:
-                    case AgentOS.LINUX:
-                        // Para macOS y Linux, crear un pequeño script ejecutable
-                        const unixScript = `#!/usr/bin/env node
-require('./agent-core');
-
-const { ${this.getAgentClassName(os)} } = require('./agent-core');
-const configPath = '${this.getDefaultConfigPath(os)}';
-
-// Iniciar el agente
-const agent = new ${this.getAgentClassName(os)}(configPath);
-
-async function main() {
-  try {
-    const initialized = await agent.initialize();
-    if (!initialized) {
-      console.error('Failed to initialize agent, exiting');
-      process.exit(1);
-    }
-    
-    const started = await agent.start();
-    if (!started) {
-      console.error('Failed to start agent, exiting');
-      process.exit(1);
-    }
-    
-    console.log('Agent started successfully');
-    
-    // Manejar señales para cierre limpio
-    process.on('SIGINT', async () => {
-      console.log('Received SIGINT, shutting down...');
-      await agent.stop();
-      process.exit(0);
-    });
-    
-    process.on('SIGTERM', async () => {
-      console.log('Received SIGTERM, shutting down...');
-      await agent.stop();
-      process.exit(0);
-    });
-  } catch (error) {
-    console.error('Unhandled error in agent:', error);
-    process.exit(1);
-  }
-}
-
-// Iniciar agente
-main().catch(error => {
-  console.error('Fatal error:', error);
-  process.exit(1);
-});
-`;
-                        const executableName = os === AgentOS.MACOS ? 'agent-macos' : 'agent-linux';
-                        await writeFile(path.join(outputDir, executableName), unixScript, 'utf-8');
-                        await exec(`chmod +x ${path.join(outputDir, executableName)}`);
+                        buildConfig.mac = {
+                            target: [{ target: "dmg", arch: ["x64", "arm64"] }],
+                            artifactName: `soc-agent-macos-${agentId}-\${arch}.\${ext}`
+                        };
                         break;
                 }
-            }
-            catch (error) {
-                console.error(`Error compiling agent for ${os}:`, error);
+
+                packageJson.build = buildConfig;
+                await writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2), 'utf-8');
+                
+                // Build the Electron application
+                console.log(`Installing dependencies for Electron build...`);
+                await exec(`cd "${electronProjectDir}" && npm install --production=false`, { cwd: electronProjectDir });
+                
+                console.log(`Building TypeScript sources...`);
+                await exec(`cd "${electronProjectDir}" && npm run build:electron`, { cwd: electronProjectDir });
+                
+                console.log(`Packaging Electron application for ${os}...`);
+                const buildCommand = this.getElectronBuildCommand(os);
+                await exec(`cd "${electronProjectDir}" && npm run ${buildCommand}`, { cwd: electronProjectDir });
+                
+                console.log(`Electron agent compiled successfully for ${os}`);
+                
+            } catch (error) {
+                console.error(`Error compiling Electron agent for ${os}:`, error);
                 throw error;
+            }
+        }
+
+        /**
+         * Get the appropriate electron-builder command for the OS
+         */
+        getElectronBuildCommand(os) {
+            switch (os) {
+                case AgentOS.WINDOWS:
+                    return 'package:windows';
+                case AgentOS.LINUX:
+                    return 'package:linux';
+                case AgentOS.MACOS:
+                    return 'package:macos';
+                default:
+                    return 'package:electron';
             }
         }
         /**
