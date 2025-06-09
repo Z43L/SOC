@@ -1,0 +1,13 @@
+{
+  "serverUrl": "wss://localhost:3000",
+  "organizationKey": "test-org-key",
+  "agentId": "test-agent-id",
+  "logLevel": "info",
+  "heartbeatInterval": 60,
+  "capabilities": {
+    "fileSystemMonitoring": true,
+    "processMonitoring": true,
+    "networkMonitoring": true,
+    "securityLogsMonitoring": true
+  }
+}

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOC Agent</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            text-align: center;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        .status {
+            font-size: 24px;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+        .status.running {
+            color: #4ade80;
+        }
+        .status.stopped {
+            color: #f87171;
+        }
+        .message {
+            font-size: 16px;
+            margin-bottom: 30px;
+            opacity: 0.9;
+        }
+        .buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        button.danger {
+            background: rgba(248, 113, 113, 0.3);
+        }
+        button.danger:hover {
+            background: rgba(248, 113, 113, 0.5);
+        }
+        .logo {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 20px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">🔒</div>
+        <h1>SOC Agent</h1>
+        <div id="status" class="status running">Running</div>
+        <div id="message" class="message">Agent is running normally</div>
+        <div class="buttons">
+            <button onclick="hideWindow()">Hide</button>
+            <button onclick="refreshStatus()">Refresh</button>
+            <button class="danger" onclick="stopAgent()">Stop Agent</button>
+        </div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+
+        async function updateStatus() {
+            try {
+                const status = await ipcRenderer.invoke('get-agent-status');
+                document.getElementById('status').textContent = status.status === 'running' ? 'Running' : 'Stopped';
+                document.getElementById('status').className = `status ${status.status}`;
+                document.getElementById('message').textContent = status.message;
+            } catch (error) {
+                console.error('Error getting status:', error);
+            }
+        }
+
+        function hideWindow() {
+            ipcRenderer.invoke('hide-window');
+        }
+
+        function refreshStatus() {
+            updateStatus();
+        }
+
+        async function stopAgent() {
+            if (confirm('Are you sure you want to stop the SOC Agent?')) {
+                await ipcRenderer.invoke('stop-agent');
+            }
+        }
+
+        // Update status every 5 seconds
+        setInterval(updateStatus, 5000);
+        
+        // Initial status update
+        updateStatus();
+    </script>
+</body>
+</html>
