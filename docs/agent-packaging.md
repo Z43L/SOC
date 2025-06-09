@@ -2,52 +2,61 @@
 
 ## Overview
 
-The SOC Intelligent Agent packaging system creates self-contained binary executables for Linux, Windows, and macOS platforms using TypeScript/Node.js and the `pkg` tool. This ensures easy deployment without requiring Node.js installation on target systems.
+The SOC Intelligent Agent packaging system creates **pre-compiled Electron applications** for Linux, Windows, and macOS platforms. Agents are now **compiled on the server** with **embedded configuration** and distributed as platform-specific executables, eliminating the need for client-side compilation or configuration files.
 
 ## Key Features
 
-### 1. Path Normalization
-- Agent resolves paths relative to executable location using `process.execPath`
-- Configuration files searched in executable directory first, then system locations
-- Logs and temporary files created relative to agent binary
+### 1. Electron-Based Architecture
+- Native cross-platform applications using Electron
+- Embedded configuration in compiled executables
+- Simple status monitoring UI (can run headless)
+- Background operation as system services
 
-### 2. Self-Contained Binaries
-- No Node.js runtime dependency on target systems
-- All dependencies bundled into single executable
-- Cross-platform compatibility (Linux x64/ARM64, Windows x64, macOS x64/ARM64)
+### 2. Server-Side Compilation
+- Agents compiled on-demand when generated from frontend
+- Configuration embedded during compilation process
+- No client-side build requirements
+- Pre-compiled executables ready for immediate deployment
 
-### 3. Enhanced Telemetry
-- Binary integrity verification via SHA256 checksums
-- Platform detection and system information reporting
-- Installation method tracking
-- Comprehensive heartbeat data
+### 3. Self-Contained Executables
+- No external dependencies required on target systems
+- All configuration embedded in the executable
+- Cross-platform compatibility:
+  - **Linux**: AppImage format (x64, ARM64)
+  - **Windows**: Portable .exe format (x64)
+  - **macOS**: .dmg installer format (x64, ARM64)
 
-### 4. Auto-Update Support
-- Signature verification for downloaded updates
-- Checksum validation
-- Atomic binary replacement
-- Rollback capability
+### 4. Enhanced Security
+- Configuration cannot be modified post-compilation
+- Binary integrity verification
+- Platform-specific optimizations
+- Secure communication with embedded certificates
 
 ## Build Process
 
-### Prerequisites
+### Server-Side Compilation (Automatic)
+
+When an agent is generated from the frontend:
+
+1. **Configuration Generation**: Server generates agent configuration with org key, endpoints, etc.
+2. **Electron Project Setup**: Server creates temporary Electron project with embedded config
+3. **Platform Compilation**: Server compiles Electron app for target platform
+4. **Executable Generation**: Generates platform-specific executable (AppImage, .exe, .dmg)
+5. **Download Delivery**: User downloads pre-compiled executable
+
+### Manual Development Build
+
 ```bash
 cd agents
 npm install
-```
 
-### Manual Build
-```bash
-# Build TypeScript
-npm run build
+# Build TypeScript sources
+npm run build:electron
 
-# Package for all platforms
-npm run package:all
-
-# Or individual platforms
-npm run package:linux    # Linux x64 + ARM64
-npm run package:windows  # Windows x64
-npm run package:macos    # macOS x64 + ARM64
+# Package for specific platforms
+npm run package:linux    # Linux x64 + ARM64 (AppImage)
+npm run package:windows  # Windows x64 (Portable .exe)
+npm run package:macos    # macOS x64 + ARM64 (.dmg)
 ```
 
 ### GitHub Actions
@@ -60,45 +69,102 @@ The repository includes automated builds via `.github/workflows/build-agents.yml
 
 ## Installation Methods
 
-### Linux
+### Automatic Installation (Recommended)
 
-#### Manual Installation
+1. **Generate Agent**: Use the web frontend to generate an agent for your organization
+2. **Download Executable**: Download the pre-compiled executable for your platform
+3. **Run Agent**: Execute the downloaded file - configuration is embedded
+
+### Platform-Specific Installation
+
+#### Linux (AppImage)
+
 ```bash
-# Download and install binary
+# Download from web interface (e.g., soc-agent-linux-x86_64.AppImage)
+chmod +x soc-agent-linux-x86_64.AppImage
+
+# Run directly (for testing)
+./soc-agent-linux-x86_64.AppImage
+
+# Install as systemd service
 sudo mkdir -p /opt/soc-agent
-sudo cp soc-agent-linux-x64 /opt/soc-agent/soc-agent
+sudo cp soc-agent-linux-x86_64.AppImage /opt/soc-agent/soc-agent
 sudo chmod +x /opt/soc-agent/soc-agent
 
-# Install systemd service
-sudo cp scripts/soc-agent.service /etc/systemd/system/
+# Create systemd service file
+sudo tee /etc/systemd/system/soc-agent.service > /dev/null <<EOF
+[Unit]
+Description=SOC Intelligent Agent
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/opt/soc-agent/soc-agent
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enable and start service
 sudo systemctl daemon-reload
 sudo systemctl enable --now soc-agent
 ```
 
-#### Package Installation (Future)
-```bash
-# Debian/Ubuntu
-sudo dpkg -i soc-agent_1.0.0_amd64.deb
+#### Windows (Portable .exe)
 
-# RHEL/CentOS/Fedora  
-sudo rpm -i soc-agent-1.0.0.x86_64.rpm
-```
-
-#### Bootstrap Script
-```bash
-curl -s https://downloads.soccloud.com/install.sh | sudo bash -s -- --org "your-org-key"
-```
-
-### Windows
-
-#### Manual Installation
 ```powershell
-# Copy binary to Program Files
-Copy-Item soc-agent-windows.exe "C:\Program Files\SOC-Agent\soc-agent.exe"
+# Download from web interface (e.g., soc-agent-windows-x64.exe)
+# Copy to desired location
+Copy-Item soc-agent-windows-x64.exe "C:\Program Files\SOC-Agent\soc-agent.exe"
+
+# Run directly (for testing)
+& "C:\Program Files\SOC-Agent\soc-agent.exe"
 
 # Install as Windows service (requires admin)
-sc create SOCAgent binPath="C:\Program Files\SOC-Agent\soc-agent.exe" start=auto
-sc start SOCAgent
+sc create "SOC Agent" binPath="C:\Program Files\SOC-Agent\soc-agent.exe" start=auto
+sc description "SOC Agent" "SOC Intelligent Security Agent"
+sc start "SOC Agent"
+```
+
+#### macOS (.dmg)
+
+```bash
+# Download from web interface (e.g., soc-agent-macos-x64.dmg)
+# Open .dmg file and drag to Applications folder
+# Or install via command line:
+
+hdiutil mount soc-agent-macos-x64.dmg
+cp -R "/Volumes/SOC Agent/SOC Agent.app" /Applications/
+hdiutil unmount "/Volumes/SOC Agent"
+
+# Run directly (for testing)
+open "/Applications/SOC Agent.app"
+
+# Install as launch daemon
+sudo tee /Library/LaunchDaemons/com.soc.agent.plist > /dev/null <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.soc.agent</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Applications/SOC Agent.app/Contents/MacOS/SOC Agent</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+EOF
+
+sudo launchctl load /Library/LaunchDaemons/com.soc.agent.plist
+```
 ```
 
 #### MSI Package (Future)
