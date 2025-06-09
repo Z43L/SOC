@@ -1,33 +1,38 @@
 # Agentes de SOC-Inteligente
 
-Este directorio contiene el código fuente para los agentes de recolección de datos del SOC-Inteligente. Los agentes utilizan una arquitectura modular unificada con colectores específicos por plataforma.
+Este directorio contiene el código fuente para los agentes de recolección de datos del SOC-Inteligente. Los agentes ahora utilizan una **arquitectura Electron** que proporciona aplicaciones nativas multiplataforma con configuración embebida.
 
 ## Estado Actual ✅
 
-**Todos los componentes del agente están completos y funcionales:**
+**Arquitectura Electron implementada:**
 
-- ✅ **Core Modules**: Logger, Transport, Metrics, Queue, Heartbeat - Todos funcionando
-- ✅ **Collectors**: Linux (5), Windows (4), macOS - Implementados completamente
-- ✅ **Communication**: Registro, envío de eventos, heartbeat - Funcional
-- ✅ **Command System**: Ejecución remota de comandos - Implementado
-- ✅ **Update System**: Auto-actualización con rollback - Funcional
-- ✅ **Build System**: Compilación para todas las plataformas - Funcionando
-- ✅ **Tests**: Verificación de componentes - Pasando (9/9)
+- ✅ **Electron Application**: Aplicación nativa multiplataforma
+- ✅ **Embedded Configuration**: Configuración embebida en el ejecutable 
+- ✅ **Pre-compiled Executables**: Ejecutables pre-compilados para descarga
+- ✅ **Cross-platform Support**: Windows (.exe), Linux (AppImage), macOS (.dmg)
+- ✅ **Background Operation**: Funcionamiento en segundo plano
+- ✅ **Simple UI**: Interfaz básica para monitoreo de estado
+- ✅ **Core Modules**: Logger, Transport, Metrics, Queue, Heartbeat
+- ✅ **Collectors**: Linux (5), Windows (4), macOS
+- ✅ **Communication**: Registro, envío de eventos, heartbeat
+- ✅ **Command System**: Ejecución remota de comandos
+- ✅ **Build System**: Electron Builder para todas las plataformas
 
 **Compilación verificada:**
 - TypeScript: ✅ Sin errores
-- Módulos: ✅ Carga correcta
+- Electron Build: ✅ Funcional para Linux x64/ARM64
+- Configuración: ✅ Embebida correctamente
 - Dependencias: ✅ Resueltas
-- Configuración: ✅ Funcional
 
-## Arquitectura Modular
+## Arquitectura Electron
 
-La nueva arquitectura se basa en un sistema de colectores modulares que permite:
-- **Extensibilidad**: Fácil adición de nuevos colectores
-- **Carga dinámica**: Los colectores se cargan según la plataforma
-- **Configuración unificada**: Una sola interfaz de configuración
-- **Logging centralizado**: Sistema de logging consistente
-- **Tipado estricto**: TypeScript con tipos mejorados
+La nueva arquitectura basada en Electron proporciona:
+- **Aplicaciones Nativas**: Ejecutables nativos para cada plataforma
+- **Configuración Embebida**: No requiere archivos de configuración externos
+- **UI de Estado**: Interfaz simple para monitoreo (puede ocultarse)
+- **Operación en Background**: Funciona como servicio del sistema
+- **Pre-compilado**: Los agentes se compilan en el servidor antes de la descarga
+- **Cross-platform**: Un solo código base para todas las plataformas
 
 ## Estructura del Proyecto
 
@@ -107,23 +112,49 @@ AGENT_TRANSPORT        # Tipo de transporte (https/websocket)
 
 ### Compilación
 
+#### Construcción de TypeScript
 ```bash
 cd agents/
 npm install
-npm run build
+npm run build:electron
 ```
 
-### Empaquetado
+#### Empaquetado Electron
 
 ```bash
-npm run package  # Genera binarios para todas las plataformas
+# Empaquetar para todas las plataformas (requiere dependencias específicas)
+npm run package:all
+
+# Empaquetado individual por plataforma
+npm run package:linux    # Linux x64 + ARM64 (AppImage)
+npm run package:windows  # Windows x64 (Portable .exe)
+npm run package:macos    # macOS x64 + ARM64 (.dmg)
 ```
 
-### Testing
+### Archivos de Salida
+
+El proceso de construcción Electron genera:
+
+- **Linux**: `soc-agent-linux-x86_64.AppImage`, `soc-agent-linux-arm64.AppImage`
+- **Windows**: `soc-agent-windows-x64.exe` (portable)
+- **macOS**: `soc-agent-macos-x64.dmg`, `soc-agent-macos-arm64.dmg`
+
+### Configuración Embebida
+
+Los agentes Electron incluyen la configuración embebida en el ejecutable:
+- Configuración se incluye en `resources/agent-config.json`
+- No requiere archivos de configuración externos
+- Se genera automáticamente durante el proceso de compilación en el servidor
+
+### Testing Local
 
 ```bash
-# Ejecutar con configuración de prueba
-./dist/main.js --config test-config.yaml --log-level debug
+# Verificar compilación TypeScript
+npm run compile-check
+
+# Construir y ejecutar localmente (con configuración de prueba)
+npm run build:electron
+./dist/soc-agent-linux-x86_64.AppImage  # En Linux
 ```
 
 ### Agent Config (agent-config.ts)

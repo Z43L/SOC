@@ -562,7 +562,6 @@ export async function buildAgentPackage(userId, operatingSystem, serverUrl, regi
             serverUrl,
             registrationKey,
             userId,
-            organizationId: user.organizationId,
             customName,
             capabilities
         };

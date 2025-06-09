@@ -2,18 +2,22 @@
   "name": "soc-agent",
   "version": "1.0.0",
   "description": "SOC Intelligent Agent",
-  "main": "main-simple.ts",
+  "author": "SOC Intelligent Team",
+  "main": "dist/electron-main.js",
   "scripts": {
     "build": "tsc -p . && shx mv dist/main-simple.js dist/main-simple.cjs",
     "clean": "rimraf dist",
     "build:windows": "tsc main-windows.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop --downlevelIteration",
     "build:linux": "tsc main-simple.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop --downlevelIteration && shx mv dist/main-simple.js dist/main-simple.cjs",
     "build:macos": "tsc main-simple.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop --downlevelIteration && shx mv dist/main-simple.js dist/main-simple.cjs",
-    "package": "npm run package:all",
+    "build:electron": "tsc -p . && npm run build:electron-main",
+    "build:electron-main": "tsc electron-main.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop --downlevelIteration",
+    "package": "npm run package:electron",
     "package:all": "npm run package:linux && npm run package:windows && npm run package:macos",
-    "package:linux": "shx mkdir -p ../dist/agents && pkg dist/main-simple.cjs --targets node18-linux-x64,node18-linux-arm64 --output ../dist/agents/soc-agent-linux && cp ../dist/agents/soc-agent-linux-x64 ../dist/agents/soc-agent-linux",
-    "package:windows": "shx mkdir -p ../dist/agents && pkg dist/main-windows.js --targets node18-win-x64 --output ../dist/agents/soc-agent-windows.exe",
-    "package:macos": "shx mkdir -p ../dist/agents && pkg dist/main-simple.cjs --targets node18-macos-x64,node18-macos-arm64 --output ../dist/agents/soc-agent-macos",
+    "package:electron": "npm run build:electron && electron-builder --publish=never",
+    "package:linux": "npm run build:electron && electron-builder --linux --publish=never",
+    "package:windows": "npm run build:electron && electron-builder --win --publish=never",
+    "package:macos": "npm run build:electron && electron-builder --mac --publish=never",
     "build:agent": "npm run clean && npm run build:windows && npm run package:windows",
     "build:agent:windows": "npm run clean && npm run build:windows && npm run package:windows",
     "build:agent:linux": "npm run clean && npm run build:linux && npm run package:linux",
@@ -21,20 +25,61 @@
     "test:windows": "tsc test-windows-collectors.ts --outDir dist --target ES2020 --module CommonJS --strict --esModuleInterop --downlevelIteration && node dist/test-windows-collectors.js",
     "compile-check": "tsc --noEmit"
   },
-  "pkg": {
-    "assets": [
-      "dist/core/logger.js",
-      "common/logger.ts",
-      "dist/collectors/windows/*.js",
-      "dist/collectors/types.js",
-      "dist/common/*.js",
-      "**/*.yaml",
-      "**/*.yml",
-      "**/*.json"
+  "build": {
+    "appId": "com.soc.agent",
+    "productName": "SOC Agent",
+    "directories": {
+      "output": "../dist/agents"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*",
+      "!node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!node_modules/*.d.ts",
+      "!node_modules/.bin",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!.editorconfig",
+      "!**/._*",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
     ],
-    "scripts": [
-      "dist/main-windows.js"
-    ]
+    "extraResources": [
+      {
+        "from": "agent-config.json",
+        "to": "agent-config.json",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "soc-agent-windows-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "artifactName": "soc-agent-linux-${arch}.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "artifactName": "soc-agent-macos-${arch}.${ext}"
+    }
   },
   "dependencies": {
     "@types/better-sqlite3": "^7.6.13",
@@ -47,6 +92,8 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.16.11",
     "@types/ws": "^8.5.13",
+    "electron": "^32.0.0",
+    "electron-builder": "^25.1.7",
     "pkg": "^5.8.1",
     "rimraf": "^6.0.1",
     "sh": "^0.0.3",

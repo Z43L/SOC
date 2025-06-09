@@ -482,7 +482,7 @@ export class Transport extends EventEmitter {
         }
       } catch (e) {
         // Ignorar errores al cerrar
-        console.warn('Error closing WebSocket:', e.message);
+        console.warn('Error closing WebSocket:', e instanceof Error ? e.message : String(e));
       }
       this.ws = null;
     }
