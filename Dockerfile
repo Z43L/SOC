@@ -12,10 +12,30 @@ RUN apk update && apk add --no-cache \
     python3 \
     py3-pip \
     zip \
+    unzip \
     netcat-openbsd \
     make \
     g++ \
-    sqlite
+    sqlite \
+    wine \
+    xvfb \
+    nss \
+    gtk+3.0 \
+    alsa-lib \
+    at-spi2-atk \
+    mesa-dri-gallium \
+    libxcomposite \
+    libxdamage \
+    libxrandr \
+    libxkbcommon \
+    at-spi2-core
+
+# Configure wine and electron-builder for cross-platform builds
+ENV WINEARCH win64
+ENV WINEPREFIX /root/.wine
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD 1
+ENV CI true
+RUN winecfg || true
 # Establecer el directorio de trabajo dentro del contenedor
 WORKDIR /usr/src/app
 
@@ -29,6 +49,11 @@ RUN npm rebuild sqlite3
 
 # Copiar el resto de los archivos
 COPY . .
+
+# Instalar dependencias de los agentes para la compilación
+WORKDIR /usr/src/app/agents
+RUN npm install
+WORKDIR /usr/src/app
 
 # Construir la aplicación
 RUN npm run build
