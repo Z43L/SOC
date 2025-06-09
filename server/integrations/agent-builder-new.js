@@ -575,7 +575,8 @@ define("server/integrations/agent-builder", ["require", "exports", "fs", "path",
          */
         async findGeneratedExecutables(buildPath, os, agentId) {
             const files = [];
-            const distPath = path.join(buildPath, '../dist/agents');
+            // The output directory is set to buildPath in the electron-builder config
+            const distPath = path.join(buildPath, 'build');
             
             try {
                 const dirContents = await fs.promises.readdir(distPath);
@@ -1303,10 +1304,7 @@ echo "Desinstalación completada."
                 console.log(`Installing dependencies for Electron build...`);
                 await exec(`cd "${electronProjectDir}" && npm install --production=false`, { cwd: electronProjectDir });
                 
-                console.log(`Building TypeScript sources...`);
-                await exec(`cd "${electronProjectDir}" && npm run build:electron`, { cwd: electronProjectDir });
-                
-                console.log(`Packaging Electron application for ${os}...`);
+                console.log(`Building and packaging Electron application for ${os}...`);
                 const buildCommand = this.getElectronBuildCommand(os);
                 await exec(`cd "${electronProjectDir}" && npm run ${buildCommand}`, { cwd: electronProjectDir });
                 
@@ -1324,13 +1322,13 @@ echo "Desinstalación completada."
         getElectronBuildCommand(os) {
             switch (os) {
                 case AgentOS.WINDOWS:
-                    return 'package:windows';
+                    return 'build:agent:windows';
                 case AgentOS.LINUX:
-                    return 'package:linux';
+                    return 'build:agent:linux';
                 case AgentOS.MACOS:
-                    return 'package:macos';
+                    return 'build:agent:macos';
                 default:
-                    return 'package:electron';
+                    return 'build:agent';
             }
         }
         /**

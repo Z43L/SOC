@@ -60,7 +60,8 @@
           "arch": ["x64"]
         }
       ],
-      "artifactName": "soc-agent-windows-${arch}.${ext}"
+      "artifactName": "soc-agent-windows-${arch}.${ext}",
+      "sign": false
     },
     "linux": {
       "target": [
