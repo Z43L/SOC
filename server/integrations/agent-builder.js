@@ -15,6 +15,7 @@ const __dirname = dirname(__filename);
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import * as yaml from 'js-yaml';
+import { generateAgentToken } from './connectors/jwt-auth';
 const exec = util.promisify(child_process.exec);
 const writeFile = util.promisify(fs.writeFile);
 const readFile = util.promisify(fs.readFile);
@@ -105,48 +106,66 @@ export class AgentBuilder {
             fileSystemMonitoring: config.capabilities?.fileSystemMonitoring ?? true,
             processMonitoring: config.capabilities?.processMonitoring ?? true,
             networkMonitoring: config.capabilities?.networkMonitoring ?? true,
-            registryMonitoring: config.os === AgentOS.WINDOWS && (config.capabilities?.registryMonitoring ?? true),
+            registryMonitoring: config.os === AgentOS.WINDOWS && (config.capabilities?.registryMonitoring ?? false),
             securityLogsMonitoring: config.capabilities?.securityLogsMonitoring ?? true,
-            malwareScanning: config.capabilities?.malwareScanning ?? true,
-            vulnerabilityScanning: config.capabilities?.vulnerabilityScanning ?? true
+            malwareScanning: config.capabilities?.malwareScanning ?? false,
+            vulnerabilityScanning: config.capabilities?.vulnerabilityScanning ?? false
         };
+        
+        // Generate JWT token for the agent
+        const agentToken = generateAgentToken(agentId, config.userId, config.organizationId);
+        
+        // Create WebSocket server URL with token
+        let serverUrl = config.serverUrl || 'ws://localhost:5000';
+        
+        // Convert HTTP/HTTPS URLs to WebSocket URLs
+        if (serverUrl.startsWith('https://')) {
+            serverUrl = serverUrl.replace('https://', 'wss://');
+        } else if (serverUrl.startsWith('http://')) {
+            serverUrl = serverUrl.replace('http://', 'ws://');
+        } else if (!serverUrl.startsWith('ws://') && !serverUrl.startsWith('wss://')) {
+            // If no protocol specified, default to ws://
+            serverUrl = `ws://${serverUrl}`;
+        }
+        
+        const server = `${serverUrl}/api/ws/agents?token=${agentToken}`;
+        
         // Generar configuración base usando el formato correcto del core agent-config
         return {
-            // Información de conexión
-            serverUrl: config.serverUrl,
-            organizationKey: config.organizationKey, // Fixed: was registrationKey
-            agentId: agentId,
-            // Intervalos
-            heartbeatInterval: 60,
+            // Server WebSocket URL - includes the correct endpoint path
+            server,
+            
+            // Agent identification
+            agentId: "", // Will be auto-generated if empty
+            
+            // Connection settings
+            transport: "websocket",
+            compressionEnabled: false,
+            validateCertificates: false, // Set to true in production
+            allowInsecureConnections: true, // Set to false in production
+            
+            // Intervals (in seconds)
+            heartbeatInterval: 30,
             dataUploadInterval: 300,
             scanInterval: 3600,
-            // Endpoints
-            registrationEndpoint: '/api/agents/register',
-            dataEndpoint: '/api/agents/data',
-            heartbeatEndpoint: '/api/agents/heartbeat',
-            // Seguridad
+            
+            // Security settings
             signMessages: false,
-            validateCertificates: true,
             maxMessageSize: 1048576, // 1MB
-            allowInsecureConnections: false,
-            // Capacidades
+            
+            // Logging
+            logLevel: "info",
+            logFilePath: "./agent.log",
+            
+            // Agent capabilities
             capabilities,
-            // Almacenamiento y registros
-            configPath: this.getDefaultConfigPath(config.os),
-            logFilePath: this.getDefaultLogPath(config.os),
-            maxStorageSize: 100,
-            logLevel: 'info',
-            // Cola de eventos
+            
+            // Queue settings
             queueSize: 1000,
-            // Transporte - Enable WebSocket by default
-            transport: 'websocket',
-            compressionEnabled: true,
-            // Comandos push
+            
+            // Commands
             enableCommands: true,
-            allowedCommands: ['script', 'configUpdate', 'isolate', 'upgrade'],
-            // Personalización avanzada
-            directoriesToScan: ['/tmp', '/var/tmp', '/dev/shm', '/home'],
-            cpuAlertThreshold: 90
+            allowedCommands: ["script", "configUpdate", "isolate", "upgrade"]
         };
     }
     /**
@@ -965,13 +984,54 @@ main().catch(error => {
      */
     async generateAgentYamlConfig(packageDir, config) {
         try {
-            // Convertir la configuración a YAML
-            const yamlContent = yaml.dump(config, {
-                indent: 2,
-                lineWidth: 120,
-                noRefs: true,
-                sortKeys: false
-            });
+            // Generate YAML content with specific structure and comments
+            const yamlContent = `# Agent Configuration for WebSocket Connection
+# This configuration ensures agents connect to the proper WebSocket endpoint
+
+# Server WebSocket URL - includes the correct endpoint path
+server: "${config.server}"
+
+# Agent identification
+agentId: ""  # Will be auto-generated if empty
+
+# Connection settings
+transport: "${config.transport}"
+compressionEnabled: ${config.compressionEnabled}
+validateCertificates: ${config.validateCertificates}  # Set to true in production
+allowInsecureConnections: ${config.allowInsecureConnections}  # Set to false in production
+
+# Intervals (in seconds)
+heartbeatInterval: ${config.heartbeatInterval}
+dataUploadInterval: ${config.dataUploadInterval}
+scanInterval: ${config.scanInterval}
+
+# Security settings
+signMessages: ${config.signMessages}
+maxMessageSize: ${config.maxMessageSize}  # 1MB
+
+# Logging
+logLevel: "${config.logLevel}"
+logFilePath: "${config.logFilePath}"
+
+# Agent capabilities
+capabilities:
+  fileSystemMonitoring: ${config.capabilities.fileSystemMonitoring}
+  processMonitoring: ${config.capabilities.processMonitoring}
+  networkMonitoring: ${config.capabilities.networkMonitoring}
+  registryMonitoring: ${config.capabilities.registryMonitoring}
+  securityLogsMonitoring: ${config.capabilities.securityLogsMonitoring}
+  malwareScanning: ${config.capabilities.malwareScanning}
+  vulnerabilityScanning: ${config.capabilities.vulnerabilityScanning}
+
+# Queue settings
+queueSize: ${config.queueSize}
+
+# Commands
+enableCommands: ${config.enableCommands}
+allowedCommands:
+${config.allowedCommands.map(cmd => `  - "${cmd}"`).join('\n')}
+`;
+            
             // Escribir el archivo YAML
             const yamlPath = path.join(packageDir, 'agent.yaml');
             await writeFile(yamlPath, yamlContent, 'utf-8');
