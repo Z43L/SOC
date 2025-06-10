@@ -650,8 +650,9 @@ export async function buildAgentPackage(
     const config: AgentBuildConfig = {
       os: agentOS,
       serverUrl,
-      registrationKey,
+      organizationKey: registrationKey,
       userId,
+      organizationId: user.organizationId,
       customName,
       capabilities
     };
